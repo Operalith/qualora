@@ -9,9 +9,18 @@ import urllib.request
 
 
 API_URL = os.environ.get("QUALORA_API_URL", "http://localhost:8080").rstrip("/")
-TARGET_URL = os.environ.get("QUALORA_TARGET_URL", "https://example.com")
-DEFAULT_ALLOWED_HOST = urllib.parse.urlparse(TARGET_URL).hostname or "example.com"
-ALLOWED_HOST = os.environ.get("QUALORA_ALLOWED_HOST", DEFAULT_ALLOWED_HOST)
+BROWSER_TARGET_URL = os.environ.get("QUALORA_TARGET_URL", "https://example.com")
+BROWSER_ALLOWED_HOST = os.environ.get(
+    "QUALORA_ALLOWED_HOST",
+    urllib.parse.urlparse(BROWSER_TARGET_URL).hostname or "example.com",
+)
+API_SMOKE_URL = os.environ.get("QUALORA_API_SMOKE_URL", "http://mock-api:8080")
+API_SMOKE_OPENAPI_URL = os.environ.get(
+    "QUALORA_API_SMOKE_OPENAPI_URL",
+    "http://mock-api:8080/openapi.json",
+)
+API_SMOKE_ALLOWED_HOST = os.environ.get("QUALORA_API_SMOKE_ALLOWED_HOST", "mock-api")
+MOCK_API_HEALTH_URL = os.environ.get("MOCK_API_HEALTH_URL", "http://localhost:18081/health")
 TIMEOUT_SECONDS = int(os.environ.get("QUALORA_SMOKE_TIMEOUT_SECONDS", "120"))
 
 
@@ -37,22 +46,25 @@ def request(method, path, payload=None):
         raise RuntimeError(f"{method} {path} failed with HTTP {exc.code}: {text}") from exc
 
 
-def main():
-    project = request(
-        "POST",
-        "/api/v1/projects",
-        {
-            "name": "Qualora Smoke Target",
-            "frontend_url": TARGET_URL,
-            "api_base_url": "",
-            "openapi_url": "",
-            "allowed_hosts": [ALLOWED_HOST],
-            "security_mode": "passive",
-            "destructive_actions": False,
-        },
-    )
-    print(f"created project: {project['id']}")
+def wait_for_url(url, timeout_seconds=30):
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                if response.status < 500:
+                    return
+        except Exception:
+            time.sleep(1)
+    raise RuntimeError(f"{url} did not become ready within {timeout_seconds} seconds")
 
+
+def create_project(payload):
+    project = request("POST", "/api/v1/projects", payload)
+    print(f"created project: {project['id']} ({project['name']})")
+    return project
+
+
+def run_project(project):
     run = request("POST", f"/api/v1/projects/{project['id']}/runs")
     run_id = run["id"]
     print(f"started run: {run_id}")
@@ -70,9 +82,42 @@ def main():
 
     report = request("GET", f"/api/v1/runs/{run_id}/report")
     print(json.dumps(report, indent=2))
-
     if report["status"] != "completed":
-        return 1
+        raise RuntimeError(f"run {run_id} finished with status {report['status']}")
+    return report
+
+
+def main():
+    print("== Browser smoke ==")
+    browser_project = create_project(
+        {
+            "name": "Qualora Browser Smoke Target",
+            "frontend_url": BROWSER_TARGET_URL,
+            "api_base_url": "",
+            "openapi_url": "",
+            "allowed_hosts": [BROWSER_ALLOWED_HOST],
+            "security_mode": "passive",
+            "destructive_actions": False,
+        }
+    )
+    run_project(browser_project)
+
+    print("== API smoke ==")
+    wait_for_url(MOCK_API_HEALTH_URL)
+    api_project = create_project(
+        {
+            "name": "Qualora API Smoke Target",
+            "frontend_url": "",
+            "api_base_url": API_SMOKE_URL,
+            "openapi_url": API_SMOKE_OPENAPI_URL,
+            "allowed_hosts": [API_SMOKE_ALLOWED_HOST],
+            "security_mode": "passive",
+            "destructive_actions": False,
+            "allow_private_targets": True,
+        }
+    )
+    run_project(api_project)
+
     return 0
 
 

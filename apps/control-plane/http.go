@@ -137,23 +137,30 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request, projectID string
 		return
 	}
 
-	if _, err := ValidateTargetURL(project.FrontendURL, project.AllowedHosts, project.AllowPrivateTargets); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_project_scope", err.Error())
-		return
-	}
-
-	run, err := a.store.CreateRun(r.Context(), project.ID)
+	run, jobs, err := a.store.CreateRun(r.Context(), *project)
 	if err != nil {
 		a.logger.Error("create run failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "create_run_failed", "run could not be created")
 		return
 	}
 
-	if err := a.queue.EnqueueBrowserRun(r.Context(), BrowserRunJob{RunID: run.ID, ProjectID: project.ID}); err != nil {
-		a.logger.Error("enqueue run failed", "run_id", run.ID, "error", err)
-		_ = a.store.MarkRunFailed(r.Context(), run.ID, "run could not be queued")
-		writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "run could not be queued")
-		return
+	for _, job := range jobs {
+		switch job.Kind {
+		case JobKindBrowser:
+			if err := a.queue.EnqueueBrowserRun(r.Context(), BrowserRunJob{JobID: job.ID, RunID: run.ID, ProjectID: project.ID}); err != nil {
+				a.logger.Error("enqueue browser run failed", "run_id", run.ID, "job_id", job.ID, "error", err)
+				_ = a.store.MarkRunFailed(r.Context(), run.ID, "run could not be queued")
+				writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "run could not be queued")
+				return
+			}
+		case JobKindAPI:
+			if err := a.queue.EnqueueAPIRun(r.Context(), APIRunJob{JobID: job.ID, RunID: run.ID, ProjectID: project.ID}); err != nil {
+				a.logger.Error("enqueue api run failed", "run_id", run.ID, "job_id", job.ID, "error", err)
+				_ = a.store.MarkRunFailed(r.Context(), run.ID, "run could not be queued")
+				writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "run could not be queued")
+				return
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, run)

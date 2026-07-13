@@ -20,8 +20,13 @@ The MVP Compose stack includes:
 
 - `qualora-api`: Go control plane API.
 - `qualora-worker-browser`: TypeScript/Playwright browser worker.
+- `qualora-worker-api`: TypeScript API/OpenAPI worker.
 - `postgres`: durable metadata.
-- `redis`: browser run queue.
+- `redis`: browser and API run queues.
 - `minio`: S3-compatible evidence storage.
+
+The smoke profile also includes:
+
+- `mock-api`: deterministic local API used by `make smoke`.
 
 Keep this path working before adding Helm or other deployment targets.

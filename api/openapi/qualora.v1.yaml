@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.1.0-alpha
-  description: API for creating QA projects, starting browser smoke runs, and reading structured reports.
+  version: 0.2.0-alpha
+  description: API for creating QA projects, starting browser/API smoke runs, and reading structured reports.
 servers:
   - url: http://localhost:8080
 paths:
@@ -84,7 +84,7 @@ paths:
           $ref: "#/components/responses/Error"
   /api/v1/projects/{project_id}/runs:
     post:
-      summary: Start a browser smoke run
+      summary: Start a QA run
       parameters:
         - $ref: "#/components/parameters/ProjectID"
       responses:
@@ -140,23 +140,26 @@ paths:
                 findings: []
                 evidence:
                   - id: afcf6fd9-2512-45d0-a9a5-5d9073c55981
-                    type: screenshot
-                    uri: s3://qualora-evidence/runs/d76f71c6-60d0-42fd-9bce-fae54ab6bef1/screenshots/1783947796267.png
+                    type: api_observations
+                    uri: inline://api-observations
                     metadata:
-                      page_title: Example Domain
-                      status_code: 200
+                      api_base_url: http://mock-api:8080/
+                      openapi_url: http://mock-api:8080/openapi.json
+                      checked_endpoints: 3
+                      failed_endpoints: 0
+                      safe_methods_only: true
                   - id: 1c56226f-98cd-4953-afd1-086d8f37e056
-                    type: browser_observations
-                    uri: inline://browser-observations
+                    type: openapi_summary
+                    uri: inline://openapi-summary
                     metadata:
-                      blocked_requests: []
-                      console_errors: []
-                      failed_requests: []
-                      load_error: ""
-                      page_title: Example Domain
-                      status_code: 200
+                      version: 3.0.3
+                      paths: 3
+                      safe_operations: 2
+                      skipped_unsafe_operations: 1
                 metadata:
-                  page_title: Example Domain
+                  jobs:
+                    - kind: api
+                      status: completed
         "404":
           $ref: "#/components/responses/Error"
 components:
@@ -186,16 +189,16 @@ components:
     CreateProjectRequest:
       type: object
       additionalProperties: false
+      description: At least one of frontend_url, api_base_url, or openapi_url is required.
       required:
         - name
-        - frontend_url
         - allowed_hosts
       properties:
         name:
           type: string
         frontend_url:
           type: string
-          format: uri
+          default: ""
         api_base_url:
           type: string
           default: ""
@@ -214,6 +217,7 @@ components:
         destructive_actions:
           type: boolean
           default: false
+          description: Must be false in v0.2.0-alpha.
         allow_private_targets:
           type: boolean
           default: false
@@ -239,7 +243,6 @@ components:
           type: string
         frontend_url:
           type: string
-          format: uri
         api_base_url:
           type: string
         openapi_url:
@@ -402,7 +405,7 @@ components:
           format: uuid
         type:
           type: string
-          enum: [screenshot, browser_observations]
+          enum: [screenshot, browser_observations, api_observations, openapi_summary, api_request]
         uri:
           type: string
         metadata:

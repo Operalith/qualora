@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.1.0-alpha is the first public alpha release. It should be published as an early, self-hosted MVP, not as a complete QA platform.
+Qualora v0.2.0-alpha is the second public alpha release. It adds safe API and OpenAPI checks to the browser QA MVP.
 
 ## Pre-Release Checklist
 
@@ -18,21 +18,22 @@ docker compose down -v
 Confirm:
 
 - The API returns `{"status":"ok"}` from `/healthz`.
-- The smoke script creates a project and run.
-- The run reaches `completed`.
-- The report includes screenshot and browser observation evidence.
+- The smoke script creates browser and API projects.
+- Browser and API runs reach `completed`.
+- Browser reports include screenshot and browser observation evidence.
+- API reports include `api_observations`, `openapi_summary`, and `api_request` evidence.
 - Screenshot evidence uses an `s3://qualora-evidence/...` URI when MinIO is healthy.
-- Documentation does not claim unsupported UI, auth, API checks, login automation, or active security scanning.
+- Documentation does not claim unsupported UI, auth, login automation, active security scanning, destructive API testing, or schema fuzzing.
 
 ## Tagging
 
 ```bash
 git status --short
 git add .
-git commit -m "chore: prepare v0.1.0-alpha release"
-git tag -a v0.1.0-alpha -m "v0.1.0-alpha"
+git commit -m "feat: add API worker for v0.2.0-alpha"
+git tag -a v0.2.0-alpha -m "v0.2.0-alpha"
 git push origin main
-git push origin v0.1.0-alpha
+git push origin v0.2.0-alpha
 ```
 
 ## GitHub Release
@@ -40,29 +41,7 @@ git push origin v0.1.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.1.0-alpha
+Qualora v0.2.0-alpha
 ```
 
-Use [release-notes/v0.1.0-alpha.md](release-notes/v0.1.0-alpha.md) as the release body.
-
-## Version Scope
-
-This release includes:
-
-- Docker Compose MVP.
-- Go control plane API.
-- PostgreSQL metadata storage.
-- Redis run queue.
-- Playwright browser worker.
-- MinIO screenshot evidence storage.
-- Structured JSON reports.
-
-This release does not include:
-
-- Web UI.
-- API worker.
-- OpenAPI contract testing.
-- Authentication.
-- Login automation.
-- Active security scanning.
-- Helm/Kubernetes deployment.
+Use [release-notes/v0.2.0-alpha.md](release-notes/v0.2.0-alpha.md) as the release body.

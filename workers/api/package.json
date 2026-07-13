@@ -1,21 +1,20 @@
 {
-  "name": "@operalith/qualora-worker-browser",
+  "name": "@operalith/qualora-worker-api",
   "version": "0.2.0-alpha",
   "private": true,
-  "description": "Qualora browser worker for Playwright smoke checks",
+  "description": "Qualora API worker for safe API and OpenAPI checks",
   "type": "commonjs",
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "lint": "tsc --noEmit",
     "start": "node dist/index.js",
-    "test": "tsc --noEmit"
+    "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.730.0",
     "ioredis": "^5.4.2",
     "pg": "^8.13.1",
-    "playwright": "^1.49.1"
+    "yaml": "^2.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

@@ -20,8 +20,9 @@ func (r fakeResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr
 
 var publicResolver = fakeResolver{
 	records: map[string][]net.IPAddr{
-		"example.com": {{IP: net.ParseIP("93.184.216.34")}},
-		"example.net": {{IP: net.ParseIP("93.184.216.34")}},
+		"api.example.com": {{IP: net.ParseIP("93.184.216.34")}},
+		"example.com":     {{IP: net.ParseIP("93.184.216.34")}},
+		"example.net":     {{IP: net.ParseIP("93.184.216.34")}},
 	},
 }
 
@@ -50,6 +51,46 @@ func TestNormalizeProjectRequestRejectsHostOutsideAllowlist(t *testing.T) {
 	}, publicResolver)
 	if err == nil {
 		t.Fatal("expected host outside allowlist to be rejected")
+	}
+}
+
+func TestNormalizeProjectRequestAcceptsAPIOnlyProject(t *testing.T) {
+	req, err := NormalizeProjectRequestWithResolver(CreateProjectRequest{
+		Name:         "API App",
+		APIBaseURL:   "https://api.example.com",
+		OpenAPIURL:   "https://api.example.com/openapi.json",
+		AllowedHosts: []string{"api.example.com"},
+	}, publicResolver)
+	if err != nil {
+		t.Fatalf("expected valid API-only project request: %v", err)
+	}
+	if req.FrontendURL != "" {
+		t.Fatalf("expected empty frontend_url, got %q", req.FrontendURL)
+	}
+	if req.APIBaseURL != "https://api.example.com" {
+		t.Fatalf("unexpected api_base_url: %q", req.APIBaseURL)
+	}
+}
+
+func TestNormalizeProjectRequestRejectsProjectWithoutTargets(t *testing.T) {
+	_, err := NormalizeProjectRequestWithResolver(CreateProjectRequest{
+		Name:         "No Targets",
+		AllowedHosts: []string{"example.com"},
+	}, publicResolver)
+	if err == nil {
+		t.Fatal("expected project with no targets to be rejected")
+	}
+}
+
+func TestNormalizeProjectRequestRejectsOpenAPIURLOutsideAllowlist(t *testing.T) {
+	_, err := NormalizeProjectRequestWithResolver(CreateProjectRequest{
+		Name:         "Wrong OpenAPI Host",
+		APIBaseURL:   "https://api.example.com",
+		OpenAPIURL:   "https://example.net/openapi.json",
+		AllowedHosts: []string{"api.example.com"},
+	}, publicResolver)
+	if err == nil {
+		t.Fatal("expected OpenAPI URL outside allowlist to be rejected")
 	}
 }
 

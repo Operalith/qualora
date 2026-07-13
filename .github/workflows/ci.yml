@@ -28,7 +28,9 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: workers/browser/package-lock.json
+          cache-dependency-path: |
+            workers/browser/package-lock.json
+            workers/api/package-lock.json
 
       - name: Browser worker install
         working-directory: workers/browser
@@ -42,8 +44,20 @@ jobs:
         working-directory: workers/browser
         run: npm test
 
+      - name: API worker install
+        working-directory: workers/api
+        run: npm ci
+
+      - name: API worker build
+        working-directory: workers/api
+        run: npm run build
+
+      - name: API worker test
+        working-directory: workers/api
+        run: npm test
+
       - name: Docker Compose config
         run: docker compose config
 
       - name: Docker image build
-        run: docker compose build qualora-api qualora-worker-browser
+        run: docker compose build qualora-api qualora-worker-browser qualora-worker-api

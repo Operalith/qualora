@@ -10,6 +10,11 @@ const (
 	StatusCanceled  = "canceled"
 )
 
+const (
+	JobKindBrowser = "browser"
+	JobKindAPI     = "api"
+)
+
 type CreateProjectRequest struct {
 	Name                string   `json:"name"`
 	FrontendURL         string   `json:"frontend_url"`
@@ -41,6 +46,18 @@ type TestRun struct {
 	Status       string     `json:"status"`
 	ErrorMessage string     `json:"error_message,omitempty"`
 	PageTitle    string     `json:"page_title,omitempty"`
+	StartedAt    *time.Time `json:"started_at,omitempty"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+type RunJob struct {
+	ID           string     `json:"id"`
+	RunID        string     `json:"run_id"`
+	Kind         string     `json:"kind"`
+	Status       string     `json:"status"`
+	ErrorMessage string     `json:"error_message,omitempty"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 	CompletedAt  *time.Time `json:"completed_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`

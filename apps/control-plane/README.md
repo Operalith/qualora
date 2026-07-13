@@ -11,7 +11,7 @@ Responsibilities:
 - Metadata persistence.
 - Report and finding access.
 
-The MVP delegates browser checks to the browser worker through a Redis queue.
+The MVP delegates browser checks and API checks to workers through Redis queues.
 
 The API performs project target validation, including `allowed_hosts` enforcement, blocked private/metadata targets by default, and DNS resolution checks for hostnames.
 
@@ -26,4 +26,5 @@ The service expects PostgreSQL and Redis. Defaults are suitable for local develo
 
 - `DATABASE_URL=postgres://qualora:qualora@localhost:5432/qualora?sslmode=disable`
 - `REDIS_ADDR=localhost:6379`
-- `RUN_QUEUE=qualora:browser-runs`
+- `BROWSER_RUN_QUEUE=qualora:browser-runs`
+- `API_RUN_QUEUE=qualora:api-runs`

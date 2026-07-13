@@ -1,12 +1,12 @@
 # Development
 
-This document covers local development for Qualora v0.1.0-alpha.
+This document covers local development for Qualora v0.2.0-alpha.
 
 ## Requirements
 
 - Docker with Docker Compose.
 - Go 1.22 or newer for control plane development.
-- Node.js 22 or newer for browser worker development.
+- Node.js 22 or newer for browser and API worker development.
 - Python 3 for the smoke script.
 
 ## Common Commands
@@ -24,12 +24,12 @@ make smoke
 Command behavior:
 
 - `make dev`: starts the Docker Compose stack.
-- `make test`: runs Go tests and browser worker TypeScript checks.
+- `make test`: runs Go tests plus browser and API worker tests.
 - `make lint`: runs the same checks plus `docker compose config`.
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
-- `make logs`: tails API and browser worker logs.
-- `make smoke`: creates an example project, starts a run, polls to completion, and prints the report.
+- `make logs`: tails API, browser worker, and API worker logs.
+- `make smoke`: starts the mock API profile service, creates browser and API projects, starts runs, polls to completion, and prints reports.
 
 ## Start The Stack
 
@@ -68,6 +68,15 @@ npm run build
 npm test
 ```
 
+API worker only:
+
+```bash
+cd workers/api
+npm ci
+npm run build
+npm test
+```
+
 ## Smoke Test
 
 With the Compose stack running:
@@ -76,11 +85,25 @@ With the Compose stack running:
 make smoke
 ```
 
-The smoke script targets `https://example.com` by default. Override it with:
+The smoke script runs:
+
+- Browser smoke against `https://example.com`.
+- API/OpenAPI smoke against the local `mock-api` Compose service.
+
+Override browser target:
 
 ```bash
 QUALORA_TARGET_URL=https://example.com \
 QUALORA_ALLOWED_HOST=example.com \
+make smoke
+```
+
+Override API target:
+
+```bash
+QUALORA_API_SMOKE_URL=http://mock-api:8080 \
+QUALORA_API_SMOKE_OPENAPI_URL=http://mock-api:8080/openapi.json \
+QUALORA_API_SMOKE_ALLOWED_HOST=mock-api \
 make smoke
 ```
 

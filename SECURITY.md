@@ -8,6 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
+| v0.2.0-alpha | Best-effort alpha support |
 | v0.1.0-alpha | Best-effort alpha support |
 
 ## Reporting A Vulnerability

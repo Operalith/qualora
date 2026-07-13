@@ -9,11 +9,19 @@ import (
 )
 
 type Queue struct {
-	client *redis.Client
-	name   string
+	client       *redis.Client
+	browserQueue string
+	apiQueue     string
 }
 
 type BrowserRunJob struct {
+	JobID     string `json:"job_id"`
+	RunID     string `json:"run_id"`
+	ProjectID string `json:"project_id"`
+}
+
+type APIRunJob struct {
+	JobID     string `json:"job_id"`
 	RunID     string `json:"run_id"`
 	ProjectID string `json:"project_id"`
 }
@@ -24,7 +32,8 @@ func NewQueue(cfg Config) *Queue {
 			Addr:     cfg.RedisAddr,
 			Password: cfg.RedisPassword,
 		}),
-		name: cfg.QueueName,
+		browserQueue: cfg.BrowserQueue,
+		apiQueue:     cfg.APIQueue,
 	}
 }
 
@@ -41,8 +50,19 @@ func (q *Queue) EnqueueBrowserRun(ctx context.Context, job BrowserRunJob) error 
 	if err != nil {
 		return fmt.Errorf("marshal browser run job: %w", err)
 	}
-	if err := q.client.RPush(ctx, q.name, payload).Err(); err != nil {
+	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
 		return fmt.Errorf("enqueue browser run: %w", err)
+	}
+	return nil
+}
+
+func (q *Queue) EnqueueAPIRun(ctx context.Context, job APIRunJob) error {
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("marshal api run job: %w", err)
+	}
+	if err := q.client.RPush(ctx, q.apiQueue, payload).Err(); err != nil {
+		return fmt.Errorf("enqueue api run: %w", err)
 	}
 	return nil
 }

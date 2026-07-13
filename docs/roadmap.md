@@ -4,33 +4,46 @@ This roadmap is intentionally practical. Qualora should remain self-hosted and u
 
 ## v0.1.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Docker Compose stack.
 - Go control plane API.
 - Project creation.
 - Browser smoke run creation.
-- Redis run queue.
+- Redis browser run queue.
 - Playwright browser worker.
 - Allowed-host enforcement.
 - Screenshot evidence in MinIO.
 - Browser observation evidence.
 - Structured JSON reports.
 
-## Phase 3: MVP Hardening
+## v0.2.0-alpha
+
+Current alpha scope:
+
+- API worker.
+- `api_base_url` baseline checks.
+- OpenAPI 3.x JSON/YAML fetch and parse.
+- Safe OpenAPI method checks for `GET`, `HEAD`, and `OPTIONS`.
+- API findings and evidence in structured reports.
+- Per-run worker job tracking.
+- Deterministic local mock API smoke test.
+
+## Phase 3: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
+- Better per-job error reporting in the public API.
 - Artifact download or signed URL support.
-- Better report metadata and report schema tests.
 - Additional safety tests for DNS and worker request blocking.
 - Better operational logs and container health checks.
 
-## Phase 4: API Checks
+## Phase 4: Deeper API Checks
 
-- API worker for basic HTTP checks.
-- Optional OpenAPI contract fetch and validation.
-- API error evidence and findings.
+- More OpenAPI validation.
+- Response body/schema checks for safe methods.
+- Configurable endpoint limits and path filters.
+- Conservative authenticated API testing design.
 
 ## Phase 5: Passive Security Checks
 

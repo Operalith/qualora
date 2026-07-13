@@ -8,7 +8,8 @@ services:
       PORT: "8080"
       DATABASE_URL: postgres://${POSTGRES_USER:-qualora}:${POSTGRES_PASSWORD:-qualora}@postgres:5432/${POSTGRES_DB:-qualora}?sslmode=disable
       REDIS_ADDR: redis:6379
-      RUN_QUEUE: qualora:browser-runs
+      BROWSER_RUN_QUEUE: qualora:browser-runs
+      API_RUN_QUEUE: qualora:api-runs
     ports:
       - "${QUALORA_API_PORT:-8080}:8080"
     depends_on:
@@ -46,6 +47,37 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+    restart: unless-stopped
+
+  qualora-worker-api:
+    build:
+      context: .
+      dockerfile: workers/api/Dockerfile
+    container_name: qualora-worker-api
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-qualora}:${POSTGRES_PASSWORD:-qualora}@postgres:5432/${POSTGRES_DB:-qualora}?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      API_RUN_QUEUE: qualora:api-runs
+      API_REQUEST_TIMEOUT_MS: "10000"
+      MAX_OPENAPI_ENDPOINTS: "25"
+    depends_on:
+      qualora-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mock-api:
+    build:
+      context: .
+      dockerfile: scripts/mock-api/Dockerfile
+    container_name: qualora-mock-api
+    profiles: ["smoke"]
+    ports:
+      - "${MOCK_API_PORT:-18081}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     restart: unless-stopped
 
   postgres:

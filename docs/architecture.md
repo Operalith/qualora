@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.1.0-alpha is a small Docker Compose MVP for browser-based QA smoke runs.
+Qualora v0.2.0-alpha is a small Docker Compose MVP for browser and API QA smoke runs.
 
 ## Runtime Components
 
@@ -10,22 +10,24 @@ API client / smoke script
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, test_runs, findings, evidence
-        +--> Redis: browser run queue
+        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence
+        +--> Redis: browser and API run queues
         |
-        v
-qualora-worker-browser
+        +--> qualora-worker-browser
+        |       +--> Playwright Chromium smoke test
+        |       +--> MinIO/S3 screenshot evidence
         |
-        +--> Playwright Chromium smoke test
-        +--> MinIO/S3 screenshot evidence
-        +--> PostgreSQL findings and evidence metadata
+        +--> qualora-worker-api
+                +--> API base URL checks
+                +--> OpenAPI 3.x safe method checks
+                +--> PostgreSQL evidence and findings
 ```
 
 ## Services
 
 ### `qualora-api`
 
-The Go control plane exposes the HTTP API, validates project scope, persists metadata, and queues browser runs.
+The Go control plane exposes the HTTP API, validates project scope, persists metadata, creates per-run jobs, and queues worker jobs.
 
 Current endpoints:
 
@@ -39,7 +41,7 @@ Current endpoints:
 
 ### `qualora-worker-browser`
 
-The Node.js worker consumes Redis jobs and runs a Playwright smoke check against the configured `frontend_url`.
+The Node.js browser worker consumes Redis browser jobs and runs a Playwright smoke check against `frontend_url`.
 
 It currently captures:
 
@@ -50,47 +52,69 @@ It currently captures:
 - Blocked out-of-scope browser requests.
 - Basic findings for obvious load, console, request, and scope issues.
 
+### `qualora-worker-api`
+
+The Node.js API worker consumes Redis API jobs and performs safe API checks against `api_base_url` and `openapi_url`.
+
+It currently captures:
+
+- API base URL status code.
+- Response content type.
+- Response time.
+- Connection, TLS, DNS, and fetch errors.
+- OpenAPI 3.x document summary.
+- Safe OpenAPI operation checks for `GET`, `HEAD`, and `OPTIONS`.
+- Findings for unreachable APIs, invalid OpenAPI documents, 5xx responses, unexpected status codes, obvious content type mismatches, and visible stack traces.
+
+It does not perform authenticated API checks, request body generation, schema fuzzing, or destructive methods.
+
 ### PostgreSQL
 
 PostgreSQL stores durable metadata:
 
 - `projects`
 - `test_runs`
+- `run_jobs`
 - `findings`
 - `evidence`
 
-Reports are generated dynamically from run, finding, and evidence rows.
+Reports are generated dynamically from run, job, finding, and evidence rows.
 
 ### Redis
 
-Redis is the MVP queue for browser run jobs. PostgreSQL remains the source of durable run state.
+Redis is the MVP queue for browser and API jobs. PostgreSQL remains the source of durable run state.
 
 ### MinIO
 
-MinIO stores screenshot evidence through the S3-compatible API. If MinIO writes fail, the browser worker falls back to local filesystem storage and records a `file://` evidence URI.
+MinIO stores screenshot evidence through the S3-compatible API. API evidence is stored as metadata rows in PostgreSQL.
+
+### `mock-api`
+
+The `mock-api` Compose service is profile-gated for smoke tests. It is not part of the production runtime path.
 
 ## Run Lifecycle
 
-1. A client creates a project with `frontend_url` and `allowed_hosts`.
+1. A client creates a project with one or more targets: `frontend_url`, `api_base_url`, or `openapi_url`.
 2. The API validates URL scope and target safety.
 3. A client starts a run.
 4. The API creates a `pending` run in PostgreSQL.
-5. The API pushes a browser job to Redis.
-6. The browser worker marks the run `running`.
-7. Playwright opens the target page and enforces allowed hosts on browser requests.
-8. The worker stores screenshot evidence and browser observations.
-9. The worker creates findings for obvious issues.
-10. The worker marks the run `completed` or `failed`.
+5. The API creates `run_jobs` for browser and/or API work.
+6. The API pushes worker jobs to Redis.
+7. Workers mark their jobs `running`.
+8. Workers collect evidence and findings.
+9. Workers mark jobs `completed` or `failed`.
+10. PostgreSQL refreshes the parent run status from job statuses.
 11. The API serves the structured report.
 
 ## Intentional Alpha Constraints
 
 - No web UI.
 - No user accounts or authentication.
-- No API worker.
-- No OpenAPI contract testing.
+- No authenticated API testing.
 - No login automation.
 - No active security scanning.
+- No destructive API testing by default.
+- No full OpenAPI schema validation or fuzzing.
 - No Kubernetes or Helm support yet.
 
 The older MVP notes remain in [architecture/mvp.md](architecture/mvp.md) for implementation context, but this document is the release-facing architecture reference.

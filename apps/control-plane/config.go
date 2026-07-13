@@ -10,7 +10,8 @@ type Config struct {
 	DatabaseURL     string
 	RedisAddr       string
 	RedisPassword   string
-	QueueName       string
+	BrowserQueue    string
+	APIQueue        string
 	ShutdownTimeout time.Duration
 }
 
@@ -20,7 +21,8 @@ func LoadConfig() Config {
 		DatabaseURL:     env("DATABASE_URL", "postgres://qualora:qualora@localhost:5432/qualora?sslmode=disable"),
 		RedisAddr:       env("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:   os.Getenv("REDIS_PASSWORD"),
-		QueueName:       env("RUN_QUEUE", "qualora:browser-runs"),
+		BrowserQueue:    env("BROWSER_RUN_QUEUE", env("RUN_QUEUE", "qualora:browser-runs")),
+		APIQueue:        env("API_RUN_QUEUE", "qualora:api-runs"),
 		ShutdownTimeout: 10 * time.Second,
 	}
 }

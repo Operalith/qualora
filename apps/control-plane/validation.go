@@ -34,19 +34,28 @@ func NormalizeProjectRequestWithResolver(input CreateProjectRequest, resolver ta
 		return input, fmt.Errorf("destructive_actions must be false for the MVP")
 	}
 
+	input.FrontendURL = strings.TrimSpace(input.FrontendURL)
+	input.APIBaseURL = strings.TrimSpace(input.APIBaseURL)
+	input.OpenAPIURL = strings.TrimSpace(input.OpenAPIURL)
+	if input.FrontendURL == "" && input.APIBaseURL == "" && input.OpenAPIURL == "" {
+		return input, fmt.Errorf("at least one of frontend_url, api_base_url, or openapi_url is required")
+	}
+
 	allowedHosts, err := NormalizeAllowedHosts(input.AllowedHosts, input.AllowPrivateTargets)
 	if err != nil {
 		return input, err
 	}
 	input.AllowedHosts = allowedHosts
 
-	frontendURL, err := validateTargetURL(input.FrontendURL, allowedHosts, input.AllowPrivateTargets, resolver)
-	if err != nil {
-		return input, fmt.Errorf("frontend_url: %w", err)
+	if input.FrontendURL != "" {
+		frontendURL, err := validateTargetURL(input.FrontendURL, allowedHosts, input.AllowPrivateTargets, resolver)
+		if err != nil {
+			return input, fmt.Errorf("frontend_url: %w", err)
+		}
+		input.FrontendURL = frontendURL.String()
 	}
-	input.FrontendURL = frontendURL.String()
 
-	if strings.TrimSpace(input.APIBaseURL) != "" {
+	if input.APIBaseURL != "" {
 		apiURL, err := validateTargetURL(input.APIBaseURL, allowedHosts, input.AllowPrivateTargets, resolver)
 		if err != nil {
 			return input, fmt.Errorf("api_base_url: %w", err)
@@ -54,7 +63,7 @@ func NormalizeProjectRequestWithResolver(input CreateProjectRequest, resolver ta
 		input.APIBaseURL = apiURL.String()
 	}
 
-	if strings.TrimSpace(input.OpenAPIURL) != "" {
+	if input.OpenAPIURL != "" {
 		openAPIURL, err := validateTargetURL(input.OpenAPIURL, allowedHosts, input.AllowPrivateTargets, resolver)
 		if err != nil {
 			return input, fmt.Errorf("openapi_url: %w", err)

@@ -4,6 +4,39 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.2.0-alpha] - 2026-07-13
+
+### Added
+
+- API worker for safe API checks.
+- Redis API run queue and per-run `run_jobs` tracking.
+- API baseline checks for `api_base_url`.
+- OpenAPI 3.x JSON/YAML fetch and parse for `openapi_url`.
+- Safe OpenAPI operation checks for `GET`, `HEAD`, and `OPTIONS`.
+- API evidence types: `api_observations`, `openapi_summary`, and `api_request`.
+- API findings for unreachable APIs, invalid OpenAPI documents, 5xx responses, unexpected status codes, obvious content type mismatches, and visible stack traces.
+- Deterministic local mock API smoke service.
+- API worker CI build/test coverage.
+
+### Changed
+
+- Runs can now enqueue browser and/or API worker jobs.
+- Reports include per-job status metadata.
+- Project validation now accepts API-only projects when `api_base_url` or `openapi_url` is provided.
+
+### Security
+
+- API worker enforces `allowed_hosts` and default private/metadata target blocking.
+- Unsafe OpenAPI methods are skipped by default.
+- Destructive API testing remains unsupported in this alpha.
+
+### Known Limitations
+
+- No authenticated API testing.
+- No request body generation.
+- No full OpenAPI schema validation or fuzzing.
+- Workers still write results directly to PostgreSQL.
+
 ## [v0.1.0-alpha] - 2026-07-13
 
 ### Added

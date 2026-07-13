@@ -27,6 +27,7 @@ type Config = {
 };
 
 type BrowserRunJob = {
+  job_id: string;
   run_id: string;
   project_id: string;
 };
@@ -120,12 +121,7 @@ async function handleJob(job: BrowserRunJob): Promise<void> {
   log("run_started", { run_id: job.run_id, project_id: job.project_id });
 
   try {
-    await pool.query(
-      `UPDATE test_runs
-       SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
-       WHERE id = $1`,
-      [job.run_id]
-    );
+    await markJobRunning(job);
 
     const project = await getProject(job.project_id);
     const scopeCheck = await validateTargetURL(project.frontend_url, project.allowed_hosts, project.allow_private_targets);
@@ -160,21 +156,10 @@ async function handleJob(job: BrowserRunJob): Promise<void> {
       await insertFinding(job.run_id, finding);
     }
 
-    await pool.query(
-      `UPDATE test_runs
-       SET status = 'completed', page_title = $2, completed_at = now(), updated_at = now()
-       WHERE id = $1`,
-      [job.run_id, result.pageTitle]
-    );
+    await finishJob(job, "completed", "", result.pageTitle);
     log("run_completed", { run_id: job.run_id, findings: findings.length });
   } catch (error) {
     const message = sanitizeText(error instanceof Error ? error.message : String(error));
-    await pool.query(
-      `UPDATE test_runs
-       SET status = 'failed', error_message = $2, completed_at = now(), updated_at = now()
-       WHERE id = $1`,
-      [job.run_id, message]
-    );
     await insertFinding(job.run_id, {
       title: "Browser smoke test failed",
       severity: "high",
@@ -184,8 +169,45 @@ async function handleJob(job: BrowserRunJob): Promise<void> {
       recommendation: "Verify the target URL, allowed hosts, network access from the worker container, and application availability.",
       evidenceIds: []
     }).catch(() => undefined);
+    await finishJob(job, "failed", message, "").catch(() => undefined);
     log("run_failed", { run_id: job.run_id, error: message });
   }
+}
+
+async function markJobRunning(job: BrowserRunJob): Promise<void> {
+  if (!job.job_id) {
+    throw new Error("browser job is missing job_id");
+  }
+  await pool.query(
+    `UPDATE run_jobs
+     SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
+     WHERE id = $1 AND run_id = $2`,
+    [job.job_id, job.run_id]
+  );
+  await pool.query(
+    `UPDATE test_runs
+     SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
+     WHERE id = $1`,
+    [job.run_id]
+  );
+}
+
+async function finishJob(job: BrowserRunJob, status: "completed" | "failed", errorMessage: string, pageTitle: string): Promise<void> {
+  await pool.query(
+    `UPDATE run_jobs
+     SET status = $3, error_message = $4, completed_at = now(), updated_at = now()
+     WHERE id = $1 AND run_id = $2`,
+    [job.job_id, job.run_id, status, errorMessage]
+  );
+  if (pageTitle) {
+    await pool.query(
+      `UPDATE test_runs
+       SET page_title = $2, updated_at = now()
+       WHERE id = $1`,
+      [job.run_id, pageTitle]
+    );
+  }
+  await pool.query(`SELECT refresh_test_run_status($1)`, [job.run_id]);
 }
 
 async function getProject(projectID: string): Promise<Project> {

@@ -10,8 +10,9 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.1.0-alpha` Docker Compose MVP working.
+- Keep the `v0.2.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
+- API worker support for safe API/OpenAPI checks.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
 - Redis for queues and short-lived run state.
@@ -40,6 +41,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Do not add Kubernetes-only concepts before the Docker Compose path works.
 - Do not add a full UI until the API and worker loop are more stable.
 - Do not introduce Temporal, OWASP ZAP, login automation, or active security scanning in the MVP without an explicit request.
+- API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
 - Keep worker contracts narrow and serializable.
 - Prefer OpenAPI-first internal API design where practical.
 - Keep report schemas structured enough for future UI/API consumers.
