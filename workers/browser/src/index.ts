@@ -4,6 +4,7 @@ import {
   PutObjectCommand,
   S3Client
 } from "@aws-sdk/client-s3";
+import dns from "node:dns/promises";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import net from "node:net";
@@ -127,7 +128,7 @@ async function handleJob(job: BrowserRunJob): Promise<void> {
     );
 
     const project = await getProject(job.project_id);
-    const scopeCheck = validateTargetURL(project.frontend_url, project.allowed_hosts, project.allow_private_targets);
+    const scopeCheck = await validateTargetURL(project.frontend_url, project.allowed_hosts, project.allow_private_targets);
     if (!scopeCheck.ok) {
       throw new Error(scopeCheck.reason);
     }
@@ -260,7 +261,7 @@ async function runBrowserCheck(project: Project): Promise<BrowserResult> {
       return;
     }
 
-    const allowed = validateTargetURL(requestURL, project.allowed_hosts, project.allow_private_targets);
+    const allowed = await validateTargetURL(requestURL, project.allowed_hosts, project.allow_private_targets);
     if (!allowed.ok) {
       const sanitized = sanitizeURL(requestURL);
       blockedURLs.add(sanitized);
@@ -459,7 +460,11 @@ async function putScreenshotObject(key: string, screenshot: Buffer): Promise<voi
   );
 }
 
-function validateTargetURL(raw: string, allowedHosts: string[], allowPrivateTargets: boolean): { ok: true } | { ok: false; reason: string } {
+async function validateTargetURL(
+  raw: string,
+  allowedHosts: string[],
+  allowPrivateTargets: boolean
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   let parsed: URL;
   try {
     parsed = new URL(raw);
@@ -480,6 +485,10 @@ function validateTargetURL(raw: string, allowedHosts: string[], allowPrivateTarg
   }
   if (!allowedHosts.some((allowedHost) => hostAllowed(host, allowedHost))) {
     return { ok: false, reason: `host ${host} is not present in allowed_hosts` };
+  }
+  const resolved = await validateResolvedTarget(host, allowPrivateTargets);
+  if (!resolved.ok) {
+    return resolved;
   }
   return { ok: true };
 }
@@ -503,7 +512,14 @@ function isBlockedHost(host: string, allowPrivateTargets: boolean): boolean {
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
     return true;
   }
-  if (host === "metadata.google.internal" || host === "169.254.169.254" || host === "100.100.100.200") {
+  if (
+    host === "metadata" ||
+    host === "metadata.google.internal" ||
+    host === "metadata.goog" ||
+    host === "instance-data" ||
+    host === "169.254.169.254" ||
+    host === "100.100.100.200"
+  ) {
     return true;
   }
 
@@ -514,6 +530,37 @@ function isBlockedHost(host: string, allowPrivateTargets: boolean): boolean {
     return isBlockedIPv6(host);
   }
   return false;
+}
+
+async function validateResolvedTarget(
+  host: string,
+  allowPrivateTargets: boolean
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (allowPrivateTargets || net.isIP(host) !== 0) {
+    return { ok: true };
+  }
+
+  let records: Array<{ address: string }>;
+  try {
+    records = await dns.lookup(host, { all: true, verbatim: true });
+  } catch {
+    return { ok: false, reason: `host ${host} could not be resolved by DNS` };
+  }
+
+  if (records.length === 0) {
+    return { ok: false, reason: `host ${host} did not resolve to any IP addresses` };
+  }
+
+  for (const record of records) {
+    if (isBlockedHost(record.address, false)) {
+      return {
+        ok: false,
+        reason: `host ${host} resolves to a blocked private, loopback, link-local, multicast, unspecified, or metadata IP address`
+      };
+    }
+  }
+
+  return { ok: true };
 }
 
 function isBlockedIPv4(host: string): boolean {
@@ -534,6 +581,9 @@ function isBlockedIPv4(host: string): boolean {
 
 function isBlockedIPv6(host: string): boolean {
   const normalized = host.toLowerCase();
+  if (normalized.startsWith("::ffff:")) {
+    return isBlockedIPv4(normalized.replace("::ffff:", ""));
+  }
   return normalized === "::1" || normalized === "::" || normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80");
 }
 

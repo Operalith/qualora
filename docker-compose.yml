@@ -6,7 +6,7 @@ services:
     container_name: qualora-api
     environment:
       PORT: "8080"
-      DATABASE_URL: postgres://qualora:qualora@postgres:5432/qualora?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-qualora}:${POSTGRES_PASSWORD:-qualora}@postgres:5432/${POSTGRES_DB:-qualora}?sslmode=disable
       REDIS_ADDR: redis:6379
       RUN_QUEUE: qualora:browser-runs
     ports:
@@ -29,14 +29,14 @@ services:
       dockerfile: workers/browser/Dockerfile
     container_name: qualora-worker-browser
     environment:
-      DATABASE_URL: postgres://qualora:qualora@postgres:5432/qualora?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-qualora}:${POSTGRES_PASSWORD:-qualora}@postgres:5432/${POSTGRES_DB:-qualora}?sslmode=disable
       REDIS_URL: redis://redis:6379
       RUN_QUEUE: qualora:browser-runs
       S3_ENDPOINT: http://minio:9000
       S3_REGION: us-east-1
-      S3_BUCKET: qualora-evidence
-      S3_ACCESS_KEY_ID: qualora
-      S3_SECRET_ACCESS_KEY: qualora-dev-secret
+      S3_BUCKET: ${S3_BUCKET:-qualora-evidence}
+      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-qualora}
+      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-qualora-dev-secret}
       S3_FORCE_PATH_STYLE: "true"
       EVIDENCE_DIR: /var/lib/qualora/evidence
     volumes:
@@ -52,13 +52,13 @@ services:
     image: postgres:16-alpine
     container_name: qualora-postgres
     environment:
-      POSTGRES_USER: qualora
-      POSTGRES_PASSWORD: qualora
-      POSTGRES_DB: qualora
+      POSTGRES_USER: ${POSTGRES_USER:-qualora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qualora}
+      POSTGRES_DB: ${POSTGRES_DB:-qualora}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U qualora -d qualora"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -81,8 +81,8 @@ services:
     container_name: qualora-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: qualora
-      MINIO_ROOT_PASSWORD: qualora-dev-secret
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-qualora}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-qualora-dev-secret}
     ports:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"

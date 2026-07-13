@@ -1,14 +1,24 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/netip"
 	"net/url"
 	"strings"
+	"time"
 )
 
+type targetResolver interface {
+	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
+}
+
 func NormalizeProjectRequest(input CreateProjectRequest) (CreateProjectRequest, error) {
+	return NormalizeProjectRequestWithResolver(input, net.DefaultResolver)
+}
+
+func NormalizeProjectRequestWithResolver(input CreateProjectRequest, resolver targetResolver) (CreateProjectRequest, error) {
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" {
 		return input, fmt.Errorf("name is required")
@@ -30,14 +40,14 @@ func NormalizeProjectRequest(input CreateProjectRequest) (CreateProjectRequest, 
 	}
 	input.AllowedHosts = allowedHosts
 
-	frontendURL, err := ValidateTargetURL(input.FrontendURL, allowedHosts, input.AllowPrivateTargets)
+	frontendURL, err := validateTargetURL(input.FrontendURL, allowedHosts, input.AllowPrivateTargets, resolver)
 	if err != nil {
 		return input, fmt.Errorf("frontend_url: %w", err)
 	}
 	input.FrontendURL = frontendURL.String()
 
 	if strings.TrimSpace(input.APIBaseURL) != "" {
-		apiURL, err := ValidateTargetURL(input.APIBaseURL, allowedHosts, input.AllowPrivateTargets)
+		apiURL, err := validateTargetURL(input.APIBaseURL, allowedHosts, input.AllowPrivateTargets, resolver)
 		if err != nil {
 			return input, fmt.Errorf("api_base_url: %w", err)
 		}
@@ -45,7 +55,7 @@ func NormalizeProjectRequest(input CreateProjectRequest) (CreateProjectRequest, 
 	}
 
 	if strings.TrimSpace(input.OpenAPIURL) != "" {
-		openAPIURL, err := ValidateTargetURL(input.OpenAPIURL, allowedHosts, input.AllowPrivateTargets)
+		openAPIURL, err := validateTargetURL(input.OpenAPIURL, allowedHosts, input.AllowPrivateTargets, resolver)
 		if err != nil {
 			return input, fmt.Errorf("openapi_url: %w", err)
 		}
@@ -91,6 +101,9 @@ func NormalizeAllowedHost(input string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("allowed host %q is invalid", input)
 		}
+		if (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return "", fmt.Errorf("allowed host %q must not include a path, query, or fragment", input)
+		}
 		value = parsed.Hostname()
 	}
 
@@ -111,6 +124,10 @@ func NormalizeAllowedHost(input string) (string, error) {
 }
 
 func ValidateTargetURL(raw string, allowedHosts []string, allowPrivateTargets bool) (*url.URL, error) {
+	return validateTargetURL(raw, allowedHosts, allowPrivateTargets, net.DefaultResolver)
+}
+
+func validateTargetURL(raw string, allowedHosts []string, allowPrivateTargets bool, resolver targetResolver) (*url.URL, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return nil, fmt.Errorf("URL is required")
@@ -133,6 +150,9 @@ func ValidateTargetURL(raw string, allowedHosts []string, allowPrivateTargets bo
 	}
 	if !HostAllowed(host, allowedHosts) {
 		return nil, fmt.Errorf("host %q is not present in allowed_hosts", host)
+	}
+	if err := validateResolvedTarget(host, allowPrivateTargets, resolver); err != nil {
+		return nil, err
 	}
 
 	parsed.Scheme = strings.ToLower(parsed.Scheme)
@@ -164,7 +184,7 @@ func isBlockedHost(host string, allowPrivateTargets bool) bool {
 	}
 
 	// Common cloud metadata endpoints should never be reached by accident.
-	if !allowPrivateTargets && (host == "metadata.google.internal" || host == "169.254.169.254" || host == "100.100.100.200") {
+	if !allowPrivateTargets && isMetadataHost(host) {
 		return true
 	}
 
@@ -182,4 +202,55 @@ func isBlockedHost(host string, allowPrivateTargets bool) bool {
 		addr.IsLinkLocalMulticast() ||
 		addr.IsMulticast() ||
 		addr.IsUnspecified()
+}
+
+func validateResolvedTarget(host string, allowPrivateTargets bool, resolver targetResolver) error {
+	if allowPrivateTargets || resolver == nil || net.ParseIP(host) != nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	records, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return fmt.Errorf("host %q could not be resolved by DNS", host)
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("host %q did not resolve to any IP addresses", host)
+	}
+
+	for _, record := range records {
+		addr, ok := netip.AddrFromSlice(record.IP)
+		if !ok {
+			return fmt.Errorf("host %q resolved to an invalid IP address", host)
+		}
+		if isBlockedResolvedAddr(addr) {
+			return fmt.Errorf("host %q resolves to a blocked private, loopback, link-local, multicast, unspecified, or metadata IP address", host)
+		}
+	}
+	return nil
+}
+
+func isBlockedResolvedAddr(addr netip.Addr) bool {
+	if addr.Is4In6() {
+		addr = addr.Unmap()
+	}
+	return addr.IsPrivate() ||
+		addr.IsLoopback() ||
+		addr.IsLinkLocalUnicast() ||
+		addr.IsLinkLocalMulticast() ||
+		addr.IsMulticast() ||
+		addr.IsUnspecified() ||
+		addr.String() == "169.254.169.254" ||
+		addr.String() == "100.100.100.200"
+}
+
+func isMetadataHost(host string) bool {
+	switch host {
+	case "metadata", "metadata.google.internal", "metadata.goog", "instance-data", "169.254.169.254", "100.100.100.200":
+		return true
+	default:
+		return false
+	}
 }

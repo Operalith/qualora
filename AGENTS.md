@@ -10,7 +10,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the phase 2 Docker Compose MVP working.
+- Keep the `v0.1.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
@@ -44,6 +44,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Prefer OpenAPI-first internal API design where practical.
 - Keep report schemas structured enough for future UI/API consumers.
 - Add tests around orchestration, host allowlisting, secret redaction, and report generation when those areas are implemented.
+- Do not claim unsupported features in README, release notes, OpenAPI, or docs.
 
 ## Security And Safety Rules
 

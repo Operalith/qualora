@@ -8,6 +8,7 @@ Responsibilities:
 - Capture screenshots.
 - Collect console errors and failed network requests.
 - Block out-of-scope requests outside project allowed hosts.
+- Block unsafe private, loopback, link-local, and metadata targets by default.
 - Write findings and evidence metadata to PostgreSQL.
 - Store screenshots in MinIO/S3 with a local filesystem fallback.
 

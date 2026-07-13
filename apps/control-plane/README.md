@@ -13,6 +13,8 @@ Responsibilities:
 
 The MVP delegates browser checks to the browser worker through a Redis queue.
 
+The API performs project target validation, including `allowed_hosts` enforcement, blocked private/metadata targets by default, and DNS resolution checks for hostnames.
+
 ## Local Development
 
 ```bash

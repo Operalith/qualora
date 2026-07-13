@@ -2,4 +2,4 @@
 
 Optional future web interface for Qualora.
 
-The first release should prioritize the backend, Docker Compose workflow, and report output. Add the UI when project setup, run status, and report viewing have stable APIs to build on.
+`v0.1.0-alpha` does not include a web UI. Add the UI later when project setup, run status, evidence access, and report viewing have stable APIs to build on.

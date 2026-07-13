@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: apps/control-plane/go.sum
+
+      - name: Go tests
+        working-directory: apps/control-plane
+        run: go test ./...
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: workers/browser/package-lock.json
+
+      - name: Browser worker install
+        working-directory: workers/browser
+        run: npm ci
+
+      - name: Browser worker build
+        working-directory: workers/browser
+        run: npm run build
+
+      - name: Browser worker test
+        working-directory: workers/browser
+        run: npm test
+
+      - name: Docker Compose config
+        run: docker compose config
+
+      - name: Docker image build
+        run: docker compose build qualora-api qualora-worker-browser

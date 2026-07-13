@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.1.0
-  description: MVP API for creating projects, starting browser smoke runs, and reading reports.
+  version: 0.1.0-alpha
+  description: API for creating QA projects, starting browser smoke runs, and reading structured reports.
 servers:
   - url: http://localhost:8080
 paths:
@@ -12,6 +12,17 @@ paths:
       responses:
         "200":
           description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        "503":
+          $ref: "#/components/responses/Error"
   /api/v1/projects:
     post:
       summary: Create a project
@@ -21,6 +32,14 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateProjectRequest"
+            example:
+              name: Example App
+              frontend_url: https://example.com
+              api_base_url: ""
+              openapi_url: ""
+              allowed_hosts: ["example.com"]
+              security_mode: passive
+              destructive_actions: false
       responses:
         "201":
           description: Created project
@@ -28,6 +47,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "405":
+          $ref: "#/components/responses/Error"
     get:
       summary: List projects
       responses:
@@ -37,11 +60,14 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [projects]
                 properties:
                   projects:
                     type: array
                     items:
                       $ref: "#/components/schemas/Project"
+        "405":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{project_id}:
     get:
       summary: Get a project
@@ -54,6 +80,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{project_id}/runs:
     post:
       summary: Start a browser smoke run
@@ -66,6 +94,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TestRun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
   /api/v1/runs/{run_id}:
     get:
       summary: Get a run
@@ -78,6 +112,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TestRun"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/runs/{run_id}/report:
     get:
       summary: Get a structured run report
@@ -90,6 +126,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Report"
+              example:
+                run_id: d76f71c6-60d0-42fd-9bce-fae54ab6bef1
+                project_id: 85db0da7-fd0d-44bc-ae5a-c41cd1f03d47
+                status: completed
+                summary:
+                  total_findings: 0
+                  critical: 0
+                  high: 0
+                  medium: 0
+                  low: 0
+                  info: 0
+                findings: []
+                evidence:
+                  - id: afcf6fd9-2512-45d0-a9a5-5d9073c55981
+                    type: screenshot
+                    uri: s3://qualora-evidence/runs/d76f71c6-60d0-42fd-9bce-fae54ab6bef1/screenshots/1783947796267.png
+                    metadata:
+                      page_title: Example Domain
+                      status_code: 200
+                  - id: 1c56226f-98cd-4953-afd1-086d8f37e056
+                    type: browser_observations
+                    uri: inline://browser-observations
+                    metadata:
+                      blocked_requests: []
+                      console_errors: []
+                      failed_requests: []
+                      load_error: ""
+                      page_title: Example Domain
+                      status_code: 200
+                metadata:
+                  page_title: Example Domain
+        "404":
+          $ref: "#/components/responses/Error"
 components:
   parameters:
     ProjectID:
@@ -106,14 +175,66 @@ components:
       schema:
         type: string
         format: uuid
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
     CreateProjectRequest:
       type: object
+      additionalProperties: false
       required:
         - name
         - frontend_url
         - allowed_hosts
       properties:
+        name:
+          type: string
+        frontend_url:
+          type: string
+          format: uri
+        api_base_url:
+          type: string
+          default: ""
+        openapi_url:
+          type: string
+          default: ""
+        allowed_hosts:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        security_mode:
+          type: string
+          enum: [passive]
+          default: passive
+        destructive_actions:
+          type: boolean
+          default: false
+        allow_private_targets:
+          type: boolean
+          default: false
+    Project:
+      type: object
+      required:
+        - id
+        - name
+        - frontend_url
+        - api_base_url
+        - openapi_url
+        - allowed_hosts
+        - security_mode
+        - destructive_actions
+        - allow_private_targets
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
         name:
           type: string
         frontend_url:
@@ -130,33 +251,24 @@ components:
         security_mode:
           type: string
           enum: [passive]
-          default: passive
         destructive_actions:
           type: boolean
-          default: false
         allow_private_targets:
           type: boolean
-          default: false
-    Project:
-      allOf:
-        - $ref: "#/components/schemas/CreateProjectRequest"
-        - type: object
-          required:
-            - id
-            - created_at
-            - updated_at
-          properties:
-            id:
-              type: string
-              format: uuid
-            created_at:
-              type: string
-              format: date-time
-            updated_at:
-              type: string
-              format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     TestRun:
       type: object
+      required:
+        - id
+        - project_id
+        - status
+        - created_at
+        - updated_at
       properties:
         id:
           type: string
@@ -174,9 +286,11 @@ components:
         started_at:
           type: string
           format: date-time
+          nullable: true
         completed_at:
           type: string
           format: date-time
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -185,6 +299,14 @@ components:
           format: date-time
     Report:
       type: object
+      required:
+        - run_id
+        - project_id
+        - status
+        - summary
+        - findings
+        - evidence
+        - metadata
       properties:
         run_id:
           type: string
@@ -194,6 +316,7 @@ components:
           format: uuid
         status:
           type: string
+          enum: [pending, running, completed, failed, canceled]
         summary:
           $ref: "#/components/schemas/ReportSummary"
         findings:
@@ -209,6 +332,7 @@ components:
           additionalProperties: true
     ReportSummary:
       type: object
+      required: [total_findings, critical, high, medium, low, info]
       properties:
         total_findings:
           type: integer
@@ -224,8 +348,20 @@ components:
           type: integer
     Finding:
       type: object
+      required:
+        - id
+        - title
+        - severity
+        - category
+        - confidence
+        - description
+        - recommendation
+        - evidence_ids
       properties:
         id:
+          type: string
+          format: uuid
+        run_id:
           type: string
           format: uuid
         title:
@@ -247,16 +383,45 @@ components:
           items:
             type: string
             format: uuid
+        created_at:
+          type: string
+          format: date-time
     Evidence:
       type: object
+      required:
+        - id
+        - type
+        - uri
+        - metadata
       properties:
         id:
           type: string
           format: uuid
+        run_id:
+          type: string
+          format: uuid
         type:
           type: string
+          enum: [screenshot, browser_observations]
         uri:
           type: string
         metadata:
           type: object
           additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: invalid_project
+            message:
+              type: string
+              example: frontend_url: host "localhost" is blocked by the default safety policy

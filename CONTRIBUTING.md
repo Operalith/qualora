@@ -14,14 +14,16 @@ Qualora is early-stage. The best contributions keep the first release small, sel
 
 ## Getting Started
 
-The runnable development stack is not implemented yet. For now:
+Clone the repository and start the local stack:
 
 ```bash
 git clone https://github.com/Operalith/qualora.git
 cd qualora
+docker compose up -d --build
+make smoke
 ```
 
-As services are added, this document should grow to include exact setup, test, and lint commands.
+Development details live in [docs/development.md](docs/development.md).
 
 ## Pull Requests
 
@@ -40,8 +42,20 @@ Language-specific conventions will be added as the codebase grows.
 Expected defaults:
 
 - Go code should be formatted with `gofmt`.
-- JavaScript or TypeScript should use the repository formatter once one is configured.
+- TypeScript should pass `npm run build` and `npm test` in `workers/browser`.
 - Public APIs should be documented through OpenAPI where practical.
+
+## Validation
+
+Before opening a pull request, run:
+
+```bash
+make test
+make lint
+docker compose config
+```
+
+Run `make smoke` when changing the API, Docker Compose stack, queue behavior, browser worker, evidence handling, or reports.
 
 ## Reporting Security Issues
 

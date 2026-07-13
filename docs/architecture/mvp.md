@@ -1,221 +1,52 @@
-# Qualora MVP Architecture
-
-This document defines the practical first-release shape of Qualora. It should be updated whenever the architecture changes.
-
-## Goals
-
-- Run locally with Docker Compose.
-- Let users define a project with frontend URL, API base URL, optional OpenAPI URL, test credentials, allowed hosts, and a testing policy.
-- Start a test run and collect browser, API, contract, and passive security evidence.
-- Produce structured findings and reports.
-- Keep the codebase modular enough for future workers without overbuilding the first implementation.
-
-## Non-Goals
-
-- Hosted SaaS assumptions.
-- Multi-tenant billing, organizations, or enterprise RBAC.
-- Kubernetes-first design.
-- Aggressive or destructive security scanning.
-- OWASP ZAP active scanning in the first release.
-
-## Components
-
-### Control Plane
-
-The control plane is a Go service responsible for:
-
-- Project CRUD.
-- Test run lifecycle.
-- Policy validation.
-- Queueing worker jobs.
-- Persisting run metadata, evidence metadata, findings, and report metadata.
-- Exposing an OpenAPI-documented HTTP API.
-
-Current implementation: `apps/control-plane`.
-
-The control plane does not perform browser automation. It creates test runs and enqueues browser jobs in Redis.
-
-### PostgreSQL
-
-PostgreSQL stores durable data:
-
-- Projects.
-- Encrypted or sealed credential references.
-- Allowed host policies.
-- Test runs and job states.
-- Findings.
-- Report metadata.
-- Evidence artifact metadata.
-
-### Redis
-
-Redis is used for:
-
-- MVP job queueing.
-- Short-lived run state.
-- Worker coordination where needed.
-
-Do not rely on Redis as the only source of durable run history.
-
-### MinIO / S3-Compatible Storage
-
-Evidence artifacts should be stored in S3-compatible storage:
-
-- Screenshots.
-- Playwright traces.
-- Sanitized logs.
-- Generated reports.
-
-The control plane stores metadata and object references in PostgreSQL.
-
-### Browser Worker
-
-The browser worker runs Playwright smoke checks:
-
-- Visit the configured frontend URL.
-- Capture screenshots.
-- Record console errors.
-- Record failed network requests.
-- Block requests outside allowed hosts.
-- Create MVP findings.
-
-All navigation and requests must be constrained by allowed hosts.
-
-Current implementation: `workers/browser`.
-
-This MVP stores screenshots in MinIO/S3 when possible and falls back to local worker storage if object storage is unavailable.
-
-### API Worker
-
-The API worker runs HTTP checks:
-
-- Basic health checks against the API base URL.
-- Configured endpoint checks.
-- Optional OpenAPI contract checks when an OpenAPI URL is supplied.
-- API error and response metadata collection.
-
-Credentials and authorization headers must be redacted from logs and reports.
-
-Current implementation: not yet implemented.
-
-### Security Worker
-
-The MVP security worker is passive and safe:
-
-- Check security headers.
-- Check cookie flags.
-- Check mixed content signals.
-- Check obvious TLS/configuration metadata where available.
-
-It must not perform exploitation, brute force testing, destructive payloads, or broad scanning.
-
-Current implementation: not yet implemented.
-
-### Analyzer Worker
-
-The analyzer worker converts raw evidence into structured findings:
-
-- Normalize browser, API, contract, and passive security signals.
-- Assign severity.
-- Generate reproduction steps.
-- Attach evidence references.
-- Suggest recommendations.
-
-### Report Engine
-
-The report engine produces structured reports from findings and run metadata.
-
-Expected report fields:
-
-- Summary.
-- Scope.
-- Run metadata.
-- Findings.
-- Severity.
-- Reproduction steps.
-- Evidence references.
-- Recommendations.
-
-## Run Lifecycle
-
-1. User creates or updates a project.
-2. Control plane validates URLs, allowed hosts, credentials metadata, and policy.
-3. User starts a test run.
-4. Control plane creates a durable run record in PostgreSQL.
-5. Control plane queues browser, API, and security jobs in Redis.
-6. Workers execute jobs and write artifacts to MinIO/S3.
-7. Workers write evidence metadata and raw signals through the control plane or a narrow storage interface.
-8. Analyzer produces structured findings.
-9. Report engine generates the run report.
-10. Control plane marks the run complete or failed.
-
-Current MVP lifecycle:
-
-1. User creates a project through `POST /api/v1/projects`.
-2. User starts a run through `POST /api/v1/projects/{project_id}/runs`.
-3. Control plane creates a `pending` run and pushes a browser job into Redis.
-4. Browser worker marks the run `running`.
-5. Browser worker runs the Playwright smoke check.
-6. Browser worker stores screenshot evidence in MinIO/S3 or local fallback storage.
-7. Browser worker inserts evidence metadata and findings into PostgreSQL.
-8. Browser worker marks the run `completed` or `failed`.
-9. Control plane serves the structured report from `GET /api/v1/runs/{run_id}/report`.
-
-## Safety Model
-
-Allowed hosts are mandatory. Every outbound browser navigation, API request, contract fetch, and passive security check must verify the destination before running.
-
-The current implementation blocks localhost, link-local addresses, private IP ranges, and common metadata endpoints by default. Literal host checks are implemented now; DNS resolution checks should be added before broad real-world use.
-
-Testing policy should eventually control:
-
-- Maximum runtime.
-- Maximum pages or endpoints.
-- Whether authentication is allowed.
-- Whether traces are captured.
-- Whether passive security checks are enabled.
-- Whether future active checks are permitted.
-
-MVP default policy should be conservative.
-
-## Credential Handling
-
-For the local MVP, credentials may be persisted in PostgreSQL only through a dedicated secret abstraction that supports future replacement.
-
-Current implementation: credential storage and login automation are intentionally not implemented.
-
-Requirements:
-
-- Never log raw credential values.
-- Redact known secret fields from errors and reports.
-- Avoid returning secrets from API read endpoints.
-- Keep the storage interface replaceable for Vault, Kubernetes Secrets, or cloud secret managers later.
-
-## First Data Model Sketch
-
-Initial entities:
-
-- `projects`
-- `test_runs`
-- `evidence_artifacts`
-- `findings`
-- `reports`
-
-Current migration tables:
+# MVP Architecture Notes
+
+The release-facing architecture reference is [../architecture.md](../architecture.md).
+
+This file records the implementation intent behind the v0.1.0-alpha MVP.
+
+## Implemented In v0.1.0-alpha
+
+- Docker Compose stack.
+- Go control plane API.
+- PostgreSQL metadata storage.
+- Redis browser run queue.
+- TypeScript/Node.js Playwright browser worker.
+- MinIO/S3-compatible screenshot storage.
+- Structured report endpoint.
+
+## Current Run Lifecycle
+
+1. User creates a project with `POST /api/v1/projects`.
+2. Control plane validates `frontend_url`, `allowed_hosts`, `security_mode`, and `destructive_actions`.
+3. User starts a run with `POST /api/v1/projects/{project_id}/runs`.
+4. Control plane creates a `pending` run and pushes a browser job to Redis.
+5. Browser worker marks the run `running`.
+6. Browser worker opens the target page with Playwright.
+7. Browser worker enforces `allowed_hosts` on browser requests.
+8. Browser worker captures screenshot and browser observations.
+9. Browser worker writes evidence metadata and findings to PostgreSQL.
+10. Browser worker marks the run `completed` or `failed`.
+11. Control plane serves the report with `GET /api/v1/runs/{run_id}/report`.
+
+## Current Data Model
 
 - `projects`
 - `test_runs`
 - `findings`
 - `evidence`
 
-`reports` are currently generated dynamically from run, finding, and evidence rows.
+Reports are generated dynamically from these tables.
 
-## Deployment Path
+## Future Boundaries
 
-First supported target:
+These are planned boundaries, not implemented release features:
 
-- Docker Compose with control plane, PostgreSQL, Redis, MinIO, and workers.
+- API worker.
+- Passive security worker.
+- Analyzer worker.
+- Report engine package.
+- Web UI.
+- Helm chart.
+- Login automation and credential storage.
 
-Later target:
-
-- Helm chart for Kubernetes after the Compose workflow is stable.
+Keep future work behind explicit docs and roadmap updates so the alpha remains honest about what it can do today.

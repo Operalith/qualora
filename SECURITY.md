@@ -8,7 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
-| pre-release | No formal support |
+| v0.1.0-alpha | Best-effort alpha support |
 
 ## Reporting A Vulnerability
 
@@ -26,6 +26,8 @@ Temporary contact placeholder: `security@operalith.com`
 Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
+
+See [docs/security-model.md](docs/security-model.md) for the current alpha safety model.
 
 ## Product Safety Requirements
 

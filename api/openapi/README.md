@@ -1,9 +1,9 @@
 # OpenAPI Contracts
 
-This directory will hold Qualora's internal API contract definitions.
+This directory holds Qualora's current API contract definitions.
 
-The control plane should expose an OpenAPI-described HTTP API where practical. Once implementation starts, prefer generating docs and clients from a single contract source instead of maintaining multiple divergent API descriptions.
+The control plane exposes an OpenAPI-described HTTP API where practical. Keep this contract aligned with the actual implementation in `apps/control-plane`.
 
-Current MVP contract:
+Current alpha contract:
 
 - [qualora.v1.yaml](qualora.v1.yaml)

@@ -63,8 +63,11 @@ func (a *App) handleProjects(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
 	var input CreateProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid project JSON")
 		return
 	}
 

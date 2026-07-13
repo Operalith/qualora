@@ -4,11 +4,12 @@ dev: compose-up
 
 test:
 	cd apps/control-plane && go test ./...
-	cd workers/browser && npm install && npm test
+	cd workers/browser && npm ci && npm test
 
 lint:
 	cd apps/control-plane && go test ./...
-	cd workers/browser && npm install && npm run lint
+	cd workers/browser && npm ci && npm run lint
+	docker compose config >/dev/null
 
 compose-up:
 	docker compose up -d --build

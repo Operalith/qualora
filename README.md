@@ -1,30 +1,44 @@
 # Qualora
 
-Qualora is an open-source, self-hosted autonomous QA platform for web applications and APIs.
+**Open-source, self-hosted autonomous QA for web applications and APIs.**
 
-It is being built as part of Operalith's mission: **open-source AI-powered engineering tools for modern software operations**. The first alpha focuses on a small, useful loop: create a project, start a browser smoke test, collect evidence, and read a structured JSON report.
+Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based smoke tests, collects evidence, and generates structured reports for web applications.
 
-## Current MVP
+`v0.1.0-alpha` is an early MVP. It is intentionally small: a Docker Compose stack, a Go control plane API, a Playwright browser worker, PostgreSQL metadata, Redis queueing, MinIO evidence storage, and JSON reports.
 
-The current Docker Compose stack includes:
+## Current Alpha Capabilities
 
-- `qualora-api`: Go control plane API.
-- `qualora-worker-browser`: TypeScript/Node.js Playwright browser worker.
-- `postgres`: durable project, run, finding, and evidence metadata.
-- `redis`: run queue.
-- `minio`: S3-compatible screenshot storage.
+- Run locally with Docker Compose.
+- Create QA projects through an API.
+- Start browser smoke test runs.
+- Execute Playwright Chromium checks against a configured frontend URL.
+- Enforce project `allowed_hosts` for target URLs and browser requests.
+- Collect page title, screenshot evidence, console errors, failed network requests, and blocked out-of-scope requests.
+- Store metadata in PostgreSQL.
+- Queue browser runs with Redis.
+- Store screenshots in MinIO/S3, with a local filesystem fallback.
+- Generate structured JSON reports.
 
-Implemented behavior:
+## Architecture
 
-- Create projects through the API.
-- Start a test run for a project.
-- Queue the run in Redis.
-- Execute a Playwright smoke check in the browser worker.
-- Enforce project `allowed_hosts` before navigation and for browser network requests.
-- Collect page title, screenshot, console errors, failed requests, and blocked out-of-scope requests.
-- Persist evidence metadata and findings.
-- Store screenshots in MinIO with a local filesystem fallback.
-- Return a structured JSON report.
+```text
+API client / smoke script
+        |
+        v
+qualora-api
+        |
+        +--> PostgreSQL: projects, test_runs, findings, evidence
+        +--> Redis: browser run queue
+        |
+        v
+qualora-worker-browser
+        |
+        +--> Playwright browser smoke test
+        +--> MinIO/S3 screenshot evidence
+        +--> PostgreSQL findings and evidence metadata
+```
+
+See [docs/architecture.md](docs/architecture.md) for details.
 
 ## Quick Start
 
@@ -33,17 +47,10 @@ Requirements:
 - Docker with Docker Compose.
 - Python 3 for the smoke script.
 
-Start the stack from the repository root:
+Start Qualora:
 
 ```bash
 docker compose up -d --build
-```
-
-If port `8080` is already in use locally:
-
-```bash
-QUALORA_API_PORT=18080 docker compose up -d --build
-QUALORA_API_URL=http://localhost:18080 make smoke
 ```
 
 Check health:
@@ -52,7 +59,7 @@ Check health:
 curl http://localhost:8080/healthz
 ```
 
-Run the smoke test against `https://example.com`:
+Run the built-in smoke test against `https://example.com`:
 
 ```bash
 make smoke
@@ -62,6 +69,13 @@ Stop the stack:
 
 ```bash
 docker compose down
+```
+
+If local port `8080` is already in use:
+
+```bash
+QUALORA_API_PORT=18080 docker compose up -d --build
+QUALORA_API_URL=http://localhost:18080 make smoke
 ```
 
 ## API Examples
@@ -121,9 +135,55 @@ List projects:
 curl -s http://localhost:8080/api/v1/projects | python3 -m json.tool
 ```
 
-## Development
+## Report Example
 
-Common commands:
+A clean run against `https://example.com` returns a report shaped like this:
+
+```json
+{
+  "run_id": "d76f71c6-60d0-42fd-9bce-fae54ab6bef1",
+  "project_id": "85db0da7-fd0d-44bc-ae5a-c41cd1f03d47",
+  "status": "completed",
+  "summary": {
+    "total_findings": 0,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "info": 0
+  },
+  "findings": [],
+  "evidence": [
+    {
+      "id": "afcf6fd9-2512-45d0-a9a5-5d9073c55981",
+      "type": "screenshot",
+      "uri": "s3://qualora-evidence/runs/d76f71c6-60d0-42fd-9bce-fae54ab6bef1/screenshots/1783947796267.png",
+      "metadata": {
+        "page_title": "Example Domain",
+        "status_code": 200
+      }
+    },
+    {
+      "id": "1c56226f-98cd-4953-afd1-086d8f37e056",
+      "type": "browser_observations",
+      "uri": "inline://browser-observations",
+      "metadata": {
+        "blocked_requests": [],
+        "console_errors": [],
+        "failed_requests": [],
+        "load_error": "",
+        "page_title": "Example Domain",
+        "status_code": 200
+      }
+    }
+  ],
+  "metadata": {
+    "page_title": "Example Domain"
+  }
+}
+```
+
+## Development Commands
 
 ```bash
 make dev
@@ -135,110 +195,71 @@ make logs
 make smoke
 ```
 
-Backend only:
+See [docs/development.md](docs/development.md) for local development notes.
 
-```bash
-cd apps/control-plane
-go test ./...
-go run .
-```
-
-Browser worker only:
-
-```bash
-cd workers/browser
-npm install
-npm run build
-npm run dev
-```
-
-## Architecture Overview
-
-```text
-API client
-   |
-   v
-qualora-api
-   |
-   +--> PostgreSQL: projects, test_runs, findings, evidence
-   +--> Redis: browser run queue
-   |
-   v
-qualora-worker-browser
-   |
-   +--> Playwright browser smoke test
-   +--> MinIO/S3 screenshot storage
-   +--> PostgreSQL evidence and findings
-```
-
-Detailed architecture notes live in [docs/architecture/mvp.md](docs/architecture/mvp.md).
-
-The implemented API contract lives in [api/openapi/qualora.v1.yaml](api/openapi/qualora.v1.yaml).
-
-## Repository Layout
-
-```text
-api/
-  openapi/              Internal API contract definitions.
-apps/
-  control-plane/        Go API and orchestration service.
-  web/                  Optional future web UI.
-deploy/
-  docker-compose/       Docker Compose notes.
-  helm/                 Future Kubernetes packaging.
-docs/
-  architecture/         Architecture notes and implementation boundaries.
-packages/
-  report-engine/        Future report generation module.
-  shared/               Shared schemas and utilities when needed.
-scripts/                Developer automation and smoke checks.
-workers/
-  analyzer/             Future analyzer worker.
-  api/                  Future API and OpenAPI checks.
-  browser/              Playwright browser checks.
-  security/             Future passive security checks.
-```
-
-## Security Warning And Scope Policy
+## Safety And Allowed Hosts
 
 Only run Qualora against systems you own or are explicitly authorized to test.
 
-The MVP is safe by default:
+The alpha is safe by default:
 
-- Browser navigation and network requests are constrained by project `allowed_hosts`.
-- `localhost`, link-local, private IP ranges, and common cloud metadata endpoints are blocked by default.
+- Every project must define `allowed_hosts`.
+- Browser navigation and network requests are constrained by `allowed_hosts`.
 - `security_mode` is currently limited to `passive`.
 - `destructive_actions` must be `false`.
-- Login automation and credential storage are intentionally not implemented in this phase.
+- `localhost`, `.local`, loopback, link-local, private IP literal targets, common cloud metadata targets, and public hostnames resolving to blocked IP ranges are blocked by default.
+- `allow_private_targets: true` may be used for local/private systems you control.
+- Login automation and credential storage are not implemented in this release.
 - Secrets, credentials, cookies, and authorization headers must not be logged.
 - Screenshots and reports should be treated as sensitive evidence artifacts.
 
-Projects can set `allow_private_targets: true` for local/private test environments, but this should only be used for systems you control.
-
-Report security issues using the process in [SECURITY.md](SECURITY.md).
+See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.md).
 
 ## Current Limitations
 
-- No web UI yet.
-- No API worker yet.
-- No OpenAPI contract checks yet.
-- No passive security worker yet.
-- No analyzer worker separate from the browser worker yet.
-- No login automation or credential storage yet.
-- The browser worker writes results directly to PostgreSQL in this MVP. A narrower worker result API can replace this later.
-- Host safety checks block obvious unsafe literal hosts, but they do not yet perform DNS resolution checks against private addresses.
+- No web UI.
+- No API worker.
+- No OpenAPI contract checks.
+- No passive security worker.
+- No analyzer worker separate from the browser worker.
+- No authentication.
+- No login automation or credential storage.
+- No active security scanning.
+- No Helm/Kubernetes deployment.
+- The browser worker writes results directly to PostgreSQL in this MVP.
 - MinIO uses local development credentials in Docker Compose.
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Security model](docs/security-model.md)
+- [Development](docs/development.md)
+- [Release process](docs/release.md)
+- [Roadmap](docs/roadmap.md)
+- [OpenAPI contract](api/openapi/qualora.v1.yaml)
+- [Changelog](CHANGELOG.md)
 
 ## Roadmap
 
-- Phase 1: Project foundation, contribution docs, security policy, and architecture boundaries.
-- Phase 2: Docker Compose MVP with Go control plane, browser worker, screenshots, findings, and JSON reports.
-- Phase 3: Harden run lifecycle, retries, worker result API, and artifact access URLs.
-- Phase 4: API worker with basic checks and optional OpenAPI contract validation.
-- Phase 5: Passive security checks constrained by allowed hosts and testing policy.
-- Phase 6: Analyzer and report engine modules for richer structured findings.
-- Phase 7: Optional web UI for project setup, run status, and reports.
-- Phase 8: Helm chart and Kubernetes deployment hardening.
+Near-term work:
+
+- Harden the worker result path so workers submit results through the control plane.
+- Add run retries and clearer failure states.
+- Add artifact download or signed URL support.
+- Add API checks and optional OpenAPI contract validation.
+- Add passive security checks.
+
+See [docs/roadmap.md](docs/roadmap.md).
+
+## Contributing
+
+Contributions are welcome. Start with:
+
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [SECURITY.md](SECURITY.md)
+- [AGENTS.md](AGENTS.md)
+
+Please keep early contributions focused on the self-hosted MVP and avoid adding SaaS, billing, multi-tenancy, active scanning, or frontend UI assumptions unless they are explicitly part of the current roadmap.
 
 ## License
 
