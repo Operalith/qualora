@@ -1,16 +1,20 @@
 # Docker Compose
 
-This directory is reserved for the first supported self-hosted deployment path.
+The first supported self-hosted deployment path is the root-level `docker-compose.yml`.
 
-The MVP Compose stack should include:
+From the repository root:
 
-- Control plane.
-- PostgreSQL.
-- Redis.
-- MinIO.
-- Browser worker.
-- API worker.
-- Security worker.
-- Analyzer/report components as they become runnable.
+```bash
+docker compose up -d --build
+docker compose logs -f qualora-api qualora-worker-browser
+```
+
+The MVP Compose stack includes:
+
+- `qualora-api`: Go control plane API.
+- `qualora-worker-browser`: TypeScript/Playwright browser worker.
+- `postgres`: durable metadata.
+- `redis`: browser run queue.
+- `minio`: S3-compatible evidence storage.
 
 Keep this path working before adding Helm or other deployment targets.

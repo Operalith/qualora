@@ -1,0 +1,97 @@
+services:
+  qualora-api:
+    build:
+      context: .
+      dockerfile: apps/control-plane/Dockerfile
+    container_name: qualora-api
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://qualora:qualora@postgres:5432/qualora?sslmode=disable
+      REDIS_ADDR: redis:6379
+      RUN_QUEUE: qualora:browser-runs
+    ports:
+      - "${QUALORA_API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  qualora-worker-browser:
+    build:
+      context: .
+      dockerfile: workers/browser/Dockerfile
+    container_name: qualora-worker-browser
+    environment:
+      DATABASE_URL: postgres://qualora:qualora@postgres:5432/qualora?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      RUN_QUEUE: qualora:browser-runs
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: qualora-evidence
+      S3_ACCESS_KEY_ID: qualora
+      S3_SECRET_ACCESS_KEY: qualora-dev-secret
+      S3_FORCE_PATH_STYLE: "true"
+      EVIDENCE_DIR: /var/lib/qualora/evidence
+    volumes:
+      - qualora_evidence:/var/lib/qualora/evidence
+    depends_on:
+      qualora-api:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: qualora-postgres
+    environment:
+      POSTGRES_USER: qualora
+      POSTGRES_PASSWORD: qualora
+      POSTGRES_DB: qualora
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qualora -d qualora"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: qualora-redis
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: qualora-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: qualora
+      MINIO_ROOT_PASSWORD: qualora-dev-secret
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  qualora_evidence:

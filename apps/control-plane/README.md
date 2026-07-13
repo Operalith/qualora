@@ -1,6 +1,6 @@
 # Control Plane
 
-Planned Go service for Qualora's API and orchestration layer.
+Go service for Qualora's API and orchestration layer.
 
 Responsibilities:
 
@@ -11,4 +11,17 @@ Responsibilities:
 - Metadata persistence.
 - Report and finding access.
 
-The control plane should remain small in the MVP and delegate long-running checks to workers as those workers are implemented.
+The MVP delegates browser checks to the browser worker through a Redis queue.
+
+## Local Development
+
+```bash
+go test ./...
+go run .
+```
+
+The service expects PostgreSQL and Redis. Defaults are suitable for local development:
+
+- `DATABASE_URL=postgres://qualora:qualora@localhost:5432/qualora?sslmode=disable`
+- `REDIS_ADDR=localhost:6379`
+- `RUN_QUEUE=qualora:browser-runs`

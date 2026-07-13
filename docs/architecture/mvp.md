@@ -31,7 +31,9 @@ The control plane is a Go service responsible for:
 - Persisting run metadata, evidence metadata, findings, and report metadata.
 - Exposing an OpenAPI-documented HTTP API.
 
-The control plane should not directly perform heavy browser automation or long-running checks once workers exist.
+Current implementation: `apps/control-plane`.
+
+The control plane does not perform browser automation. It creates test runs and enqueues browser jobs in Redis.
 
 ### PostgreSQL
 
@@ -71,13 +73,17 @@ The control plane stores metadata and object references in PostgreSQL.
 The browser worker runs Playwright smoke checks:
 
 - Visit the configured frontend URL.
-- Optionally authenticate with project test credentials.
 - Capture screenshots.
-- Capture traces when enabled.
 - Record console errors.
 - Record failed network requests.
+- Block requests outside allowed hosts.
+- Create MVP findings.
 
 All navigation and requests must be constrained by allowed hosts.
+
+Current implementation: `workers/browser`.
+
+This MVP stores screenshots in MinIO/S3 when possible and falls back to local worker storage if object storage is unavailable.
 
 ### API Worker
 
@@ -90,6 +96,8 @@ The API worker runs HTTP checks:
 
 Credentials and authorization headers must be redacted from logs and reports.
 
+Current implementation: not yet implemented.
+
 ### Security Worker
 
 The MVP security worker is passive and safe:
@@ -100,6 +108,8 @@ The MVP security worker is passive and safe:
 - Check obvious TLS/configuration metadata where available.
 
 It must not perform exploitation, brute force testing, destructive payloads, or broad scanning.
+
+Current implementation: not yet implemented.
 
 ### Analyzer Worker
 
@@ -139,9 +149,23 @@ Expected report fields:
 9. Report engine generates the run report.
 10. Control plane marks the run complete or failed.
 
+Current MVP lifecycle:
+
+1. User creates a project through `POST /api/v1/projects`.
+2. User starts a run through `POST /api/v1/projects/{project_id}/runs`.
+3. Control plane creates a `pending` run and pushes a browser job into Redis.
+4. Browser worker marks the run `running`.
+5. Browser worker runs the Playwright smoke check.
+6. Browser worker stores screenshot evidence in MinIO/S3 or local fallback storage.
+7. Browser worker inserts evidence metadata and findings into PostgreSQL.
+8. Browser worker marks the run `completed` or `failed`.
+9. Control plane serves the structured report from `GET /api/v1/runs/{run_id}/report`.
+
 ## Safety Model
 
 Allowed hosts are mandatory. Every outbound browser navigation, API request, contract fetch, and passive security check must verify the destination before running.
+
+The current implementation blocks localhost, link-local addresses, private IP ranges, and common metadata endpoints by default. Literal host checks are implemented now; DNS resolution checks should be added before broad real-world use.
 
 Testing policy should eventually control:
 
@@ -158,6 +182,8 @@ MVP default policy should be conservative.
 
 For the local MVP, credentials may be persisted in PostgreSQL only through a dedicated secret abstraction that supports future replacement.
 
+Current implementation: credential storage and login automation are intentionally not implemented.
+
 Requirements:
 
 - Never log raw credential values.
@@ -170,15 +196,19 @@ Requirements:
 Initial entities:
 
 - `projects`
-- `project_credentials`
-- `project_allowed_hosts`
 - `test_runs`
-- `run_jobs`
 - `evidence_artifacts`
 - `findings`
 - `reports`
 
-This is a sketch, not a migration contract.
+Current migration tables:
+
+- `projects`
+- `test_runs`
+- `findings`
+- `evidence`
+
+`reports` are currently generated dynamically from run, finding, and evidence rows.
 
 ## Deployment Path
 

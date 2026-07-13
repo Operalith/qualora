@@ -2,51 +2,178 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform for web applications and APIs.
 
-It is being built as part of Operalith's mission: **open-source AI-powered engineering tools for modern software operations**. The first public release should feel like a practical autonomous QA engineer that teams can run on-prem with Docker Compose.
+It is being built as part of Operalith's mission: **open-source AI-powered engineering tools for modern software operations**. The first alpha focuses on a small, useful loop: create a project, start a browser smoke test, collect evidence, and read a structured JSON report.
 
-## MVP Scope
+## Current MVP
 
-The first release focuses on a small, useful loop:
+The current Docker Compose stack includes:
 
-1. Create a project with a frontend URL, API base URL, optional OpenAPI URL, test credentials, allowed hosts, and a testing policy.
-2. Start a test run.
-3. Execute safe checks:
-   - Browser smoke tests with Playwright.
-   - Basic API checks.
-   - Optional OpenAPI contract checks.
-   - Passive, non-destructive security checks.
-4. Collect evidence:
-   - Screenshots.
-   - Playwright traces when available.
-   - Console errors.
-   - Failed network requests.
-   - API errors.
-5. Generate a structured report with findings, severity, reproduction steps, evidence, and recommendations.
+- `qualora-api`: Go control plane API.
+- `qualora-worker-browser`: TypeScript/Node.js Playwright browser worker.
+- `postgres`: durable project, run, finding, and evidence metadata.
+- `redis`: run queue.
+- `minio`: S3-compatible screenshot storage.
 
-Qualora is not intended to be a broad scanner or destructive testing system. Safety, host allowlisting, and secret handling are core product constraints.
+Implemented behavior:
+
+- Create projects through the API.
+- Start a test run for a project.
+- Queue the run in Redis.
+- Execute a Playwright smoke check in the browser worker.
+- Enforce project `allowed_hosts` before navigation and for browser network requests.
+- Collect page title, screenshot, console errors, failed requests, and blocked out-of-scope requests.
+- Persist evidence metadata and findings.
+- Store screenshots in MinIO with a local filesystem fallback.
+- Return a structured JSON report.
+
+## Quick Start
+
+Requirements:
+
+- Docker with Docker Compose.
+- Python 3 for the smoke script.
+
+Start the stack from the repository root:
+
+```bash
+docker compose up -d --build
+```
+
+If port `8080` is already in use locally:
+
+```bash
+QUALORA_API_PORT=18080 docker compose up -d --build
+QUALORA_API_URL=http://localhost:18080 make smoke
+```
+
+Check health:
+
+```bash
+curl http://localhost:8080/healthz
+```
+
+Run the smoke test against `https://example.com`:
+
+```bash
+make smoke
+```
+
+Stop the stack:
+
+```bash
+docker compose down
+```
+
+## API Examples
+
+Create a project:
+
+```bash
+curl -s http://localhost:8080/api/v1/projects \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Example App",
+    "frontend_url": "https://example.com",
+    "api_base_url": "",
+    "openapi_url": "",
+    "allowed_hosts": ["example.com"],
+    "security_mode": "passive",
+    "destructive_actions": false
+  }'
+```
+
+Create a project and save its ID:
+
+```bash
+PROJECT_ID=$(curl -s http://localhost:8080/api/v1/projects \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Example App",
+    "frontend_url": "https://example.com",
+    "allowed_hosts": ["example.com"],
+    "security_mode": "passive",
+    "destructive_actions": false
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+```
+
+Start a run:
+
+```bash
+RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/runs" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+```
+
+Check run status:
+
+```bash
+curl -s "http://localhost:8080/api/v1/runs/${RUN_ID}" | python3 -m json.tool
+```
+
+Fetch the report:
+
+```bash
+curl -s "http://localhost:8080/api/v1/runs/${RUN_ID}/report" | python3 -m json.tool
+```
+
+List projects:
+
+```bash
+curl -s http://localhost:8080/api/v1/projects | python3 -m json.tool
+```
+
+## Development
+
+Common commands:
+
+```bash
+make dev
+make test
+make lint
+make compose-up
+make compose-down
+make logs
+make smoke
+```
+
+Backend only:
+
+```bash
+cd apps/control-plane
+go test ./...
+go run .
+```
+
+Browser worker only:
+
+```bash
+cd workers/browser
+npm install
+npm run build
+npm run dev
+```
 
 ## Architecture Overview
 
-The MVP is organized around a Go control plane, focused workers, and S3-compatible evidence storage.
-
 ```text
-User / UI / API client
-        |
-        v
-Go control plane API
-        |
-        +--> PostgreSQL: projects, runs, findings, metadata
-        +--> Redis: queue and short-lived run state
-        +--> MinIO/S3: screenshots, traces, logs, reports
-        |
-        +--> browser worker: Playwright smoke checks
-        +--> API worker: HTTP checks and OpenAPI contract checks
-        +--> security worker: passive safe checks within allowed hosts
-        +--> analyzer worker: normalize evidence into findings
-        +--> report engine: structured reports
+API client
+   |
+   v
+qualora-api
+   |
+   +--> PostgreSQL: projects, test_runs, findings, evidence
+   +--> Redis: browser run queue
+   |
+   v
+qualora-worker-browser
+   |
+   +--> Playwright browser smoke test
+   +--> MinIO/S3 screenshot storage
+   +--> PostgreSQL evidence and findings
 ```
 
-Detailed MVP architecture notes live in [docs/architecture/mvp.md](docs/architecture/mvp.md).
+Detailed architecture notes live in [docs/architecture/mvp.md](docs/architecture/mvp.md).
+
+The implemented API contract lives in [api/openapi/qualora.v1.yaml](api/openapi/qualora.v1.yaml).
 
 ## Repository Layout
 
@@ -55,61 +182,63 @@ api/
   openapi/              Internal API contract definitions.
 apps/
   control-plane/        Go API and orchestration service.
-  web/                  Optional web UI, deferred until the backend loop is useful.
+  web/                  Optional future web UI.
 deploy/
-  docker-compose/       Local self-hosted deployment target for the first release.
+  docker-compose/       Docker Compose notes.
   helm/                 Future Kubernetes packaging.
 docs/
   architecture/         Architecture notes and implementation boundaries.
 packages/
-  report-engine/        Report generation module.
+  report-engine/        Future report generation module.
   shared/               Shared schemas and utilities when needed.
-scripts/                Developer automation.
+scripts/                Developer automation and smoke checks.
 workers/
-  analyzer/             Evidence normalization and finding generation.
-  api/                  API and OpenAPI checks.
+  analyzer/             Future analyzer worker.
+  api/                  Future API and OpenAPI checks.
   browser/              Playwright browser checks.
-  security/             Passive, safe security checks.
+  security/             Future passive security checks.
 ```
-
-## Quick Start
-
-The runnable stack is not implemented yet. The intended local workflow for the first release is:
-
-```bash
-git clone https://github.com/Operalith/qualora.git
-cd qualora
-docker compose -f deploy/docker-compose/docker-compose.yml up --build
-```
-
-Until the Docker Compose stack exists, use this repository as the project foundation and architecture reference.
-
-## Roadmap
-
-- Phase 0: Project foundation, contribution docs, security policy, and architecture boundaries.
-- Phase 1: Go control plane with project and test run APIs.
-- Phase 2: Docker Compose stack with PostgreSQL, Redis, MinIO, and the control plane.
-- Phase 3: Browser worker with Playwright smoke tests and evidence capture.
-- Phase 4: API worker with basic checks and optional OpenAPI contract validation.
-- Phase 5: Passive security checks constrained by allowed hosts and testing policy.
-- Phase 6: Analyzer and report engine for structured findings.
-- Phase 7: Optional web UI for project setup, run status, and reports.
-- Phase 8: Helm chart and Kubernetes deployment hardening.
 
 ## Security Warning And Scope Policy
 
 Only run Qualora against systems you own or are explicitly authorized to test.
 
-The MVP must be safe by default:
+The MVP is safe by default:
 
-- Respect project-level allowed hosts for every browser, API, and security check.
-- Avoid destructive actions unless a future policy explicitly enables them.
-- Do not perform aggressive scanning in the first release.
-- Do not log secrets, credentials, tokens, cookies, or authorization headers.
-- Store credentials behind an abstraction so local MVP storage can later move to Vault, Kubernetes Secrets, or another secret manager.
-- Treat screenshots, traces, and reports as sensitive evidence artifacts.
+- Browser navigation and network requests are constrained by project `allowed_hosts`.
+- `localhost`, link-local, private IP ranges, and common cloud metadata endpoints are blocked by default.
+- `security_mode` is currently limited to `passive`.
+- `destructive_actions` must be `false`.
+- Login automation and credential storage are intentionally not implemented in this phase.
+- Secrets, credentials, cookies, and authorization headers must not be logged.
+- Screenshots and reports should be treated as sensitive evidence artifacts.
+
+Projects can set `allow_private_targets: true` for local/private test environments, but this should only be used for systems you control.
 
 Report security issues using the process in [SECURITY.md](SECURITY.md).
+
+## Current Limitations
+
+- No web UI yet.
+- No API worker yet.
+- No OpenAPI contract checks yet.
+- No passive security worker yet.
+- No analyzer worker separate from the browser worker yet.
+- No login automation or credential storage yet.
+- The browser worker writes results directly to PostgreSQL in this MVP. A narrower worker result API can replace this later.
+- Host safety checks block obvious unsafe literal hosts, but they do not yet perform DNS resolution checks against private addresses.
+- MinIO uses local development credentials in Docker Compose.
+
+## Roadmap
+
+- Phase 1: Project foundation, contribution docs, security policy, and architecture boundaries.
+- Phase 2: Docker Compose MVP with Go control plane, browser worker, screenshots, findings, and JSON reports.
+- Phase 3: Harden run lifecycle, retries, worker result API, and artifact access URLs.
+- Phase 4: API worker with basic checks and optional OpenAPI contract validation.
+- Phase 5: Passive security checks constrained by allowed hosts and testing policy.
+- Phase 6: Analyzer and report engine modules for richer structured findings.
+- Phase 7: Optional web UI for project setup, run status, and reports.
+- Phase 8: Helm chart and Kubernetes deployment hardening.
 
 ## License
 

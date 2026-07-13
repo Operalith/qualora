@@ -10,7 +10,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Backend/control plane first.
+- Keep the phase 2 Docker Compose MVP working.
+- Backend/control plane first, with browser worker support.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
 - Redis for queues and short-lived run state.
@@ -37,6 +38,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Prefer simple, explicit code over framework-heavy abstractions.
 - Do not introduce paid SaaS assumptions.
 - Do not add Kubernetes-only concepts before the Docker Compose path works.
+- Do not add a full UI until the API and worker loop are more stable.
+- Do not introduce Temporal, OWASP ZAP, login automation, or active security scanning in the MVP without an explicit request.
 - Keep worker contracts narrow and serializable.
 - Prefer OpenAPI-first internal API design where practical.
 - Keep report schemas structured enough for future UI/API consumers.
