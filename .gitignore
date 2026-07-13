@@ -1,0 +1,55 @@
+# OS and editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+*.pem
+*.key
+*.crt
+*.p12
+
+# Logs and local artifacts
+*.log
+logs/
+tmp/
+temp/
+artifacts/
+evidence/
+screenshots/
+traces/
+reports/
+
+# Go
+bin/
+coverage.out
+*.test
+
+# Node and web
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.next/
+out/
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+
+# Docker and local state
+docker-compose.override.yml
+.docker-data/
+minio-data/
+postgres-data/
+redis-data/
