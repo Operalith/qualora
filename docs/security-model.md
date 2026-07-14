@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.2.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.3.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -41,7 +41,13 @@ Default API behavior:
 - OpenAPI document fetch from `openapi_url`.
 - Safe OpenAPI methods only: `GET`, `HEAD`, and `OPTIONS`.
 - Unsafe methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are skipped.
-- `destructive_actions=true` is not supported by the v0.2.0-alpha API worker.
+- `destructive_actions=true` is not supported by the v0.3.0-alpha API worker.
+
+## Web UI Exposure
+
+The v0.3.0-alpha web UI has no authentication or authorization. It can create projects, start runs, and display report/evidence metadata through the control-plane API.
+
+Use it only in trusted local or self-hosted environments. Do not expose `qualora-web` or `qualora-api` directly to untrusted networks without adding an external access-control layer.
 
 ## Secret Handling
 
@@ -73,6 +79,7 @@ Future credential support must use a dedicated abstraction that can later suppor
 - Browser screenshots can contain sensitive application data.
 - API response metadata can reveal endpoint names and status behavior.
 - MinIO uses local development credentials in Docker Compose.
-- There is no API authentication in this alpha, so bind the API only in trusted local environments.
+- There is no API or web UI authentication in this alpha, so bind the API and UI only in trusted local environments.
+- Screenshot preview/download through the control-plane API is not implemented yet; evidence metadata can still disclose target names, endpoint paths, and artifact URIs.
 
 See [../SECURITY.md](../SECURITY.md) for vulnerability reporting.

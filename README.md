@@ -4,13 +4,15 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.2.0-alpha` adds an alpha API worker and OpenAPI checks to the existing browser QA MVP. It remains intentionally small: Docker Compose, a Go control plane API, Playwright browser worker, API worker, PostgreSQL metadata, Redis queueing, MinIO evidence storage, and JSON reports.
+`v0.3.0-alpha` adds a minimal self-hosted web UI and human-friendly HTML reports to the browser/API QA foundation. It remains intentionally small: Docker Compose, a Go control plane API, React web UI, Playwright browser worker, API worker, PostgreSQL metadata, Redis queueing, MinIO evidence storage, JSON reports, and static HTML report export.
 
 ## Current Alpha Capabilities
 
 - Run locally with Docker Compose.
 - Create QA projects through an API.
+- Create QA projects through a minimal web UI.
 - Start runs that can include browser and API jobs.
+- View projects, runs, findings, evidence metadata, and reports in the web UI.
 - Execute Playwright Chromium checks against a configured frontend URL.
 - Execute safe API checks against `api_base_url`.
 - Fetch and parse OpenAPI 3.x JSON/YAML from `openapi_url`.
@@ -21,11 +23,12 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Queue worker jobs with Redis.
 - Store screenshots in MinIO/S3, with a local filesystem fallback.
 - Generate structured JSON reports.
+- Generate self-contained HTML reports at `GET /api/v1/runs/{run_id}/report.html`.
 
 ## Architecture
 
 ```text
-API client / smoke script
+API client / smoke script / web UI
         |
         v
 qualora-api
@@ -42,6 +45,8 @@ qualora-api
                 +--> OpenAPI 3.x safe method checks
                 +--> PostgreSQL evidence and findings
 ```
+
+The web UI is served separately as `qualora-web` on `http://localhost:3000` and calls the API on `http://localhost:8080`.
 
 See [docs/architecture.md](docs/architecture.md) for details.
 
@@ -62,6 +67,12 @@ Check health:
 
 ```bash
 curl http://localhost:8080/healthz
+```
+
+Open the web UI:
+
+```text
+http://localhost:3000
 ```
 
 Run the smoke tests:
@@ -85,7 +96,7 @@ If local port `8080` is already in use:
 
 ```bash
 QUALORA_API_PORT=18080 docker compose up -d --build
-QUALORA_API_URL=http://localhost:18080 make smoke
+QUALORA_API_URL=http://localhost:18080 QUALORA_API_BASE_URL=http://localhost:18080 make smoke
 ```
 
 ## API Examples
@@ -147,6 +158,12 @@ Fetch the report:
 
 ```bash
 curl -s "http://localhost:8080/api/v1/runs/${RUN_ID}/report" | python3 -m json.tool
+```
+
+Open the HTML report:
+
+```bash
+open "http://localhost:8080/api/v1/runs/${RUN_ID}/report.html"
 ```
 
 ## Report Example
@@ -231,13 +248,15 @@ The alpha is safe by default:
 - Authenticated API testing, login automation, and credential storage are not implemented in this release.
 - Secrets, credentials, cookies, and authorization headers must not be logged.
 - Screenshots and reports should be treated as sensitive evidence artifacts.
+- The web UI has no authentication yet and is intended for trusted local/self-hosted alpha environments only.
 
 See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.md).
 
 ## Current Limitations
 
-- No web UI.
 - No authentication.
+- Web UI is alpha and intentionally minimal.
+- Screenshot preview/download through the API is not implemented yet; the UI shows evidence metadata and URIs.
 - No authenticated API testing.
 - No login automation or credential storage.
 - No active security scanning.

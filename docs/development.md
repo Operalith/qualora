@@ -1,12 +1,12 @@
 # Development
 
-This document covers local development for Qualora v0.2.0-alpha.
+This document covers local development for Qualora v0.3.0-alpha.
 
 ## Requirements
 
 - Docker with Docker Compose.
 - Go 1.22 or newer for control plane development.
-- Node.js 22 or newer for browser and API worker development.
+- Node.js 22 or newer for web, browser worker, and API worker development.
 - Python 3 for the smoke script.
 
 ## Common Commands
@@ -24,12 +24,12 @@ make smoke
 Command behavior:
 
 - `make dev`: starts the Docker Compose stack.
-- `make test`: runs Go tests plus browser and API worker tests.
+- `make test`: runs Go tests, web build/type-check, and browser/API worker tests.
 - `make lint`: runs the same checks plus `docker compose config`.
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
-- `make logs`: tails API, browser worker, and API worker logs.
-- `make smoke`: starts the mock API profile service, creates browser and API projects, starts runs, polls to completion, and prints reports.
+- `make logs`: tails API, web, browser worker, and API worker logs.
+- `make smoke`: starts the mock API profile service, creates browser and API projects, starts runs, polls to completion, prints JSON/HTML report URLs, and validates HTML report export.
 
 ## Start The Stack
 
@@ -41,7 +41,13 @@ If port `8080` is already in use:
 
 ```bash
 QUALORA_API_PORT=18080 docker compose up -d --build
-QUALORA_API_URL=http://localhost:18080 make smoke
+QUALORA_API_URL=http://localhost:18080 QUALORA_API_BASE_URL=http://localhost:18080 make smoke
+```
+
+The web UI is served on:
+
+```text
+http://localhost:3000
 ```
 
 ## Run Tests
@@ -57,6 +63,15 @@ Backend only:
 cd apps/control-plane
 go test ./...
 go run .
+```
+
+Web UI only:
+
+```bash
+cd apps/web
+npm ci
+npm run dev
+npm run build
 ```
 
 Browser worker only:
@@ -89,6 +104,7 @@ The smoke script runs:
 
 - Browser smoke against `https://example.com`.
 - API/OpenAPI smoke against the local `mock-api` Compose service.
+- HTML report export validation for each completed run.
 
 Override browser target:
 

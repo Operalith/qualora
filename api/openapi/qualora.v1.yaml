@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.2.0-alpha
-  description: API for creating QA projects, starting browser/API smoke runs, and reading structured reports.
+  version: 0.3.0-alpha
+  description: API for creating QA projects, starting browser/API smoke runs, and reading JSON or HTML reports.
 servers:
   - url: http://localhost:8080
 paths:
@@ -83,6 +83,17 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
   /api/v1/projects/{project_id}/runs:
+    get:
+      summary: List runs for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Project run list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunList"
     post:
       summary: Start a QA run
       parameters:
@@ -99,6 +110,18 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
         "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/runs:
+    get:
+      summary: List runs
+      responses:
+        "200":
+          description: Run list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunList"
+        "405":
           $ref: "#/components/responses/Error"
   /api/v1/runs/{run_id}:
     get:
@@ -162,6 +185,20 @@ paths:
                       status: completed
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/runs/{run_id}/report.html:
+    get:
+      summary: Get a self-contained HTML run report
+      parameters:
+        - $ref: "#/components/parameters/RunID"
+      responses:
+        "200":
+          description: HTML report
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/Error"
 components:
   parameters:
     ProjectID:
@@ -217,7 +254,7 @@ components:
         destructive_actions:
           type: boolean
           default: false
-          description: Must be false in v0.2.0-alpha.
+          description: Must be false in v0.3.0-alpha.
         allow_private_targets:
           type: boolean
           default: false
@@ -300,6 +337,14 @@ components:
         updated_at:
           type: string
           format: date-time
+    RunList:
+      type: object
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TestRun"
     Report:
       type: object
       required:

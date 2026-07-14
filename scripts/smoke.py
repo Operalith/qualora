@@ -9,6 +9,7 @@ import urllib.request
 
 
 API_URL = os.environ.get("QUALORA_API_URL", "http://localhost:8080").rstrip("/")
+WEB_URL = os.environ.get("QUALORA_WEB_URL", "http://localhost:3000").rstrip("/")
 BROWSER_TARGET_URL = os.environ.get("QUALORA_TARGET_URL", "https://example.com")
 BROWSER_ALLOWED_HOST = os.environ.get(
     "QUALORA_ALLOWED_HOST",
@@ -44,6 +45,16 @@ def request(method, path, payload=None):
     except urllib.error.HTTPError as exc:
         text = exc.read().decode("utf-8")
         raise RuntimeError(f"{method} {path} failed with HTTP {exc.code}: {text}") from exc
+
+
+def fetch_text(path):
+    req = urllib.request.Request(f"{API_URL}{path}", headers={"Accept": "text/html"}, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            return response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        text = exc.read().decode("utf-8")
+        raise RuntimeError(f"GET {path} failed with HTTP {exc.code}: {text}") from exc
 
 
 def wait_for_url(url, timeout_seconds=30):
@@ -84,10 +95,17 @@ def run_project(project):
     print(json.dumps(report, indent=2))
     if report["status"] != "completed":
         raise RuntimeError(f"run {run_id} finished with status {report['status']}")
+    print(f"JSON report: {API_URL}/api/v1/runs/{run_id}/report")
+    print(f"HTML report: {API_URL}/api/v1/runs/{run_id}/report.html")
+    html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    if "Qualora HTML report" not in html:
+        raise RuntimeError(f"run {run_id} HTML report did not include the expected title")
     return report
 
 
 def main():
+    print(f"Web UI: {WEB_URL}")
+
     print("== Browser smoke ==")
     browser_project = create_project(
         {

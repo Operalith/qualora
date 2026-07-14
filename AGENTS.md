@@ -10,9 +10,10 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.2.0-alpha` Docker Compose MVP working.
+- Keep the `v0.3.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
+- Minimal web UI support for local project/run/report workflows.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
 - Redis for queues and short-lived run state.
@@ -23,7 +24,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 ## Repository Boundaries
 
 - `apps/control-plane`: Go API and orchestration service.
-- `apps/web`: Optional web UI, added only when the backend loop is useful.
+- `apps/web`: Minimal React web UI for projects, runs, reports, findings, and evidence metadata.
 - `workers/browser`: Playwright browser checks.
 - `workers/api`: API and OpenAPI checks.
 - `workers/security`: Passive, safe security checks.
@@ -39,7 +40,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Prefer simple, explicit code over framework-heavy abstractions.
 - Do not introduce paid SaaS assumptions.
 - Do not add Kubernetes-only concepts before the Docker Compose path works.
-- Do not add a full UI until the API and worker loop are more stable.
+- Keep the web UI focused on alpha workflows; do not add complex design systems, auth, teams, billing, or SaaS assumptions without an explicit request.
 - Do not introduce Temporal, OWASP ZAP, login automation, or active security scanning in the MVP without an explicit request.
 - API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
 - Keep worker contracts narrow and serializable.

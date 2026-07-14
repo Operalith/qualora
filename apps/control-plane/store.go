@@ -230,6 +230,54 @@ WHERE id = $1
 	return run, nil
 }
 
+func (s *Store) ListRuns(ctx context.Context, projectID string) ([]TestRun, error) {
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if projectID == "" {
+		rows, err = s.db.Query(ctx, `
+SELECT id, project_id, status, error_message, page_title, started_at, completed_at, created_at, updated_at
+FROM test_runs
+ORDER BY created_at DESC
+`)
+	} else {
+		rows, err = s.db.Query(ctx, `
+SELECT id, project_id, status, error_message, page_title, started_at, completed_at, created_at, updated_at
+FROM test_runs
+WHERE project_id = $1
+ORDER BY created_at DESC
+`, projectID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query test runs: %w", err)
+	}
+	defer rows.Close()
+
+	runs := make([]TestRun, 0)
+	for rows.Next() {
+		var run TestRun
+		if err := rows.Scan(
+			&run.ID,
+			&run.ProjectID,
+			&run.Status,
+			&run.ErrorMessage,
+			&run.PageTitle,
+			&run.StartedAt,
+			&run.CompletedAt,
+			&run.CreatedAt,
+			&run.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan test run: %w", err)
+		}
+		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate test runs: %w", err)
+	}
+	return runs, nil
+}
+
 func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 	run, err := s.GetRun(ctx, runID)
 	if err != nil {

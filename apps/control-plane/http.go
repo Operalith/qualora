@@ -11,13 +11,14 @@ import (
 )
 
 type App struct {
-	store  *Store
-	queue  *Queue
-	logger *slog.Logger
+	store       *Store
+	queue       *Queue
+	logger      *slog.Logger
+	corsOrigins []string
 }
 
-func NewApp(store *Store, queue *Queue, logger *slog.Logger) *App {
-	return &App{store: store, queue: queue, logger: logger}
+func NewApp(store *Store, queue *Queue, logger *slog.Logger, corsOrigins []string) *App {
+	return &App{store: store, queue: queue, logger: logger, corsOrigins: corsOrigins}
 }
 
 func (a *App) Routes() http.Handler {
@@ -25,8 +26,9 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/healthz", a.handleHealth)
 	mux.HandleFunc("/api/v1/projects", a.handleProjects)
 	mux.HandleFunc("/api/v1/projects/", a.handleProjectSubroutes)
+	mux.HandleFunc("/api/v1/runs", a.handleRuns)
 	mux.HandleFunc("/api/v1/runs/", a.handleRunSubroutes)
-	return withJSONContentType(withRequestLog(a.logger, mux))
+	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, mux)))
 }
 
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -104,8 +106,15 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 		a.getProject(w, r, parts[0])
 		return
 	}
-	if len(parts) == 2 && parts[0] != "" && parts[1] == "runs" && r.Method == http.MethodPost {
-		a.createRun(w, r, parts[0])
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "runs" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createRun(w, r, parts[0])
+		case http.MethodGet:
+			a.listRuns(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "route not found")
@@ -166,6 +175,28 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request, projectID string
 	writeJSON(w, http.StatusCreated, run)
 }
 
+func (a *App) handleRuns(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/api/v1/runs" {
+		writeError(w, http.StatusNotFound, "not_found", "route not found")
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		return
+	}
+	a.listRuns(w, r, "")
+}
+
+func (a *App) listRuns(w http.ResponseWriter, r *http.Request, projectID string) {
+	runs, err := a.store.ListRuns(r.Context(), projectID)
+	if err != nil {
+		a.logger.Error("list runs failed", "project_id", projectID, "error", err)
+		writeError(w, http.StatusInternalServerError, "list_runs_failed", "runs could not be listed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
+}
+
 func (a *App) handleRunSubroutes(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/runs/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -175,6 +206,10 @@ func (a *App) handleRunSubroutes(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "report" && r.Method == http.MethodGet {
 		a.getReport(w, r, parts[0])
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "report.html" && r.Method == http.MethodGet {
+		a.getHTMLReport(w, r, parts[0])
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "route not found")
@@ -208,6 +243,38 @@ func (a *App) getReport(w http.ResponseWriter, r *http.Request, runID string) {
 	writeJSON(w, http.StatusOK, report)
 }
 
+func (a *App) getHTMLReport(w http.ResponseWriter, r *http.Request, runID string) {
+	report, err := a.store.GetReport(r.Context(), runID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "run_not_found", "run was not found")
+			return
+		}
+		a.logger.Error("get html report failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_report_failed", "report could not be loaded")
+		return
+	}
+
+	run, err := a.store.GetRun(r.Context(), runID)
+	if err != nil {
+		a.logger.Error("get run for html report failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_run_failed", "run could not be loaded")
+		return
+	}
+
+	project, err := a.store.GetProject(r.Context(), report.ProjectID)
+	if err != nil {
+		a.logger.Error("get project for html report failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_project_failed", "project could not be loaded")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := RenderHTMLReport(w, project, run, report, time.Now().UTC()); err != nil {
+		a.logger.Error("render html report failed", "error", err)
+	}
+}
+
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
@@ -235,4 +302,37 @@ func withRequestLog(logger *slog.Logger, next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 		logger.Info("request handled", "method", r.Method, "path", r.URL.Path, "duration_ms", time.Since(start).Milliseconds())
 	})
+}
+
+func withCORS(allowedOrigins []string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" && originAllowed(origin, allowedOrigins) {
+			if len(allowedOrigins) == 1 && allowedOrigins[0] == "*" {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Add("Vary", "Origin")
+			}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
+			w.Header().Set("Access-Control-Max-Age", "600")
+		}
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func originAllowed(origin string, allowedOrigins []string) bool {
+	for _, allowed := range allowedOrigins {
+		if allowed == "*" || allowed == origin {
+			return true
+		}
+	}
+	return false
 }

@@ -1,11 +1,11 @@
 # Architecture
 
-Qualora v0.2.0-alpha is a small Docker Compose MVP for browser and API QA smoke runs.
+Qualora v0.3.0-alpha is a small Docker Compose MVP for browser and API QA smoke runs with a minimal web UI and human-friendly HTML reports.
 
 ## Runtime Components
 
 ```text
-API client / smoke script
+API client / smoke script / qualora-web
         |
         v
 qualora-api
@@ -27,7 +27,7 @@ qualora-api
 
 ### `qualora-api`
 
-The Go control plane exposes the HTTP API, validates project scope, persists metadata, creates per-run jobs, and queues worker jobs.
+The Go control plane exposes the HTTP API, validates project scope, persists metadata, creates per-run jobs, queues worker jobs, and renders JSON/HTML reports.
 
 Current endpoints:
 
@@ -36,8 +36,23 @@ Current endpoints:
 - `GET /api/v1/projects`
 - `GET /api/v1/projects/{project_id}`
 - `POST /api/v1/projects/{project_id}/runs`
+- `GET /api/v1/projects/{project_id}/runs`
+- `GET /api/v1/runs`
 - `GET /api/v1/runs/{run_id}`
 - `GET /api/v1/runs/{run_id}/report`
+- `GET /api/v1/runs/{run_id}/report.html`
+
+### `qualora-web`
+
+The React/Vite web UI is intentionally small. It calls the control-plane API from the browser and displays:
+
+- Projects and project details.
+- Run lists and run details.
+- Structured JSON report data as readable tables.
+- Findings, evidence metadata, browser metadata, API metadata, and job metadata.
+- Links to the self-contained HTML report export.
+
+It has no authentication in this alpha and should be exposed only in trusted local/self-hosted environments.
 
 ### `qualora-worker-browser`
 
@@ -86,7 +101,7 @@ Redis is the MVP queue for browser and API jobs. PostgreSQL remains the source o
 
 ### MinIO
 
-MinIO stores screenshot evidence through the S3-compatible API. API evidence is stored as metadata rows in PostgreSQL.
+MinIO stores screenshot evidence through the S3-compatible API. API evidence is stored as metadata rows in PostgreSQL. The v0.3 UI displays evidence metadata and URIs, but it does not proxy or preview screenshot objects yet.
 
 ### `mock-api`
 
@@ -94,7 +109,7 @@ The `mock-api` Compose service is profile-gated for smoke tests. It is not part 
 
 ## Run Lifecycle
 
-1. A client creates a project with one or more targets: `frontend_url`, `api_base_url`, or `openapi_url`.
+1. A client or web UI creates a project with one or more targets: `frontend_url`, `api_base_url`, or `openapi_url`.
 2. The API validates URL scope and target safety.
 3. A client starts a run.
 4. The API creates a `pending` run in PostgreSQL.
@@ -104,12 +119,13 @@ The `mock-api` Compose service is profile-gated for smoke tests. It is not part 
 8. Workers collect evidence and findings.
 9. Workers mark jobs `completed` or `failed`.
 10. PostgreSQL refreshes the parent run status from job statuses.
-11. The API serves the structured report.
+11. The API serves the structured JSON report and the self-contained HTML report.
 
 ## Intentional Alpha Constraints
 
-- No web UI.
 - No user accounts or authentication.
+- Web UI is alpha and suitable only for trusted self-hosted/local environments.
+- No evidence object proxy or screenshot preview in the UI yet.
 - No authenticated API testing.
 - No login automation.
 - No active security scanning.

@@ -6,19 +6,22 @@ From the repository root:
 
 ```bash
 docker compose up -d --build
-docker compose logs -f qualora-api qualora-worker-browser
+docker compose logs -f qualora-api qualora-web qualora-worker-browser qualora-worker-api
 ```
 
 If local port `8080` is already in use:
 
 ```bash
 QUALORA_API_PORT=18080 docker compose up -d --build
-QUALORA_API_URL=http://localhost:18080 make smoke
+QUALORA_API_URL=http://localhost:18080 QUALORA_API_BASE_URL=http://localhost:18080 make smoke
 ```
+
+The web UI is exposed at `http://localhost:3000` by default. Override it with `QUALORA_WEB_PORT`.
 
 The MVP Compose stack includes:
 
 - `qualora-api`: Go control plane API.
+- `qualora-web`: minimal React web UI.
 - `qualora-worker-browser`: TypeScript/Playwright browser worker.
 - `qualora-worker-api`: TypeScript API/OpenAPI worker.
 - `postgres`: durable metadata.

@@ -19,7 +19,7 @@ Delivered:
 
 ## v0.2.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - API worker.
 - `api_base_url` baseline checks.
@@ -29,7 +29,19 @@ Current alpha scope:
 - Per-run worker job tracking.
 - Deterministic local mock API smoke test.
 
-## Phase 3: Run And Worker Hardening
+## v0.3.0-alpha
+
+Current alpha scope:
+
+- Minimal self-hosted web UI.
+- Project creation, project lists, and project details in the UI.
+- Run lists and run detail/report pages in the UI.
+- Findings, evidence metadata, browser metadata, API metadata, and job metadata display.
+- Self-contained HTML report export.
+- Web service in Docker Compose on `http://localhost:3000`.
+- CI build/type-check for the web app.
+
+## Phase 4: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -38,14 +50,14 @@ Current alpha scope:
 - Additional safety tests for DNS and worker request blocking.
 - Better operational logs and container health checks.
 
-## Phase 4: Deeper API Checks
+## Phase 5: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 5: Passive Security Checks
+## Phase 6: Passive Security Checks
 
 - Passive security headers.
 - Cookie flag checks.
@@ -54,8 +66,9 @@ Current alpha scope:
 
 ## Later
 
-- Optional web UI.
 - Login automation with safe credential storage.
+- Evidence object proxy or signed URL preview.
+- Project editing and report filtering in the web UI.
 - Helm chart after Docker Compose is stable.
 - OWASP ZAP integration with explicit safe policies.
 

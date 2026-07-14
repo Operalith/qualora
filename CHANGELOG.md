@@ -4,6 +4,32 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.3.0-alpha] - 2026-07-14
+
+### Added
+
+- Minimal React/Vite web UI under `apps/web`.
+- `qualora-web` Docker Compose service on `http://localhost:3000`.
+- Project list, project creation, project details, and start-run workflows in the UI.
+- Run list and run report pages in the UI.
+- Findings, evidence metadata, browser metadata, API metadata, and job metadata display.
+- Self-contained HTML report export at `GET /api/v1/runs/{run_id}/report.html`.
+- Run listing endpoints for all runs and project-scoped runs.
+- Web build/type-check coverage in Makefile and CI.
+- Smoke script output for JSON report URLs, HTML report URLs, and web UI URL.
+
+### Changed
+
+- Control plane now allows the local web UI origin through a narrow CORS configuration.
+- Documentation now describes the web UI as alpha and trusted-environment only.
+
+### Known Limitations
+
+- No authentication or authorization.
+- Web UI is intentionally minimal.
+- Evidence object proxy, screenshot preview, and signed artifact URLs are not implemented yet.
+- No project editing, pagination, or advanced report filtering.
+
 ## [v0.2.0-alpha] - 2026-07-13
 
 ### Added

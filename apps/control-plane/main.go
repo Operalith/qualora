@@ -35,7 +35,7 @@ func main() {
 	queue := NewQueue(cfg)
 	defer queue.Close()
 
-	app := NewApp(NewStore(db), queue, logger)
+	app := NewApp(NewStore(db), queue, logger, cfg.CORSOrigins)
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           app.Routes(),
