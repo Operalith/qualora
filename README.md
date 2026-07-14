@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.5.0-alpha` adds optional AI provider management and AI report analysis. Qualora remains fully useful without AI: browser/API checks, evidence collection, JSON reports, and HTML reports do not depend on an LLM. The AI layer analyzes existing deterministic run data through an OpenAI-compatible provider configured by the user.
+`v0.6.0-alpha` adds AI-assisted test planning on top of the existing optional AI report analysis. Qualora remains fully useful without AI: browser/API checks, evidence collection, JSON reports, and HTML reports do not depend on an LLM. The AI layer can analyze deterministic run data and generate reviewable test-plan suggestions through an OpenAI-compatible provider configured by the user.
 
 ## Current Alpha Capabilities
 
@@ -30,6 +30,9 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Test AI provider connectivity with a safe prompt.
 - Run AI analysis for completed runs using sanitized report data.
 - Show AI analysis in the web UI, JSON report, and HTML report when available.
+- Generate AI-assisted test plans from sanitized project/run/report metadata.
+- View, delete, and export AI test plans in the web UI.
+- Link AI test plans back into JSON and HTML run reports when they were generated from a run.
 
 ## Architecture
 
@@ -39,10 +42,10 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, ai_providers, ai_analyses
+        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, ai_providers, ai_analyses, test_plans
         +--> Redis: browser and API run queues
         +--> MinIO/S3 evidence download proxy
-        +--> Optional OpenAI-compatible AI provider
+        +--> Optional OpenAI-compatible AI provider for analysis and test planning
         |
         +--> qualora-worker-browser
         |       +--> Playwright browser smoke test
@@ -219,11 +222,31 @@ curl -s -X POST "http://localhost:8080/api/v1/runs/${RUN_ID}/ai-analysis" \
   -d '{}' | python3 -m json.tool
 ```
 
+Generate an AI-assisted test plan for a project:
+
+```bash
+curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/ai-test-plans" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "run_id": "'"${RUN_ID}"'",
+    "product_context": "Public checkout and account settings are high-priority flows. Do not include secrets here.",
+    "focus_areas": ["smoke", "functional", "api", "regression"],
+    "max_scenarios": 10
+  }' | python3 -m json.tool
+```
+
+List and export test plans:
+
+```bash
+curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/test-plans" | python3 -m json.tool
+curl -s "http://localhost:8080/api/v1/test-plans/${TEST_PLAN_ID}/export.json" | python3 -m json.tool
+```
+
 ## AI Providers
 
-AI is optional. Configure a provider only when you want model-generated report analysis.
+AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.5.0-alpha`:
+Supported provider type in `v0.6.0-alpha`:
 
 - `openai-compatible`
 
@@ -242,6 +265,8 @@ AI prompt safety defaults:
 - Screenshots disabled.
 - Full HTML disabled.
 - Network bodies disabled.
+
+AI-assisted test plans are not executed by Qualora. They are reviewable suggestions intended to help humans decide what to automate or test next.
 
 ## Report Example
 
@@ -297,11 +322,12 @@ A browser smoke run includes screenshot and browser observation evidence:
       }
     ]
   },
-  "ai_analysis": null
+  "ai_analysis": null,
+  "test_plans": []
 }
 ```
 
-When AI analysis has been generated, `ai_analysis` contains the provider/model metadata, status, summaries, risk level, token counts, and the parsed JSON analysis.
+When AI analysis has been generated, `ai_analysis` contains the provider/model metadata, status, summaries, risk level, token counts, and the parsed JSON analysis. When an AI test plan is generated from a run, `test_plans` contains lightweight references to related plans.
 
 ## Development Commands
 
@@ -339,6 +365,7 @@ The alpha is safe by default:
 - Redaction is enabled by default.
 - Screenshots, full HTML, cookies, credentials, authorization headers, and full network bodies are not sent to AI by default.
 - AI provider API keys and extra headers are encrypted at rest using `QUALORA_ENCRYPTION_KEY`; the Compose fallback key is for local demo use only.
+- AI-assisted test plans are stored as suggestions and are not executed automatically.
 
 See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.md).
 
@@ -346,9 +373,10 @@ See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.
 
 - No authentication.
 - Web UI is alpha and intentionally minimal.
-- AI provider management and AI analysis are alpha and optional.
+- AI provider management, AI analysis, and AI-assisted test planning are alpha and optional.
 - Only OpenAI-compatible chat completion providers are supported.
 - No native Anthropic, Gemini, or provider-specific SDK integrations yet.
+- Generated test plans are not executed automatically.
 - Screenshot preview/download is available only for evidence records known to Qualora.
 - No authenticated API testing.
 - No login automation or storage for application test-account credentials.
@@ -380,6 +408,7 @@ Near-term work:
 - Add run retries and clearer failure states.
 - Add signed URL support or stronger evidence access controls.
 - Move AI analysis to an async worker path.
+- Move AI test planning to an async analyzer worker path.
 - Expand OpenAPI validation.
 - Add passive security checks.
 

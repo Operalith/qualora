@@ -4,21 +4,41 @@ import {
   createAIProvider,
   createProject,
   deleteAIProvider,
+  deleteTestPlan,
   evidenceDownloadURL,
+  generateAITestPlan,
   getProject,
   getReport,
   getRun,
+  getTestPlan,
   htmlReportURL,
   listAIProviders,
   listProjects,
   listRuns,
+  listTestPlans,
   runAIAnalysis,
   startBrowserSmokeRun,
   startRun,
+  testPlanExportURL,
   testAIProvider,
   updateAIProvider
 } from "./api";
-import type { AIAnalysis, AIProvider, AIProviderInput, AIProviderTestResult, CreateProjectInput, Evidence, Project, Report, RunJob, TestRun } from "./types";
+import type {
+  AIAnalysis,
+  AIProvider,
+  AIProviderInput,
+  AIProviderTestResult,
+  AITestPlanInput,
+  CreateProjectInput,
+  Evidence,
+  Project,
+  Report,
+  RunJob,
+  TestPlan,
+  TestPlanPayload,
+  TestPlanScenario,
+  TestRun
+} from "./types";
 
 type Route =
   | { name: "dashboard" }
@@ -26,6 +46,8 @@ type Route =
   | { name: "project"; id: string }
   | { name: "runs" }
   | { name: "ai-providers" }
+  | { name: "test-plans" }
+  | { name: "test-plan"; id: string }
   | { name: "run"; id: string };
 
 type LoadState<T> = {
@@ -85,7 +107,7 @@ export default function App() {
       <aside className="sidebar">
         <a className="brand" href="#/">
           <span>Qualora</span>
-          <small>v0.5.0-alpha</small>
+          <small>v0.6.0-alpha</small>
         </a>
         <nav>
           <a className={route.name === "dashboard" ? "active" : ""} href="#/">
@@ -99,6 +121,9 @@ export default function App() {
           </a>
           <a className={route.name === "ai-providers" ? "active" : ""} href="#/ai-providers">
             AI Providers
+          </a>
+          <a className={route.name === "test-plans" || route.name === "test-plan" ? "active" : ""} href="#/test-plans">
+            Test Plans
           </a>
         </nav>
         <div className="sidebar-note">
@@ -125,10 +150,18 @@ export default function App() {
         )}
         {route.name === "new-project" && <ProjectForm onCreated={(project) => setRoute({ name: "project", id: project.id })} />}
         {route.name === "project" && (
-          <ProjectPage projectID={route.id} cachedProject={projectByID.get(route.id)} onStartRun={startFullRun} onStartBrowserSmoke={startBrowserRun} />
+          <ProjectPage
+            projectID={route.id}
+            cachedProject={projectByID.get(route.id)}
+            onStartRun={startFullRun}
+            onStartBrowserSmoke={startBrowserRun}
+            onOpenTestPlan={(id) => setRoute({ name: "test-plan", id })}
+          />
         )}
         {route.name === "runs" && <RunsPage runs={runs} projectByID={projectByID} />}
         {route.name === "ai-providers" && <AIProvidersPage />}
+        {route.name === "test-plans" && <TestPlansPage projects={projects} />}
+        {route.name === "test-plan" && <TestPlanDetailPage testPlanID={route.id} projectByID={projectByID} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
       </main>
     </div>
@@ -639,29 +672,42 @@ function ProjectPage({
   projectID,
   cachedProject,
   onStartRun,
-  onStartBrowserSmoke
+  onStartBrowserSmoke,
+  onOpenTestPlan
 }: {
   projectID: string;
   cachedProject?: Project;
   onStartRun: (projectID: string) => Promise<void>;
   onStartBrowserSmoke: (projectID: string) => Promise<void>;
+  onOpenTestPlan: (testPlanID: string) => void;
 }) {
   const [project, setProject] = useState<Project | undefined>(cachedProject);
   const [runs, setRuns] = useState<LoadState<TestRun[]>>({ data: [], loading: true, error: "" });
+  const [providers, setProviders] = useState<AIProvider[]>([]);
+  const [testPlans, setTestPlans] = useState<LoadState<TestPlan[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
   const [starting, setStarting] = useState("");
 
   const refresh = useCallback(async () => {
     setRuns((current) => ({ ...current, loading: true, error: "" }));
+    setTestPlans((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
-      const [nextProject, nextRuns] = await Promise.all([cachedProject ? Promise.resolve(cachedProject) : getProject(projectID), listRuns(projectID)]);
+      const [nextProject, nextRuns, nextProviders, nextTestPlans] = await Promise.all([
+        cachedProject ? Promise.resolve(cachedProject) : getProject(projectID),
+        listRuns(projectID),
+        listAIProviders(),
+        listTestPlans(projectID)
+      ]);
       setProject(nextProject);
       setRuns({ data: nextRuns, loading: false, error: "" });
+      setProviders(nextProviders);
+      setTestPlans({ data: nextTestPlans, loading: false, error: "" });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
       setRuns((current) => ({ ...current, loading: false, error: message }));
+      setTestPlans((current) => ({ ...current, loading: false, error: message }));
     }
   }, [cachedProject, projectID]);
 
@@ -733,6 +779,426 @@ function ProjectPage({
         </div>
         {runs.loading ? <SkeletonRows /> : <RunTable runs={runs.data} projectByID={new Map([[project.id, project]])} />}
       </section>
+
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>AI Test Plans</h2>
+            <p>Reviewable test ideas generated from project and run metadata.</p>
+          </div>
+          <a className="button secondary-link" href="#/test-plans">
+            View All Plans
+          </a>
+        </div>
+        <Notice tone="info" message="AI test plans are suggestions only. Qualora does not execute generated steps in this alpha release." />
+        <GenerateAITestPlanForm
+          project={project}
+          runs={runs.data}
+          providers={providers}
+          onGenerated={async (plan) => {
+            await refresh();
+            onOpenTestPlan(plan.id);
+          }}
+        />
+        <div className="section-split">
+          {testPlans.loading ? (
+            <SkeletonRows />
+          ) : (
+            <TestPlanTable testPlans={testPlans.data} projectsByID={new Map([[project.id, project]])} onDeleted={() => void refresh()} />
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const focusAreaOptions = [
+  { value: "smoke", label: "Smoke" },
+  { value: "functional", label: "Functional" },
+  { value: "negative", label: "Negative" },
+  { value: "accessibility", label: "Accessibility" },
+  { value: "performance", label: "Performance" },
+  { value: "security-passive", label: "Passive security" },
+  { value: "authorization", label: "Authorization" },
+  { value: "api", label: "API" },
+  { value: "visual", label: "Visual" },
+  { value: "regression", label: "Regression" }
+];
+
+function GenerateAITestPlanForm({
+  project,
+  runs,
+  providers,
+  onGenerated
+}: {
+  project: Project;
+  runs: TestRun[];
+  providers: AIProvider[];
+  onGenerated: (plan: TestPlan) => Promise<void>;
+}) {
+  const [providerID, setProviderID] = useState("");
+  const [runID, setRunID] = useState("");
+  const [productContext, setProductContext] = useState("");
+  const [focusAreas, setFocusAreas] = useState<string[]>(["smoke", "functional", "negative", "accessibility", "regression"]);
+  const [maxScenarios, setMaxScenarios] = useState(10);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (providerID || providers.length === 0) {
+      return;
+    }
+    setProviderID(providers.find((provider) => provider.is_default)?.id || providers[0].id);
+  }, [providerID, providers]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setGenerating(true);
+    setError("");
+    const payload: AITestPlanInput = {
+      provider_id: providerID || undefined,
+      run_id: runID || undefined,
+      product_context: productContext.trim() || undefined,
+      focus_areas: focusAreas,
+      max_scenarios: maxScenarios
+    };
+    try {
+      const plan = await generateAITestPlan(project.id, payload);
+      await onGenerated(plan);
+    } catch (generateError) {
+      setError(generateError instanceof Error ? generateError.message : String(generateError));
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function toggleFocusArea(value: string) {
+    setFocusAreas((current) => {
+      if (current.includes(value)) {
+        const next = current.filter((item) => item !== value);
+        return next.length > 0 ? next : current;
+      }
+      return [...current, value];
+    });
+  }
+
+  if (providers.length === 0) {
+    return <Notice tone="info" message="Configure an AI provider to generate test plans. Deterministic QA runs still work without AI." />;
+  }
+
+  return (
+    <form className="project-form test-plan-form" onSubmit={(event) => void submit(event)}>
+      {error && <Notice tone="danger" message={error} />}
+      <div className="form-grid two">
+        <label>
+          Provider
+          <select value={providerID} onChange={(event) => setProviderID(event.target.value)} required>
+            {providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.name} ({provider.model})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Run Context
+          <select value={runID} onChange={(event) => setRunID(event.target.value)}>
+            <option value="">Latest run when available</option>
+            {runs.map((run) => (
+              <option key={run.id} value={run.id}>
+                {shortID(run.id)} · {run.status} · {formatDate(run.created_at)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label>
+        Product Context
+        <textarea
+          value={productContext}
+          placeholder="Optional product behavior, user journeys, or areas to emphasize. Do not include secrets."
+          onChange={(event) => setProductContext(event.target.value)}
+        />
+      </label>
+      <div>
+        <p className="field-label">Focus Areas</p>
+        <div className="checkbox-grid">
+          {focusAreaOptions.map((option) => (
+            <label key={option.value} className="check-row">
+              <input type="checkbox" checked={focusAreas.includes(option.value)} onChange={() => toggleFocusArea(option.value)} />
+              {option.label}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="form-grid two">
+        <label>
+          Max Scenarios
+          <input
+            type="number"
+            min="1"
+            max="30"
+            value={maxScenarios}
+            onChange={(event) => setMaxScenarios(Number(event.target.value))}
+          />
+        </label>
+        <Field label="Project Targets" value={targetSummary(project)} />
+      </div>
+      <div className="form-actions">
+        <button type="submit" disabled={generating || focusAreas.length === 0}>
+          {generating ? "Generating" : "Generate AI Test Plan"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function TestPlansPage({ projects }: { projects: LoadState<Project[]> }) {
+  const [testPlans, setTestPlans] = useState<LoadState<TestPlan[]>>({ data: [], loading: true, error: "" });
+  const projectsByID = useMemo(() => new Map(projects.data.map((project) => [project.id, project])), [projects.data]);
+
+  const refresh = useCallback(async () => {
+    if (projects.loading) {
+      return;
+    }
+    setTestPlans((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const plansByProject = await Promise.all(projects.data.map((project) => listTestPlans(project.id)));
+      const plans = plansByProject.flat().sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+      setTestPlans({ data: plans, loading: false, error: "" });
+    } catch (loadError) {
+      setTestPlans({ data: [], loading: false, error: loadError instanceof Error ? loadError.message : String(loadError) });
+    }
+  }, [projects.data, projects.loading]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  if (projects.error) {
+    return <Notice tone="danger" message={projects.error} />;
+  }
+
+  return (
+    <section>
+      <div className="section-heading">
+        <div>
+          <h2>AI Test Plans</h2>
+          <p>Review generated plans, scenarios, and exports across projects.</p>
+        </div>
+        <button type="button" className="secondary" onClick={() => void refresh()}>
+          Refresh
+        </button>
+      </div>
+      {testPlans.error && <Notice tone="danger" message={testPlans.error} />}
+      {projects.loading || testPlans.loading ? (
+        <SkeletonRows />
+      ) : (
+        <TestPlanTable testPlans={testPlans.data} projectsByID={projectsByID} onDeleted={() => void refresh()} />
+      )}
+    </section>
+  );
+}
+
+function TestPlanTable({
+  testPlans,
+  projectsByID,
+  onDeleted
+}: {
+  testPlans: TestPlan[];
+  projectsByID: Map<string, Project>;
+  onDeleted: () => void;
+}) {
+  if (testPlans.length === 0) {
+    return <EmptyState title="No test plans" body="Generate a plan from a project once an AI provider is configured." />;
+  }
+
+  async function removePlan(testPlanID: string) {
+    if (!window.confirm("Delete this AI test plan?")) {
+      return;
+    }
+    await deleteTestPlan(testPlanID);
+    onDeleted();
+  }
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Title</th>
+            <th>Project</th>
+            <th>Risk</th>
+            <th>Scenarios</th>
+            <th>Run</th>
+            <th>Created</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {testPlans.map((plan) => (
+            <tr key={plan.id}>
+              <td>
+                <StatusBadge status={plan.status} />
+              </td>
+              <td>
+                <a href={`#/test-plans/${plan.id}`}>{plan.title || shortID(plan.id)}</a>
+                {plan.error_message && <p className="muted">{plan.error_message}</p>}
+              </td>
+              <td>{projectsByID.get(plan.project_id)?.name || plan.project_id}</td>
+              <td>{plan.risk_level ? <span className={`severity ${plan.risk_level}`}>{plan.risk_level}</span> : "Not set"}</td>
+              <td>{plan.total_scenarios}</td>
+              <td>{plan.run_id ? <a href={`#/runs/${plan.run_id}`}>{shortID(plan.run_id)}</a> : "Latest/project only"}</td>
+              <td>{formatDate(plan.created_at)}</td>
+              <td className="actions">
+                <div className="button-row compact">
+                  <a className="button secondary-link" href={testPlanExportURL(plan.id)} target="_blank" rel="noreferrer">
+                    Export
+                  </a>
+                  <button type="button" className="secondary danger" onClick={() => void removePlan(plan.id)}>
+                    Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TestPlanDetailPage({ testPlanID, projectByID }: { testPlanID: string; projectByID: Map<string, Project> }) {
+  const [plan, setPlan] = useState<TestPlan | undefined>();
+  const [project, setProject] = useState<Project | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const nextPlan = await getTestPlan(testPlanID);
+      const nextProject = projectByID.get(nextPlan.project_id) ?? (await getProject(nextPlan.project_id));
+      setPlan(nextPlan);
+      setProject(nextProject);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [projectByID, testPlanID]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  if (error) {
+    return <Notice tone="danger" message={error} />;
+  }
+  if (loading || !plan || !project) {
+    return <SkeletonRows />;
+  }
+
+  const payload = normalizeTestPlanPayload(plan.plan_json);
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>{plan.title || payload.title || "AI Test Plan"}</h2>
+            <p>{plan.summary || payload.summary || "No summary provided."}</p>
+          </div>
+          <div className="button-row">
+            <a className="button secondary-link" href={`#/projects/${plan.project_id}`}>
+              Project
+            </a>
+            {plan.run_id && (
+              <a className="button secondary-link" href={`#/runs/${plan.run_id}`}>
+                Run
+              </a>
+            )}
+            <a className="button" href={testPlanExportURL(plan.id)} target="_blank" rel="noreferrer">
+              Export JSON
+            </a>
+          </div>
+        </div>
+        <div className="detail-grid compact">
+          <Field label="Status" value={plan.status} />
+          <Field label="Project" value={project.name} />
+          <Field label="Risk Level" value={plan.risk_level || "Not set"} />
+          <Field label="Scenarios" value={String(plan.total_scenarios || payload.scenarios.length)} />
+          <Field label="Provider" value={plan.provider_name || plan.provider_id || "Not available"} />
+          <Field label="Model" value={plan.model || "Not available"} />
+          <Field label="Created" value={formatDate(plan.created_at)} />
+          <Field label="Updated" value={formatDate(plan.updated_at)} />
+        </div>
+        {plan.error_message && <Notice tone="danger" message={plan.error_message} />}
+      </section>
+
+      <section>
+        <h2>Coverage</h2>
+        <div className="analysis-grid">
+          <AnalysisList title="Assumptions" items={payload.assumptions} />
+          <AnalysisList title="Coverage Goals" items={payload.coverage_goals} />
+          <AnalysisList title="Next Instrumentation" items={payload.suggested_next_instrumentation} />
+          <AnalysisList title="Limitations" items={payload.limitations} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Scenarios</h2>
+        {payload.scenarios.length === 0 ? <p className="muted">No scenarios were returned.</p> : <ScenarioList scenarios={payload.scenarios} />}
+      </section>
+    </div>
+  );
+}
+
+function ScenarioList({ scenarios }: { scenarios: TestPlanScenario[] }) {
+  return (
+    <div className="scenario-stack">
+      {scenarios.map((scenario) => (
+        <div key={scenario.id} className="scenario-card">
+          <div className="scenario-heading">
+            <div>
+              <h3>{scenario.name}</h3>
+              <p>{scenario.description}</p>
+            </div>
+            <div className="scenario-badges">
+              <span className="pill">{scenario.type}</span>
+              <span className={`severity ${scenario.priority}`}>priority {scenario.priority}</span>
+              <span className={`severity ${scenario.risk}`}>risk {scenario.risk}</span>
+            </div>
+          </div>
+          <div className="detail-grid compact">
+            <Field label="Automation Candidate" value={scenario.automation_candidate ? "Yes" : "No"} />
+            <Field label="Destructive" value={scenario.destructive ? "Yes" : "No"} />
+            <Field label="Requires Auth" value={scenario.requires_authentication ? "Yes" : "No"} />
+            <Field label="Tags" value={scenario.tags.length ? scenario.tags.join(", ") : "None"} />
+          </div>
+          <div className="scenario-columns">
+            <AnalysisList title="Preconditions" items={scenario.preconditions} />
+            <AnalysisList title="Assertions" items={scenario.assertions} />
+            <AnalysisList title="Test Data" items={scenario.test_data_needed} />
+            <AnalysisList title="Related Findings" items={scenario.related_findings} />
+          </div>
+          <div>
+            <h3>Steps</h3>
+            <ol className="step-list">
+              {scenario.steps.map((step) => (
+                <li key={`${scenario.id}-${step.order}`}>
+                  <strong>{step.action}</strong>
+                  <span>{step.target || "Target not specified"}</span>
+                  {step.data && <small>Data: {step.data}</small>}
+                  <small>Expected: {step.expected_result}</small>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -898,6 +1364,7 @@ function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cache
 
   const browserEvidence = report.evidence.filter((item) => item.type === "browser_observations");
   const apiEvidence = report.evidence.filter((item) => item.type === "api_observations" || item.type === "openapi_summary");
+  const relatedTestPlans = report.test_plans || [];
 
   async function runAnalysis() {
     if (!run) {
@@ -975,6 +1442,40 @@ function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cache
         )}
         <AIAnalysisPanel analysis={report.ai_analysis} />
       </section>
+
+      {relatedTestPlans.length > 0 && (
+        <section>
+          <h2>Related AI Test Plans</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Title</th>
+                  <th>Risk</th>
+                  <th>Scenarios</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {relatedTestPlans.map((plan) => (
+                  <tr key={plan.id}>
+                    <td>
+                      <StatusBadge status={plan.status} />
+                    </td>
+                    <td>
+                      <a href={`#/test-plans/${plan.id}`}>{plan.title || shortID(plan.id)}</a>
+                    </td>
+                    <td>{plan.risk_level ? <span className={`severity ${plan.risk_level}`}>{plan.risk_level}</span> : "Not set"}</td>
+                    <td>{plan.total_scenarios}</td>
+                    <td>{formatDate(plan.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section>
         <h2>Findings</h2>
@@ -1278,6 +1779,12 @@ function parseHash(hash: string): Route {
   if (parts[0] === "ai-providers") {
     return { name: "ai-providers" };
   }
+  if (parts[0] === "test-plans" && parts[1]) {
+    return { name: "test-plan", id: parts[1] };
+  }
+  if (parts[0] === "test-plans") {
+    return { name: "test-plans" };
+  }
   return { name: "dashboard" };
 }
 
@@ -1293,6 +1800,10 @@ function hashForRoute(route: Route): string {
       return "/runs";
     case "ai-providers":
       return "/ai-providers";
+    case "test-plans":
+      return "/test-plans";
+    case "test-plan":
+      return `/test-plans/${route.id}`;
     case "run":
       return `/runs/${route.id}`;
   }
@@ -1310,6 +1821,10 @@ function titleForRoute(route: Route): string {
       return "Runs";
     case "ai-providers":
       return "AI Providers";
+    case "test-plans":
+      return "AI Test Plans";
+    case "test-plan":
+      return "Test Plan";
     case "run":
       return "Run Report";
   }
@@ -1393,6 +1908,63 @@ function analysisStringList(value: unknown): string[] {
     return [];
   }
   return value.map((item) => String(item)).filter(Boolean);
+}
+
+function normalizeTestPlanPayload(value: Partial<TestPlanPayload> | Record<string, unknown> | undefined): TestPlanPayload {
+  const payload = value || {};
+  return {
+    title: typeof payload.title === "string" ? payload.title : "",
+    summary: typeof payload.summary === "string" ? payload.summary : "",
+    assumptions: analysisStringList(payload.assumptions),
+    coverage_goals: analysisStringList(payload.coverage_goals),
+    scenarios: normalizeScenarios(payload.scenarios),
+    suggested_next_instrumentation: analysisStringList(payload.suggested_next_instrumentation),
+    limitations: analysisStringList(payload.limitations)
+  };
+}
+
+function normalizeScenarios(value: unknown): TestPlanScenario[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    .map((item, index) => ({
+      id: typeof item.id === "string" && item.id ? item.id : `scenario-${index + 1}`,
+      name: typeof item.name === "string" ? item.name : `Scenario ${index + 1}`,
+      type: typeof item.type === "string" ? item.type : "functional",
+      priority: riskValue(item.priority),
+      risk: riskValue(item.risk),
+      description: typeof item.description === "string" ? item.description : "",
+      preconditions: analysisStringList(item.preconditions),
+      steps: normalizeSteps(item.steps),
+      assertions: analysisStringList(item.assertions),
+      test_data_needed: analysisStringList(item.test_data_needed),
+      automation_candidate: Boolean(item.automation_candidate),
+      destructive: Boolean(item.destructive),
+      requires_authentication: Boolean(item.requires_authentication),
+      related_findings: analysisStringList(item.related_findings),
+      tags: analysisStringList(item.tags)
+    }));
+}
+
+function normalizeSteps(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    .map((item, index) => ({
+      order: typeof item.order === "number" ? item.order : index + 1,
+      action: typeof item.action === "string" ? item.action : "",
+      target: typeof item.target === "string" ? item.target : "",
+      data: typeof item.data === "string" ? item.data : "",
+      expected_result: typeof item.expected_result === "string" ? item.expected_result : ""
+    }));
+}
+
+function riskValue(value: unknown): "low" | "medium" | "high" | "critical" {
+  return value === "low" || value === "medium" || value === "high" || value === "critical" ? value : "medium";
 }
 
 function splitHosts(input: string): string[] {

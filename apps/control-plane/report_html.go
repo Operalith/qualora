@@ -167,6 +167,29 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
   </section>
   {{ end }}
 
+  {{ if .Report.TestPlans }}
+  <section style="margin-bottom: 16px;">
+    <h2>Related AI Test Plans</h2>
+    <table>
+      <thead>
+        <tr><th>Title</th><th>Status</th><th>Risk</th><th>Scenarios</th><th>Created</th><th>ID</th></tr>
+      </thead>
+      <tbody>
+        {{ range .Report.TestPlans }}
+        <tr>
+          <td>{{ .Title }}</td>
+          <td>{{ .Status }}</td>
+          <td>{{ .RiskLevel }}</td>
+          <td>{{ .TotalScenarios }}</td>
+          <td>{{ formatTime .CreatedAt }}</td>
+          <td><code>{{ .ID }}</code></td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </section>
+  {{ end }}
+
   <section>
     <h2>Findings</h2>
     {{ if .Report.Findings }}

@@ -10,12 +10,13 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.5.0-alpha` Docker Compose MVP working.
+- Keep the `v0.6.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Minimal web UI support for local project/run/report workflows.
 - Browser-only smoke run support and screenshot evidence preview/download.
 - Optional OpenAI-compatible AI provider management and AI report analysis.
+- Optional AI-assisted test planning as reviewable suggestions only.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
 - Redis for queues and short-lived run state.
@@ -45,6 +46,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Keep the web UI focused on alpha workflows; do not add complex design systems, auth, teams, billing, or SaaS assumptions without an explicit request.
 - Do not introduce Temporal, OWASP ZAP, login automation, or active security scanning in the MVP without an explicit request.
 - Do not introduce autonomous AI browser control or native non-OpenAI-compatible provider SDKs without an explicit request.
+- Do not execute AI-generated test plan steps or wire generated plans into browser/API workers without an explicit request and a safety design.
 - API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
 - Keep worker contracts narrow and serializable.
 - Prefer OpenAPI-first internal API design where practical.
@@ -64,7 +66,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Store credentials through a dedicated abstraction so local MVP storage can later move to Vault or Kubernetes Secrets.
 - AI provider API keys and extra headers must be encrypted at rest and never returned raw by API responses.
 - AI input must be built from sanitized report data only. Do not send screenshots, full HTML, cookies, credentials, authorization headers, or full network bodies to AI by default.
-- Redaction must remain enabled by default for AI analysis.
+- Redaction must remain enabled by default for AI analysis and AI-assisted test planning.
+- AI test planning must use sanitized project/run/report metadata only. Do not send screenshots, full HTML, cookies, credentials, authorization headers, raw traces, or full network bodies to AI by default.
 
 ## Contribution Style
 

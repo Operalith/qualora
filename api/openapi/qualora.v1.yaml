@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.5.0-alpha
-  description: API for creating QA projects, starting browser/API smoke runs, managing optional OpenAI-compatible AI providers, reading reports, and downloading stored evidence objects.
+  version: 0.6.0-alpha
+  description: API for creating QA projects, starting browser/API smoke runs, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, reading reports, and downloading stored evidence objects.
 servers:
   - url: http://localhost:8080
 paths:
@@ -130,6 +130,49 @@ paths:
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/ai-test-plans:
+    post:
+      summary: Generate an AI-assisted test plan for a project
+      description: Synchronously builds a sanitized project/run context and sends it to the selected or default OpenAI-compatible provider. Generated plans are suggestions and are not executed by Qualora.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AITestPlanRequest"
+      responses:
+        "201":
+          description: AI test plan record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestPlan"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/test-plans:
+    get:
+      summary: List AI test plans for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Project test plan list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [test_plans]
+                properties:
+                  test_plans:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TestPlan"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/runs:
     get:
       summary: List runs
@@ -227,6 +270,7 @@ paths:
                     - kind: api
                       status: completed
                 ai_analysis: null
+                test_plans: []
         "404":
           $ref: "#/components/responses/Error"
   /api/v1/runs/{run_id}/report.html:
@@ -385,6 +429,51 @@ paths:
                 $ref: "#/components/schemas/AIProviderTestResult"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/test-plans/{test_plan_id}:
+    get:
+      summary: Get an AI test plan
+      parameters:
+        - $ref: "#/components/parameters/TestPlanID"
+      responses:
+        "200":
+          description: AI test plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestPlan"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete an AI test plan
+      parameters:
+        - $ref: "#/components/parameters/TestPlanID"
+      responses:
+        "200":
+          description: Delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: boolean
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/test-plans/{test_plan_id}/export.json:
+    get:
+      summary: Export the normalized AI test plan JSON payload
+      parameters:
+        - $ref: "#/components/parameters/TestPlanID"
+      responses:
+        "200":
+          description: Normalized test plan payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestPlanPayload"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/evidence/{evidence_id}:
     get:
       summary: Download a stored evidence object
@@ -435,6 +524,13 @@ components:
       schema:
         type: string
         format: uuid
+    TestPlanID:
+      name: test_plan_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   responses:
     Error:
       description: Error response
@@ -474,7 +570,7 @@ components:
         destructive_actions:
           type: boolean
           default: false
-          description: Destructive actions are still off by default for v0.5.0-alpha.
+          description: Destructive actions are still off by default for v0.6.0-alpha.
         allow_private_targets:
           type: boolean
           default: false
@@ -576,6 +672,7 @@ components:
         - evidence
         - metadata
         - ai_analysis
+        - test_plans
       properties:
         run_id:
           type: string
@@ -603,6 +700,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/AIAnalysis"
           nullable: true
+        test_plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/TestPlanRef"
     ReportSummary:
       type: object
       required: [total_findings, critical, high, medium, low, info]
@@ -886,6 +987,219 @@ components:
         updated_at:
           type: string
           format: date-time
+    AITestPlanRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        provider_id:
+          type: string
+          format: uuid
+          description: Optional. Uses the default provider when omitted.
+        run_id:
+          type: string
+          format: uuid
+          description: Optional. Uses the latest project run when omitted.
+        product_context:
+          type: string
+          description: Optional product notes. Secrets are redacted before prompt construction.
+        focus_areas:
+          type: array
+          items:
+            type: string
+            enum: [smoke, functional, negative, accessibility, performance, security-passive, authorization, api, visual, regression]
+          default: [smoke, functional, negative, accessibility, regression]
+        max_scenarios:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 10
+    TestPlan:
+      type: object
+      required:
+        - id
+        - project_id
+        - model
+        - status
+        - title
+        - summary
+        - plan_json
+        - risk_level
+        - total_scenarios
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+          nullable: true
+        provider_id:
+          type: string
+          format: uuid
+          nullable: true
+        provider_name:
+          type: string
+        model:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        title:
+          type: string
+        summary:
+          type: string
+        plan_json:
+          $ref: "#/components/schemas/TestPlanPayload"
+        risk_level:
+          type: string
+          enum: [low, medium, high, critical, ""]
+        total_scenarios:
+          type: integer
+        error_message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TestPlanRef:
+      type: object
+      required: [id, title, status, risk_level, total_scenarios, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+        risk_level:
+          type: string
+        total_scenarios:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    TestPlanPayload:
+      type: object
+      required:
+        - title
+        - summary
+        - assumptions
+        - coverage_goals
+        - scenarios
+        - suggested_next_instrumentation
+        - limitations
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        assumptions:
+          type: array
+          items:
+            type: string
+        coverage_goals:
+          type: array
+          items:
+            type: string
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/TestPlanScenario"
+        suggested_next_instrumentation:
+          type: array
+          items:
+            type: string
+        limitations:
+          type: array
+          items:
+            type: string
+    TestPlanScenario:
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - priority
+        - risk
+        - description
+        - preconditions
+        - steps
+        - assertions
+        - test_data_needed
+        - automation_candidate
+        - destructive
+        - requires_authentication
+        - related_findings
+        - tags
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [smoke, functional, negative, accessibility, performance, security-passive, authorization, api, visual, regression]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        risk:
+          type: string
+          enum: [low, medium, high, critical]
+        description:
+          type: string
+        preconditions:
+          type: array
+          items:
+            type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/TestPlanStep"
+        assertions:
+          type: array
+          items:
+            type: string
+        test_data_needed:
+          type: array
+          items:
+            type: string
+        automation_candidate:
+          type: boolean
+        destructive:
+          type: boolean
+          description: Qualora does not execute generated steps in v0.6.0-alpha.
+        requires_authentication:
+          type: boolean
+        related_findings:
+          type: array
+          items:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+    TestPlanStep:
+      type: object
+      required: [order, action, target, data, expected_result]
+      properties:
+        order:
+          type: integer
+        action:
+          type: string
+        target:
+          type: string
+        data:
+          type: string
+        expected_result:
+          type: string
     ErrorResponse:
       type: object
       required: [error]
@@ -899,4 +1213,4 @@ components:
               example: invalid_project
             message:
               type: string
-              example: frontend_url: host "localhost" is blocked by the default safety policy
+              example: 'frontend_url: host "localhost" is blocked by the default safety policy'

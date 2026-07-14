@@ -4,6 +4,42 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.6.0-alpha] - 2026-07-14
+
+### Added
+
+- AI-assisted test plan generation endpoint at `POST /api/v1/projects/{project_id}/ai-test-plans`.
+- Project-scoped test plan listing at `GET /api/v1/projects/{project_id}/test-plans`.
+- Test plan detail, delete, and JSON export endpoints at `GET/DELETE /api/v1/test-plans/{test_plan_id}` and `GET /api/v1/test-plans/{test_plan_id}/export.json`.
+- `test_plans` persistence table with project, optional run, provider/model, status, normalized plan JSON, risk level, scenario count, and error metadata.
+- Strict AI test plan response parser and normalizer for assumptions, coverage goals, scenarios, steps, assertions, test data, instrumentation suggestions, and limitations.
+- Safe AI test planning prompt builder that uses sanitized project, run report, AI analysis, finding, and evidence metadata.
+- Web UI support for generating, listing, viewing, deleting, and exporting AI test plans.
+- Run report references for AI test plans generated from a run in both JSON and HTML reports.
+- Fake LLM deterministic AI test plan response for local smoke tests.
+- Smoke coverage for AI test plan generation, project listing, detail retrieval, JSON export, and run report cross-links.
+- Unit tests for AI test plan request normalization, safe input redaction, parsing, scenario validation, and scenario limits.
+
+### Changed
+
+- `make smoke` now validates browser and API AI test planning in addition to AI analysis.
+- OpenAPI contract now documents AI test plan endpoints and schemas.
+- Package metadata has been updated to `0.6.0-alpha`.
+
+### Security
+
+- Generated test plans are reviewable suggestions only and are not executed by Qualora.
+- AI test planning uses the same conservative redaction path as AI analysis and strips URL query strings/fragments from text sent to or stored from model output.
+- Screenshots, full HTML, cookies, credentials, authorization headers, raw traces, and full network bodies are not sent to AI by default.
+
+### Known Limitations
+
+- No authentication or authorization.
+- AI test planning is alpha and depends on the configured OpenAI-compatible provider.
+- Generated steps are not executed automatically.
+- No authenticated journey planning beyond high-level suggestions.
+- No autonomous AI browser control, login automation, active security scanning, schema fuzzing, or destructive test execution.
+
 ## [v0.5.0-alpha] - 2026-07-14
 
 ### Added

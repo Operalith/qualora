@@ -318,6 +318,10 @@ func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
+	testPlans, err := s.ListTestPlanRefsForRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
 
 	report := &Report{
 		RunID:      run.ID,
@@ -327,6 +331,7 @@ func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 		Findings:   findings,
 		Evidence:   evidence,
 		AIAnalysis: analysis,
+		TestPlans:  testPlans,
 		Metadata: map[string]any{
 			"page_title": run.PageTitle,
 			"created_at": run.CreatedAt.Format(time.RFC3339),

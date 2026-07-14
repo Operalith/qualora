@@ -275,7 +275,7 @@ func sanitizeStringSlice(values []string, limit int) []string {
 		if i >= limit {
 			break
 		}
-		value = strings.TrimSpace(RedactSecrets(value))
+		value = strings.TrimSpace(sanitizeText(RedactSecrets(value)))
 		if value != "" {
 			output = append(output, limitString(value, 1000))
 		}

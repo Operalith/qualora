@@ -102,6 +102,7 @@ type Report struct {
 	Evidence   []Evidence     `json:"evidence"`
 	Metadata   map[string]any `json:"metadata"`
 	AIAnalysis *AIAnalysis    `json:"ai_analysis"`
+	TestPlans  []TestPlanRef  `json:"test_plans"`
 }
 
 type ReportSummary struct {
@@ -183,4 +184,39 @@ type AIAnalysis struct {
 	ErrorMessage     string         `json:"error_message,omitempty"`
 	CreatedAt        time.Time      `json:"created_at"`
 	UpdatedAt        time.Time      `json:"updated_at"`
+}
+
+type AITestPlanRequest struct {
+	ProviderID     string   `json:"provider_id"`
+	RunID          string   `json:"run_id"`
+	ProductContext string   `json:"product_context"`
+	FocusAreas     []string `json:"focus_areas"`
+	MaxScenarios   int      `json:"max_scenarios"`
+}
+
+type TestPlan struct {
+	ID             string         `json:"id"`
+	ProjectID      string         `json:"project_id"`
+	RunID          string         `json:"run_id,omitempty"`
+	ProviderID     string         `json:"provider_id,omitempty"`
+	ProviderName   string         `json:"provider_name,omitempty"`
+	Model          string         `json:"model,omitempty"`
+	Status         string         `json:"status"`
+	Title          string         `json:"title"`
+	Summary        string         `json:"summary"`
+	PlanJSON       map[string]any `json:"plan_json"`
+	RiskLevel      string         `json:"risk_level"`
+	TotalScenarios int            `json:"total_scenarios"`
+	ErrorMessage   string         `json:"error_message,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+}
+
+type TestPlanRef struct {
+	ID             string    `json:"id"`
+	Title          string    `json:"title"`
+	Status         string    `json:"status"`
+	RiskLevel      string    `json:"risk_level"`
+	TotalScenarios int       `json:"total_scenarios"`
+	CreatedAt      time.Time `json:"created_at"`
 }

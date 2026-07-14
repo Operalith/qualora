@@ -364,6 +364,30 @@ button.danger:hover {
   max-width: 920px;
 }
 
+.test-plan-form {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+  max-width: 980px;
+  padding-bottom: 16px;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.checkbox-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.section-split {
+  margin-top: 16px;
+}
+
 .pill {
   background: #eef8f7;
   border-radius: 999px;
@@ -569,6 +593,71 @@ button.danger:hover {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.scenario-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.scenario-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.scenario-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.scenario-heading p {
+  color: var(--muted);
+  margin-bottom: 0;
+}
+
+.scenario-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.scenario-columns {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.step-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.step-list li {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.step-list strong,
+.step-list span,
+.step-list small {
+  display: block;
+}
+
+.step-list span,
+.step-list small {
+  color: var(--muted);
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
 .plain-list {
   margin: 0;
   padding-left: 18px;
@@ -621,7 +710,9 @@ button.danger:hover {
   .form-grid.two,
   .form-grid.three,
   .toggle-grid,
-  .analysis-grid {
+  .analysis-grid,
+  .checkbox-grid,
+  .scenario-columns {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -645,8 +736,18 @@ button.danger:hover {
   .form-grid.two,
   .form-grid.three,
   .toggle-grid,
-  .analysis-grid {
+  .analysis-grid,
+  .checkbox-grid,
+  .scenario-columns {
     grid-template-columns: 1fr;
+  }
+
+  .scenario-heading {
+    flex-direction: column;
+  }
+
+  .scenario-badges {
+    justify-content: flex-start;
   }
 
   button,

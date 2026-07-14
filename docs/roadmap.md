@@ -54,7 +54,7 @@ Delivered:
 
 ## v0.5.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Optional OpenAI-compatible AI provider management.
 - Provider presets for OpenAI, OpenRouter, Ollama, and custom OpenAI-compatible endpoints.
@@ -65,6 +65,17 @@ Current alpha scope:
 - AI analysis display in the web UI, JSON report, and HTML report.
 - Deterministic local `fake-llm` smoke target.
 
+## v0.6.0-alpha
+
+Current alpha scope:
+
+- AI-assisted test plan generation from sanitized project/run/report metadata.
+- Strict normalized test plan JSON with assumptions, coverage goals, scenarios, steps, assertions, test data needs, instrumentation suggestions, and limitations.
+- Project-scoped test plan list, detail, delete, and JSON export endpoints.
+- Web UI generation form, plan list, detail page, scenario/step display, deletion, and export links.
+- JSON/HTML run report references for plans generated from a run.
+- Deterministic local fake LLM plan response and smoke validation.
+
 ## Phase 6: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
@@ -74,6 +85,7 @@ Current alpha scope:
 - Additional safety tests for DNS and worker request blocking.
 - Better operational logs and container health checks.
 - Move AI analysis to an async analyzer worker.
+- Move AI-assisted test planning to an async analyzer worker.
 
 ## Phase 7: Deeper API Checks
 

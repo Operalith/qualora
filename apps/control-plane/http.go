@@ -38,6 +38,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/evidence/", a.handleEvidenceSubroutes)
 	mux.HandleFunc("/api/v1/ai/providers", a.handleAIProviders)
 	mux.HandleFunc("/api/v1/ai/providers/", a.handleAIProviderSubroutes)
+	mux.HandleFunc("/api/v1/test-plans/", a.handleTestPlanSubroutes)
 	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, mux)))
 }
 
@@ -133,6 +134,22 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.createBrowserSmokeRun(w, r, parts[0])
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "ai-test-plans" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.createAITestPlan(w, r, parts[0])
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "test-plans" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.listTestPlans(w, r, parts[0])
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "route not found")
@@ -352,6 +369,179 @@ func (a *App) handleEvidenceSubroutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.getEvidenceObject(w, r, parts[0])
+}
+
+func (a *App) handleTestPlanSubroutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/test-plans/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 1 && parts[0] != "" {
+		switch r.Method {
+		case http.MethodGet:
+			a.getTestPlan(w, r, parts[0])
+		case http.MethodDelete:
+			a.deleteTestPlan(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "export.json" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.exportTestPlanJSON(w, r, parts[0])
+		return
+	}
+	writeError(w, http.StatusNotFound, "not_found", "route not found")
+}
+
+func (a *App) createAITestPlan(w http.ResponseWriter, r *http.Request, projectID string) {
+	input, err := decodeAITestPlanRequest(w, r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_ai_test_plan", err.Error())
+		return
+	}
+
+	project, err := a.store.GetProject(r.Context(), projectID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "project_not_found", "project was not found")
+			return
+		}
+		a.logger.Error("get project for AI test plan failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_project_failed", "project could not be loaded")
+		return
+	}
+
+	report, err := a.reportForTestPlan(r.Context(), projectID, input.RunID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "run_not_found", "selected run was not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "invalid_run", err.Error())
+		return
+	}
+
+	provider, err := a.providerForAnalysis(r.Context(), input.ProviderID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusBadRequest, "ai_provider_required", "configure an AI provider before generating AI test plans")
+			return
+		}
+		a.logger.Error("load AI provider for test plan failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_ai_provider_failed", "AI provider could not be loaded")
+		return
+	}
+
+	runID := ""
+	if report != nil {
+		runID = report.RunID
+	}
+	plan, err := a.store.CreateTestPlan(r.Context(), projectID, runID, provider.ID, provider.Model)
+	if err != nil {
+		a.logger.Error("create test plan failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create_test_plan_failed", "AI test plan could not be created")
+		return
+	}
+
+	userPrompt, err := BuildAITestPlanUserPrompt(*project, report, input)
+	if err != nil {
+		plan, _ = a.store.FailTestPlan(r.Context(), plan.ID, RedactSecrets(err.Error()))
+		writeJSON(w, http.StatusCreated, plan)
+		return
+	}
+	clientRequest, err := a.clientRequestForProvider(*provider, []AIChatMessage{
+		{Role: "system", Content: AITestPlanSystemPrompt()},
+		{Role: "user", Content: userPrompt},
+	})
+	if err != nil {
+		plan, _ = a.store.FailTestPlan(r.Context(), plan.ID, RedactSecrets(err.Error()))
+		writeJSON(w, http.StatusCreated, plan)
+		return
+	}
+
+	clientResponse, err := a.aiClient.ChatCompletion(r.Context(), clientRequest)
+	if err != nil {
+		plan, _ = a.store.FailTestPlan(r.Context(), plan.ID, RedactSecrets(err.Error()))
+		writeJSON(w, http.StatusCreated, plan)
+		return
+	}
+	payload, planJSON, err := ParseTestPlanPayload(clientResponse.Content, input.MaxScenarios)
+	if err != nil {
+		plan, _ = a.store.FailTestPlan(r.Context(), plan.ID, RedactSecrets(err.Error()))
+		writeJSON(w, http.StatusCreated, plan)
+		return
+	}
+	completed, err := a.store.CompleteTestPlan(r.Context(), plan.ID, payload, planJSON)
+	if err != nil {
+		a.logger.Error("complete test plan failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "complete_test_plan_failed", "AI test plan could not be saved")
+		return
+	}
+	writeJSON(w, http.StatusCreated, completed)
+}
+
+func (a *App) listTestPlans(w http.ResponseWriter, r *http.Request, projectID string) {
+	if _, err := a.store.GetProject(r.Context(), projectID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "project_not_found", "project was not found")
+			return
+		}
+		a.logger.Error("get project for test plan list failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_project_failed", "project could not be loaded")
+		return
+	}
+	plans, err := a.store.ListTestPlans(r.Context(), projectID)
+	if err != nil {
+		a.logger.Error("list test plans failed", "project_id", projectID, "error", err)
+		writeError(w, http.StatusInternalServerError, "list_test_plans_failed", "test plans could not be listed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"test_plans": plans})
+}
+
+func (a *App) getTestPlan(w http.ResponseWriter, r *http.Request, planID string) {
+	plan, err := a.store.GetTestPlan(r.Context(), planID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "test_plan_not_found", "test plan was not found")
+			return
+		}
+		a.logger.Error("get test plan failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_test_plan_failed", "test plan could not be loaded")
+		return
+	}
+	writeJSON(w, http.StatusOK, plan)
+}
+
+func (a *App) deleteTestPlan(w http.ResponseWriter, r *http.Request, planID string) {
+	if err := a.store.DeleteTestPlan(r.Context(), planID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "test_plan_not_found", "test plan was not found")
+			return
+		}
+		a.logger.Error("delete test plan failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "delete_test_plan_failed", "test plan could not be deleted")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
+func (a *App) exportTestPlanJSON(w http.ResponseWriter, r *http.Request, planID string) {
+	plan, err := a.store.GetTestPlan(r.Context(), planID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "test_plan_not_found", "test plan was not found")
+			return
+		}
+		a.logger.Error("export test plan failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_test_plan_failed", "test plan could not be loaded")
+		return
+	}
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": "qualora-test-plan-" + plan.ID + ".json"}))
+	writeJSON(w, http.StatusOK, plan.PlanJSON)
 }
 
 func (a *App) getEvidenceObject(w http.ResponseWriter, r *http.Request, evidenceID string) {
@@ -644,6 +834,38 @@ func decodeAIProviderRequest(w http.ResponseWriter, r *http.Request) (AIProvider
 		return input, fmt.Errorf("request body must be valid AI provider JSON")
 	}
 	return normalizeProviderRequest(input)
+}
+
+func decodeAITestPlanRequest(w http.ResponseWriter, r *http.Request) (AITestPlanRequest, error) {
+	var input AITestPlanRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+		return input, fmt.Errorf("request body must be valid AI test plan JSON")
+	}
+	return NormalizeAITestPlanRequest(input)
+}
+
+func (a *App) reportForTestPlan(ctx context.Context, projectID string, runID string) (*Report, error) {
+	if runID != "" {
+		report, err := a.store.GetReport(ctx, runID)
+		if err != nil {
+			return nil, err
+		}
+		if report.ProjectID != projectID {
+			return nil, fmt.Errorf("selected run does not belong to the project")
+		}
+		return report, nil
+	}
+	latestRun, err := a.store.GetLatestRunForProject(ctx, projectID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return a.store.GetReport(ctx, latestRun.ID)
 }
 
 func (a *App) providerFromInput(input AIProviderRequest, existingEncryptedAPIKey string, existingEncryptedExtraHeaders string) (AIProvider, error) {

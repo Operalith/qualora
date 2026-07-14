@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.5.0-alpha is the fifth public alpha release. It adds optional OpenAI-compatible AI provider management, provider testing, sanitized AI report analysis, AI report display, and a deterministic fake LLM smoke target.
+Qualora v0.6.0-alpha is the sixth public alpha release. It adds AI-assisted test plan generation, test plan storage/export, web UI plan workflows, JSON/HTML report references, and deterministic fake LLM smoke coverage while keeping deterministic QA useful without AI.
 
 ## Pre-Release Checklist
 
@@ -29,24 +29,27 @@ Confirm:
 - Screenshot evidence metadata includes filename, key, content type, size, and created timestamp.
 - `GET /api/v1/evidence/{evidence_id}` returns the stored screenshot with an image content type.
 - The smoke script creates and tests a fake OpenAI-compatible provider.
-- AI analysis completes for the browser smoke run.
+- AI analysis completes for the browser and API smoke runs.
+- AI test plan generation completes for the browser and API smoke runs.
+- Test plan detail and export JSON URLs work.
 - JSON reports include `ai_analysis` when analysis has been generated.
 - HTML reports include an AI Analysis section when analysis has been generated.
+- JSON and HTML reports include related test plan references when a plan was generated from a run.
 - API reports include `api_observations`, `openapi_summary`, and `api_request` evidence.
 - JSON report URLs work.
 - HTML report URLs work and render a self-contained report.
 - Screenshot evidence uses an `s3://qualora-evidence/...` URI when MinIO is healthy.
-- Documentation does not claim unsupported auth, login automation, active security scanning, destructive API testing, schema fuzzing, trace export, autonomous AI browser control, native Anthropic/Gemini support, or full browser/API test coverage.
+- Documentation does not claim unsupported auth, login automation, active security scanning, destructive API testing, schema fuzzing, trace export, autonomous AI browser control, automatic execution of generated test plans, native Anthropic/Gemini support, or full browser/API test coverage.
 
 ## Tagging
 
 ```bash
 git status --short
 git add .
-git commit -m "feat: add optional AI report analysis for v0.5.0-alpha"
-git tag -a v0.5.0-alpha -m "v0.5.0-alpha"
+git commit -m "feat: add AI-assisted test planning for v0.6.0-alpha"
+git tag -a v0.6.0-alpha -m "v0.6.0-alpha"
 git push origin main
-git push origin v0.5.0-alpha
+git push origin v0.6.0-alpha
 ```
 
 ## GitHub Release
@@ -54,7 +57,7 @@ git push origin v0.5.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.5.0-alpha
+Qualora v0.6.0-alpha
 ```
 
-Use [release-notes/v0.5.0-alpha.md](release-notes/v0.5.0-alpha.md) as the release body.
+Use [release-notes/v0.6.0-alpha.md](release-notes/v0.6.0-alpha.md) as the release body.

@@ -1,4 +1,15 @@
-import type { AIAnalysis, AIProvider, AIProviderInput, AIProviderTestResult, CreateProjectInput, Project, Report, TestRun } from "./types";
+import type {
+  AIAnalysis,
+  AIProvider,
+  AIProviderInput,
+  AIProviderTestResult,
+  AITestPlanInput,
+  CreateProjectInput,
+  Project,
+  Report,
+  TestPlan,
+  TestRun
+} from "./types";
 
 declare global {
   interface Window {
@@ -18,6 +29,10 @@ export function htmlReportURL(runID: string): string {
 
 export function evidenceDownloadURL(evidenceID: string): string {
   return `${API_BASE_URL}/api/v1/evidence/${evidenceID}`;
+}
+
+export function testPlanExportURL(testPlanID: string): string {
+  return `${API_BASE_URL}/api/v1/test-plans/${testPlanID}/export.json`;
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -103,6 +118,28 @@ export async function runAIAnalysis(runID: string, providerID?: string): Promise
 export async function getAIAnalysis(runID: string): Promise<AIAnalysis | null> {
   const response = await request<{ ai_analysis: AIAnalysis | null }>(`/api/v1/runs/${runID}/ai-analysis`);
   return response.ai_analysis;
+}
+
+export async function generateAITestPlan(projectID: string, input: AITestPlanInput): Promise<TestPlan> {
+  return request<TestPlan>(`/api/v1/projects/${projectID}/ai-test-plans`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function listTestPlans(projectID: string): Promise<TestPlan[]> {
+  const response = await request<{ test_plans: TestPlan[] }>(`/api/v1/projects/${projectID}/test-plans`);
+  return response.test_plans;
+}
+
+export async function getTestPlan(testPlanID: string): Promise<TestPlan> {
+  return request<TestPlan>(`/api/v1/test-plans/${testPlanID}`);
+}
+
+export async function deleteTestPlan(testPlanID: string): Promise<void> {
+  await request<{ deleted: boolean }>(`/api/v1/test-plans/${testPlanID}`, {
+    method: "DELETE"
+  });
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

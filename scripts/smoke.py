@@ -147,6 +147,53 @@ def run_ai_analysis(report, provider):
     return updated_report
 
 
+def generate_ai_test_plan(project, report, provider):
+    run_id = report["run_id"]
+    plan = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/ai-test-plans",
+        {
+            "provider_id": provider["id"],
+            "run_id": run_id,
+            "product_context": "Smoke demo context. password=should-not-leak",
+            "focus_areas": ["smoke", "functional", "api", "regression"],
+            "max_scenarios": 8,
+        },
+    )
+    print(f"AI test plan: {json.dumps(plan, indent=2)}")
+    if plan.get("status") != "completed":
+        raise RuntimeError(f"AI test plan did not complete: {plan}")
+    if int(plan.get("total_scenarios") or 0) < 1:
+        raise RuntimeError(f"AI test plan did not include scenarios: {plan}")
+    if "should-not-leak" in json.dumps(plan):
+        raise RuntimeError("AI test plan response exposed redaction smoke text")
+
+    plans = request("GET", f"/api/v1/projects/{project['id']}/test-plans").get("test_plans", [])
+    if not any(item.get("id") == plan["id"] for item in plans):
+        raise RuntimeError("project test plan list did not include generated plan")
+
+    fetched = request("GET", f"/api/v1/test-plans/{plan['id']}")
+    if fetched.get("id") != plan["id"] or fetched.get("status") != "completed":
+        raise RuntimeError(f"test plan detail did not match generated plan: {fetched}")
+
+    exported = request("GET", f"/api/v1/test-plans/{plan['id']}/export.json")
+    if not exported.get("scenarios"):
+        raise RuntimeError(f"test plan export did not include scenarios: {exported}")
+
+    updated_report = request("GET", f"/api/v1/runs/{run_id}/report")
+    if not any(item.get("id") == plan["id"] for item in updated_report.get("test_plans", [])):
+        raise RuntimeError("JSON report did not include related AI test plan")
+
+    html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    if "Related AI Test Plans" not in html or "Qualora deterministic alpha test plan" not in html:
+        raise RuntimeError("HTML report did not include the related AI test plan")
+
+    print(f"AI test plan detail: {API_URL}/api/v1/test-plans/{plan['id']}")
+    print(f"AI test plan export: {API_URL}/api/v1/test-plans/{plan['id']}/export.json")
+    print(f"Web test plan detail: {WEB_URL}/#/test-plans/{plan['id']}")
+    return plan
+
+
 def run_project(project, run_path=None):
     path = run_path or f"/api/v1/projects/{project['id']}/runs"
     run = request("POST", path)
@@ -224,7 +271,8 @@ def main():
     )
     browser_report = run_project(browser_project, f"/api/v1/projects/{browser_project['id']}/browser-smoke-runs")
     assert_browser_report(browser_report)
-    run_ai_analysis(browser_report, provider)
+    browser_report = run_ai_analysis(browser_report, provider)
+    generate_ai_test_plan(browser_project, browser_report, provider)
 
     print("== API smoke ==")
     wait_for_url(MOCK_API_HEALTH_URL)
@@ -240,7 +288,9 @@ def main():
             "allow_private_targets": True,
         }
     )
-    run_project(api_project)
+    api_report = run_project(api_project)
+    api_report = run_ai_analysis(api_report, provider)
+    generate_ai_test_plan(api_project, api_report, provider)
 
     return 0
 

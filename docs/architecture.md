@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.5.0-alpha is a small Docker Compose MVP for browser and API QA smoke runs with a minimal web UI, human-friendly reports, control-plane evidence download for stored artifacts, and optional AI analysis of completed reports.
+Qualora v0.6.0-alpha is a small Docker Compose MVP for browser and API QA smoke runs with a minimal web UI, human-friendly reports, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, and AI-assisted test plan suggestions.
 
 ## Runtime Components
 
@@ -10,10 +10,12 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, ai_providers, ai_analyses
+        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, ai_providers, ai_analyses, test_plans
         +--> Redis: browser and API run queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
+        |       +--> Report analysis
+        |       +--> Test plan suggestions
         |
         +--> qualora-worker-browser
         |       +--> Playwright Chromium smoke test
@@ -40,6 +42,8 @@ Current endpoints:
 - `POST /api/v1/projects/{project_id}/runs`
 - `GET /api/v1/projects/{project_id}/runs`
 - `POST /api/v1/projects/{project_id}/browser-smoke-runs`
+- `POST /api/v1/projects/{project_id}/ai-test-plans`
+- `GET /api/v1/projects/{project_id}/test-plans`
 - `GET /api/v1/runs`
 - `GET /api/v1/runs/{run_id}`
 - `GET /api/v1/runs/{run_id}/report`
@@ -53,6 +57,9 @@ Current endpoints:
 - `POST /api/v1/ai/providers/{provider_id}/test`
 - `GET /api/v1/runs/{run_id}/ai-analysis`
 - `POST /api/v1/runs/{run_id}/ai-analysis`
+- `GET /api/v1/test-plans/{test_plan_id}`
+- `DELETE /api/v1/test-plans/{test_plan_id}`
+- `GET /api/v1/test-plans/{test_plan_id}/export.json`
 
 ### `qualora-web`
 
@@ -66,6 +73,8 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - Screenshot previews and downloads through the control-plane evidence endpoint.
 - AI provider configuration for OpenAI-compatible endpoints.
 - AI analysis status, summaries, risk level, recommendations, suggested next tests, and limitations.
+- AI test plan generation from project/run context.
+- AI test plan lists, detail pages, scenario/step display, deletion, and JSON export links.
 
 It has no authentication in this alpha and should be exposed only in trusted local/self-hosted environments.
 
@@ -112,6 +121,7 @@ PostgreSQL stores durable metadata:
 - `evidence`
 - `ai_providers`
 - `ai_analyses`
+- `test_plans`
 
 Reports are generated dynamically from run, job, finding, and evidence rows.
 
@@ -129,11 +139,11 @@ The `mock-api` Compose service is profile-gated for smoke tests. It is not part 
 
 ### `fake-llm`
 
-The `fake-llm` Compose service is profile-gated for smoke tests. It implements the OpenAI-compatible `/v1/chat/completions` shape and returns deterministic JSON analysis so tests never call an external LLM provider.
+The `fake-llm` Compose service is profile-gated for smoke tests. It implements the OpenAI-compatible `/v1/chat/completions` shape and returns deterministic JSON analysis or deterministic JSON test plans so tests never call an external LLM provider.
 
-## Optional AI Analysis
+## Optional AI Features
 
-AI is an enhancement layer, not a dependency for QA execution. Browser/API workers produce deterministic findings and evidence first. A user can then run AI analysis for an existing run.
+AI is an enhancement layer, not a dependency for QA execution. Browser/API workers produce deterministic findings and evidence first. A user can then run AI analysis for an existing run or generate an AI-assisted test plan for a project.
 
 Provider records store:
 
@@ -144,9 +154,11 @@ Provider records store:
 - Safe-send toggles for screenshots, HTML, and network bodies.
 - Redaction setting, enabled by default.
 
-For v0.5, AI analysis runs synchronously in the control plane. The database model is separated so it can move to a dedicated analyzer worker later.
+For v0.6, AI analysis and AI test planning run synchronously in the control plane. The database models are separated so both paths can move to a dedicated analyzer worker later.
 
 The safe AI input builder includes only sanitized report data such as run status, summary counts, finding titles/summaries, safe evidence metadata, browser/API metadata, and job metadata. It strips or redacts URL queries, cookies, authorization values, tokens, passwords, API keys, session IDs, JWT-looking strings, full response bodies, full HTML, and secret-looking fields. Screenshots, HTML, and network bodies are not sent by default.
+
+AI-assisted test plans use sanitized project configuration, optional product context, selected focus areas, optional latest/run-specific report metadata, and optional AI analysis summaries. The strict plan parser accepts only a reviewable JSON structure with assumptions, coverage goals, scenarios, steps, assertions, test data needs, instrumentation suggestions, and limitations. Generated steps are never executed by Qualora in this release.
 
 ## Run Lifecycle
 
@@ -164,17 +176,21 @@ The safe AI input builder includes only sanitized report data such as run status
 12. The API streams screenshot evidence by evidence ID when requested.
 13. Optionally, a user runs AI analysis for the completed run.
 14. The API stores the AI analysis and includes it in JSON/HTML reports.
+15. Optionally, a user generates an AI-assisted test plan for a project using sanitized project/run context.
+16. The API stores the test plan and includes a lightweight reference in JSON/HTML reports when it was generated from a run.
 
 ## Intentional Alpha Constraints
 
 - No user accounts or authentication.
 - Web UI is alpha and suitable only for trusted self-hosted/local environments.
 - AI provider management is alpha and should be used only in trusted local/self-hosted environments.
+- AI-assisted test planning is alpha and should be treated as human-reviewable suggestions only.
 - Only OpenAI-compatible chat completion providers are supported.
 - Evidence download is limited to stored evidence records and is not a signed URL system.
 - No authenticated API testing.
 - No login automation.
 - No autonomous AI browser control.
+- No automatic execution of generated AI test plan steps.
 - No active security scanning.
 - No destructive API testing by default.
 - No full OpenAPI schema validation or fuzzing.

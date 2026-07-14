@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.5.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.6.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -41,11 +41,11 @@ Default API behavior:
 - OpenAPI document fetch from `openapi_url`.
 - Safe OpenAPI methods only: `GET`, `HEAD`, and `OPTIONS`.
 - Unsafe methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are skipped.
-- `destructive_actions=true` is not supported by the v0.5.0-alpha API worker.
+- `destructive_actions=true` is not supported by the v0.6.0-alpha API worker.
 
 ## Web UI Exposure
 
-The v0.5.0-alpha web UI has no authentication or authorization. It can create projects, start runs, configure AI providers, run AI analysis, and display report/evidence metadata through the control-plane API.
+The v0.6.0-alpha web UI has no authentication or authorization. It can create projects, start runs, configure AI providers, run AI analysis, generate AI-assisted test plans, and display report/evidence metadata through the control-plane API.
 
 Use it only in trusted local or self-hosted environments. Do not expose `qualora-web` or `qualora-api` directly to untrusted networks without adding an external access-control layer.
 
@@ -66,7 +66,7 @@ Current safeguards:
 
 The Docker Compose default `QUALORA_ENCRYPTION_KEY` is an insecure development fallback. Set a strong value before storing real provider credentials. Future credential support should keep the current abstraction and add Vault, Kubernetes Secrets, or another secret manager.
 
-## AI Analysis Safety
+## AI Safety
 
 AI is disabled until a provider is configured. Qualora works without AI.
 
@@ -89,6 +89,8 @@ The AI input builder does not send by default:
 
 Redaction is enabled by default and masks common bearer/basic auth values, API keys, passwords, access/refresh tokens, session IDs, cookies, and JWT-looking values. AI output is parsed as strict JSON and redacted before storage.
 
+AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.6 planner must not control the browser, call APIs, submit forms, or perform generated steps.
+
 ## Non-Goals For This Alpha
 
 - Exploit execution.
@@ -98,6 +100,7 @@ Redaction is enabled by default and masks common bearer/basic auth values, API k
 - Authenticated API testing.
 - Schema fuzzing.
 - Autonomous AI browser control.
+- Automatic execution of generated AI test plans.
 - OWASP ZAP integration.
 - Active security scanning.
 
@@ -110,6 +113,6 @@ Redaction is enabled by default and masks common bearer/basic auth values, API k
 - There is no API or web UI authentication in this alpha, so bind the API and UI only in trusted local environments.
 - Screenshot preview/download through the control-plane API is available for stored evidence records and can expose sensitive application state to anyone with API access.
 - Anyone with API/UI access can configure or use AI providers because this alpha has no authentication.
-- AI analysis quality depends on the configured provider and the sanitized evidence available in the report.
+- AI analysis and AI test plan quality depend on the configured provider and the sanitized evidence available in the report.
 
 See [../SECURITY.md](../SECURITY.md) for vulnerability reporting.

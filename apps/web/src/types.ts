@@ -135,6 +135,77 @@ export type AIAnalysis = {
   updated_at: string;
 };
 
+export type TestPlanStep = {
+  order: number;
+  action: string;
+  target: string;
+  data: string;
+  expected_result: string;
+};
+
+export type TestPlanScenario = {
+  id: string;
+  name: string;
+  type: string;
+  priority: "low" | "medium" | "high" | "critical";
+  risk: "low" | "medium" | "high" | "critical";
+  description: string;
+  preconditions: string[];
+  steps: TestPlanStep[];
+  assertions: string[];
+  test_data_needed: string[];
+  automation_candidate: boolean;
+  destructive: boolean;
+  requires_authentication: boolean;
+  related_findings: string[];
+  tags: string[];
+};
+
+export type TestPlanPayload = {
+  title: string;
+  summary: string;
+  assumptions: string[];
+  coverage_goals: string[];
+  scenarios: TestPlanScenario[];
+  suggested_next_instrumentation: string[];
+  limitations: string[];
+};
+
+export type TestPlan = {
+  id: string;
+  project_id: string;
+  run_id?: string;
+  provider_id?: string;
+  provider_name?: string;
+  model: string;
+  status: "queued" | "running" | "completed" | "failed";
+  title: string;
+  summary: string;
+  plan_json: TestPlanPayload;
+  risk_level: "low" | "medium" | "high" | "critical" | "";
+  total_scenarios: number;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TestPlanRef = {
+  id: string;
+  title: string;
+  status: string;
+  risk_level: string;
+  total_scenarios: number;
+  created_at: string;
+};
+
+export type AITestPlanInput = {
+  provider_id?: string;
+  run_id?: string;
+  product_context?: string;
+  focus_areas: string[];
+  max_scenarios: number;
+};
+
 export type ReportSummary = {
   total_findings: number;
   critical: number;
@@ -159,4 +230,5 @@ export type Report = {
     [key: string]: unknown;
   };
   ai_analysis: AIAnalysis | null;
+  test_plans: TestPlanRef[];
 };
