@@ -53,11 +53,18 @@ func BuildSafeAIInput(report *Report) map[string]any {
 	input := map[string]any{
 		"run_id":     report.RunID,
 		"project_id": report.ProjectID,
+		"run_type":   report.RunType,
 		"status":     report.Status,
 		"summary":    report.Summary,
 		"metadata":   safeMetadata(report.Metadata),
 		"findings":   safeFindings(report.Findings),
 		"evidence":   safeEvidence(report.Evidence),
+	}
+	if report.APISummary != nil {
+		input["api_summary"] = report.APISummary
+	}
+	if len(report.APIResults) > 0 {
+		input["api_results"] = safeAPIResults(report.APIResults)
 	}
 	return sanitizeValue(input).(map[string]any)
 }
@@ -129,6 +136,9 @@ func safeMetadata(metadata map[string]any) map[string]any {
 	if jobs, ok := metadata["jobs"]; ok {
 		output["jobs"] = sanitizeValue(jobs)
 	}
+	if apiSummary, ok := metadata["api_summary"]; ok {
+		output["api_summary"] = sanitizeValue(apiSummary)
+	}
 	return output
 }
 
@@ -141,6 +151,27 @@ func safeFindings(findings []Finding) []map[string]any {
 			"category":   finding.Category,
 			"confidence": finding.Confidence,
 			"summary":    firstLine(finding.Description),
+		})
+	}
+	return output
+}
+
+func safeAPIResults(results []APICheckResult) []map[string]any {
+	output := make([]map[string]any, 0, min(len(results), 100))
+	for i, result := range results {
+		if i >= 100 {
+			break
+		}
+		output = append(output, map[string]any{
+			"method":                result.Method,
+			"path":                  result.Path,
+			"status":                result.Status,
+			"http_status":           result.HTTPStatus,
+			"duration_ms":           result.DurationMS,
+			"response_content_type": result.ResponseContentType,
+			"response_size_bytes":   result.ResponseSizeBytes,
+			"error":                 firstLine(result.ErrorMessage),
+			"skipped_reason":        result.SkippedReason,
 		})
 	}
 	return output
@@ -163,7 +194,9 @@ func safeEvidenceMetadata(metadata map[string]any) map[string]any {
 		"target_url", "final_url", "page_title", "status_code", "body_text_length", "timed_out",
 		"load_error", "content_type", "size_bytes", "filename", "key", "storage",
 		"checked_endpoints", "failed_endpoints", "safe_methods_only", "version", "paths",
-		"operations", "safe_operations", "skipped_unsafe_operations",
+		"operations", "safe_operations", "skipped_unsafe_operations", "skipped_endpoints",
+		"api_spec_id", "api_spec_name", "title", "server_url", "authenticated_tests",
+		"response_bodies", "request_response_bodies_saved",
 	} {
 		if value, ok := metadata[key]; ok {
 			output[key] = sanitizeValue(value)

@@ -15,8 +15,9 @@ Responsibilities:
 - Optional AI report analysis.
 - AI-assisted test plan storage.
 - Approved safe test plan execution orchestration.
+- OpenAPI import, operation discovery, safe API smoke execution, and API result reporting.
 
-The MVP delegates browser checks, API checks, and safe test plan execution to workers through Redis queues.
+The MVP delegates browser checks, legacy project API checks, and safe test plan execution to workers through Redis queues. The v0.8 imported-spec API smoke executor runs in the control plane so API operations and result rows are first-class API/UI resources.
 
 The API performs project target validation, including `allowed_hosts` enforcement, blocked private/metadata targets by default, and DNS resolution checks for hostnames.
 
@@ -50,6 +51,13 @@ Current report endpoints:
 - `GET /api/v1/ai/providers`
 - `POST /api/v1/ai/providers`
 - `POST /api/v1/ai/providers/{provider_id}/test`
+- `POST /api/v1/projects/{project_id}/api-specs`
+- `GET /api/v1/projects/{project_id}/api-specs`
+- `GET /api/v1/api-specs/{api_spec_id}`
+- `DELETE /api/v1/api-specs/{api_spec_id}`
+- `GET /api/v1/api-specs/{api_spec_id}/operations`
+- `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`
+- `GET /api/v1/runs/{run_id}/api-results`
 - `GET /api/v1/runs/{run_id}/ai-analysis`
 - `POST /api/v1/runs/{run_id}/ai-analysis`
 - `POST /api/v1/test-plans/{test_plan_id}/executions`

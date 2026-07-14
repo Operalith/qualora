@@ -2,6 +2,8 @@
 
 Alpha worker for safe API and OpenAPI checks.
 
+Note: v0.8 imported OpenAPI spec management and safe API smoke result rows are implemented in the Go control plane. This worker remains the legacy project-level API job runner for `api_base_url` and `openapi_url`.
+
 Responsibilities:
 
 - Basic API reachability checks.

@@ -18,6 +18,7 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
 	"json":       prettyJSON,
 	"formatTime": formatReportTime,
 	"jsonField":  jsonField,
+	"intValue":   optionalIntValue,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -214,6 +215,44 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
     {{ end }}
   </section>
 
+  {{ if .Report.APIResults }}
+  <section style="margin-top: 16px;">
+    <h2>API Smoke Results</h2>
+    {{ with .Report.APISpec }}
+    <p><strong>Spec:</strong> {{ .Name }} {{ if .ParsedVersion }}<span class="subtle">({{ .ParsedVersion }})</span>{{ end }}</p>
+    {{ end }}
+    {{ with .Report.APISummary }}
+    <div class="grid six" style="margin: 12px 0;">
+      <div class="metric"><span>Total</span><strong>{{ .TotalOperations }}</strong></div>
+      <div class="metric"><span>Executed</span><strong>{{ .ExecutedOperations }}</strong></div>
+      <div class="metric"><span>Passed</span><strong>{{ .PassedOperations }}</strong></div>
+      <div class="metric"><span>Failed</span><strong>{{ .FailedOperations }}</strong></div>
+      <div class="metric"><span>Errored</span><strong>{{ .ErroredOperations }}</strong></div>
+      <div class="metric"><span>Skipped</span><strong>{{ .SkippedOperations }}</strong></div>
+    </div>
+    {{ end }}
+    <p class="subtle">Qualora v0.8 executes only safe read-only API operations. Request bodies, response bodies, auth headers, cookies, and tokens are not stored.</p>
+    <table>
+      <thead>
+        <tr><th>Status</th><th>Method</th><th>Path</th><th>HTTP</th><th>Duration</th><th>Content Type</th><th>Reason/Error</th></tr>
+      </thead>
+      <tbody>
+        {{ range .Report.APIResults }}
+        <tr>
+          <td><span class="status">{{ .Status }}</span></td>
+          <td><code>{{ .Method }}</code></td>
+          <td><code>{{ .Path }}</code></td>
+          <td>{{ if .HTTPStatus }}{{ intValue .HTTPStatus }}{{ else }}<span class="subtle">n/a</span>{{ end }}</td>
+          <td>{{ if .DurationMS }}{{ intValue .DurationMS }}ms{{ else }}<span class="subtle">n/a</span>{{ end }}</td>
+          <td>{{ if .ResponseContentType }}{{ .ResponseContentType }}{{ else }}<span class="subtle">n/a</span>{{ end }}</td>
+          <td>{{ if .SkippedReason }}{{ .SkippedReason }}{{ else }}{{ .ErrorMessage }}{{ end }}</td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </section>
+  {{ end }}
+
   <section style="margin-top: 16px;">
     <h2>Evidence</h2>
     {{ if .Report.Evidence }}
@@ -274,6 +313,13 @@ func jsonField(value any, key string) string {
 		return "[]"
 	}
 	return prettyJSON(item)
+}
+
+func optionalIntValue(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func formatReportTime(value any) string {

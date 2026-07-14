@@ -1,0 +1,104 @@
+openapi: 3.0.3
+info:
+  title: Qualora Demo API
+  version: 1.0.0
+servers:
+  - url: http://demo-api:8080
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      tags: [system]
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json: {}
+  /status:
+    get:
+      operationId: getStatus
+      summary: Service status
+      tags: [system]
+      responses:
+        "200":
+          description: API status
+          content:
+            application/json: {}
+  /users:
+    get:
+      operationId: listUsers
+      summary: List demo users
+      tags: [users]
+      responses:
+        "200":
+          description: Demo users
+          content:
+            application/json: {}
+    post:
+      operationId: createUser
+      summary: Create a user
+      tags: [users]
+      requestBody:
+        required: true
+        content:
+          application/json: {}
+      responses:
+        "201":
+          description: Created user
+  /users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          example: "1"
+    get:
+      operationId: getUser
+      summary: Get a demo user
+      tags: [users]
+      responses:
+        "200":
+          description: Demo user
+          content:
+            application/json: {}
+        "404":
+          description: User not found
+          content:
+            application/json: {}
+    delete:
+      operationId: deleteUser
+      summary: Delete a user
+      tags: [users]
+      responses:
+        "204":
+          description: Deleted user
+  /broken:
+    get:
+      operationId: getBroken
+      summary: Deterministic broken endpoint
+      tags: [system]
+      responses:
+        "200":
+          description: Expected success response
+          content:
+            application/json: {}
+  /profile:
+    get:
+      operationId: getProfile
+      summary: Authenticated profile
+      tags: [users]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json: {}
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key

@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.7.0-alpha is the seventh public alpha release. It adds approved safe test plan execution, persisted execution step reports, execution HTML reports, web UI execution workflows, and deterministic smoke coverage while keeping AI-generated plans as suggestions and deterministic QA useful without AI.
+Qualora v0.8.0-alpha is the eighth public alpha release. It adds OpenAPI import, operation discovery, safe read-only API smoke runs, API result reports, web UI API spec workflows, and deterministic demo API smoke coverage while keeping AI optional and test execution conservative.
 
 ## Pre-Release Checklist
 
@@ -22,9 +22,15 @@ Confirm:
 
 - The API returns `{"status":"ok"}` from `/healthz`.
 - The web UI is reachable at `http://localhost:3000`.
-- The smoke script starts the local `demo-web` and `mock-api` smoke services.
+- The smoke script starts the local `demo-web`, `demo-api`, and `fake-llm` smoke services.
 - The smoke script creates browser and API projects.
-- Browser and API runs reach `completed`.
+- Browser and safe API smoke runs reach `completed`.
+- The demo OpenAPI spec imports with status `parsed`.
+- Operation discovery includes skipped POST/DELETE/auth-required operations.
+- The API smoke run records API result rows.
+- The API smoke report includes a deterministic 5xx finding from `/broken`.
+- JSON and HTML API smoke reports include API result tables.
+- API smoke reports do not store response bodies.
 - Browser reports include screenshot and browser observation evidence.
 - Screenshot evidence metadata includes filename, key, content type, size, and created timestamp.
 - `GET /api/v1/evidence/{evidence_id}` returns the stored screenshot with an image content type.
@@ -38,7 +44,7 @@ Confirm:
 - JSON reports include `ai_analysis` when analysis has been generated.
 - HTML reports include an AI Analysis section when analysis has been generated.
 - JSON and HTML reports include related test plan references when a plan was generated from a run.
-- API reports include `api_observations`, `openapi_summary`, and `api_request` evidence.
+- API reports include `api_observations`, `openapi_summary`, `api_request` evidence, `api_summary`, and `api_results`.
 - JSON report URLs work.
 - HTML report URLs work and render a self-contained report.
 - Screenshot evidence uses an `s3://qualora-evidence/...` URI when MinIO is healthy.
@@ -49,10 +55,10 @@ Confirm:
 ```bash
 git status --short
 git add .
-git commit -m "feat: add safe test plan execution for v0.7.0-alpha"
-git tag -a v0.7.0-alpha -m "v0.7.0-alpha"
+git commit -m "feat: add safe OpenAPI testing for v0.8.0-alpha"
+git tag -a v0.8.0-alpha -m "v0.8.0-alpha"
 git push origin main
-git push origin v0.7.0-alpha
+git push origin v0.8.0-alpha
 ```
 
 ## GitHub Release
@@ -60,7 +66,7 @@ git push origin v0.7.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.7.0-alpha
+Qualora v0.8.0-alpha
 ```
 
-Use [release-notes/v0.7.0-alpha.md](release-notes/v0.7.0-alpha.md) as the release body.
+Use [release-notes/v0.8.0-alpha.md](release-notes/v0.8.0-alpha.md) as the release body.

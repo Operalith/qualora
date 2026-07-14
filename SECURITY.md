@@ -8,6 +8,8 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
+| v0.8.0-alpha | Best-effort alpha support |
+| v0.7.0-alpha | Best-effort alpha support |
 | v0.6.0-alpha | Best-effort alpha support |
 | v0.5.0-alpha | Best-effort alpha support |
 | v0.4.0-alpha | Best-effort alpha support |
@@ -32,7 +34,7 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.6.0-alpha API and web UI do not include authentication. Expose them only in trusted local or self-hosted environments, or put them behind an external access-control layer.
+The v0.8.0-alpha API and web UI do not include authentication. Expose them only in trusted local or self-hosted environments, or put them behind an external access-control layer.
 
 See [docs/security-model.md](docs/security-model.md) for the current alpha safety model.
 
@@ -49,6 +51,10 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - AI analysis must use sanitized report data, with redaction enabled by default.
 - AI-assisted test planning must use sanitized project/run/report metadata, with redaction enabled by default.
 - AI-generated test plans must remain reviewable suggestions and must not be executed automatically.
+- OpenAPI import must not execute API operations.
+- Safe API smoke execution must remain read-only by default.
+- Mutating, authenticated, request-body, unresolved-parameter, and sensitive API operations must be skipped unless a future explicit design changes this policy.
+- API smoke results must not store request bodies or response bodies.
 - Screenshots, full HTML, cookies, credentials, authorization headers, and full network bodies must not be sent to AI by default.
 - Credentials should stay behind an abstraction that can later support Vault, Kubernetes Secrets, or other secret managers.
 

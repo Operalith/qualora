@@ -115,6 +115,21 @@ services:
       retries: 20
     restart: unless-stopped
 
+  demo-api:
+    build:
+      context: .
+      dockerfile: scripts/demo-api/Dockerfile
+    container_name: qualora-demo-api
+    profiles: ["smoke"]
+    ports:
+      - "${DEMO_API_PORT:-18084}:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
   demo-web:
     build:
       context: .
@@ -124,7 +139,7 @@ services:
     ports:
       - "${DEMO_WEB_PORT:-18082}:8080"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 5s
       retries: 20

@@ -387,6 +387,17 @@ button.danger:hover {
   padding-bottom: 16px;
 }
 
+.api-spec-form {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+  max-width: 980px;
+  padding-bottom: 16px;
+}
+
+.spec-textarea {
+  min-height: 220px;
+}
+
 .field-label {
   color: var(--muted);
   font-size: 14px;

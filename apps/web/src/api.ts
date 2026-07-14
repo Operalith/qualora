@@ -1,5 +1,10 @@
 import type {
   AIAnalysis,
+  APICheckResult,
+  APIOperation,
+  APISpec,
+  APISpecDetail,
+  APISpecImportInput,
   AIProvider,
   AIProviderInput,
   AIProviderTestResult,
@@ -78,12 +83,50 @@ export async function startBrowserSmokeRun(projectID: string): Promise<TestRun> 
   });
 }
 
+export async function importAPISpec(projectID: string, input: APISpecImportInput): Promise<APISpecDetail> {
+  return request<APISpecDetail>(`/api/v1/projects/${projectID}/api-specs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function listAPISpecs(projectID: string): Promise<APISpec[]> {
+  const response = await request<{ api_specs: APISpec[] }>(`/api/v1/projects/${projectID}/api-specs`);
+  return response.api_specs;
+}
+
+export async function getAPISpec(apiSpecID: string): Promise<APISpecDetail> {
+  return request<APISpecDetail>(`/api/v1/api-specs/${apiSpecID}`);
+}
+
+export async function listAPIOperations(apiSpecID: string): Promise<APIOperation[]> {
+  const response = await request<{ operations: APIOperation[] }>(`/api/v1/api-specs/${apiSpecID}/operations`);
+  return response.operations || [];
+}
+
+export async function deleteAPISpec(apiSpecID: string): Promise<void> {
+  await request<{ deleted: boolean }>(`/api/v1/api-specs/${apiSpecID}`, {
+    method: "DELETE"
+  });
+}
+
+export async function startAPISmokeRun(apiSpecID: string): Promise<TestRun> {
+  return request<TestRun>(`/api/v1/api-specs/${apiSpecID}/api-smoke-runs`, {
+    method: "POST"
+  });
+}
+
 export async function getRun(runID: string): Promise<TestRun> {
   return request<TestRun>(`/api/v1/runs/${runID}`);
 }
 
 export async function getReport(runID: string): Promise<Report> {
   return request<Report>(`/api/v1/runs/${runID}/report`);
+}
+
+export async function getAPIResults(runID: string): Promise<APICheckResult[]> {
+  const response = await request<{ api_results: APICheckResult[] }>(`/api/v1/runs/${runID}/api-results`);
+  return response.api_results;
 }
 
 export async function listAIProviders(): Promise<AIProvider[]> {

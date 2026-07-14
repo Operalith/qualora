@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.7.0-alpha is a small Docker Compose MVP for browser and API QA smoke runs with a minimal web UI, human-friendly reports, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
+Qualora v0.8.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with a minimal web UI, human-friendly reports, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,7 +10,7 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
@@ -23,9 +23,12 @@ qualora-api
         |       +--> MinIO/S3 screenshot evidence
         |
         +--> qualora-worker-api
-                +--> API base URL checks
-                +--> OpenAPI 3.x safe method checks
-                +--> PostgreSQL evidence and findings
+        |       +--> Legacy project API base URL/OpenAPI checks
+        |
+        +--> Control-plane API smoke executor
+                +--> Imported OpenAPI 3.x operation discovery
+                +--> Safe GET/HEAD/OPTIONS checks only
+                +--> API check results, evidence, findings, and reports
 ```
 
 ## Services
@@ -45,10 +48,17 @@ Current endpoints:
 - `POST /api/v1/projects/{project_id}/browser-smoke-runs`
 - `POST /api/v1/projects/{project_id}/ai-test-plans`
 - `GET /api/v1/projects/{project_id}/test-plans`
+- `POST /api/v1/projects/{project_id}/api-specs`
+- `GET /api/v1/projects/{project_id}/api-specs`
+- `GET /api/v1/api-specs/{api_spec_id}`
+- `DELETE /api/v1/api-specs/{api_spec_id}`
+- `GET /api/v1/api-specs/{api_spec_id}/operations`
+- `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`
 - `GET /api/v1/runs`
 - `GET /api/v1/runs/{run_id}`
 - `GET /api/v1/runs/{run_id}/report`
 - `GET /api/v1/runs/{run_id}/report.html`
+- `GET /api/v1/runs/{run_id}/api-results`
 - `GET /api/v1/evidence/{evidence_id}`
 - `GET /api/v1/ai/providers`
 - `POST /api/v1/ai/providers`
@@ -83,6 +93,8 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - AI test plan lists, detail pages, scenario/step display, deletion, and JSON export links.
 - Safe execution preview controls for supported test plan steps.
 - Safe execution history, detail pages, findings, evidence, and HTML report links.
+- OpenAPI spec import, operation discovery, skip reasons, and safe API smoke run controls.
+- API smoke result tables in run reports.
 
 It has no authentication in this alpha and should be exposed only in trusted local/self-hosted environments.
 
@@ -119,6 +131,24 @@ It currently captures:
 - Blocked out-of-scope browser requests.
 - Basic findings for obvious load, timeout, non-success status, console, request, empty page, and scope issues.
 
+### Safe API Smoke Execution
+
+The v0.8 spec-driven API smoke flow runs in the Go control plane. It imports OpenAPI 3.x specs from project-scoped URLs or inline JSON/YAML, stores discovered operations, classifies safe operations, and persists skip reasons before any API test execution.
+
+Safe by default means:
+
+- Only `GET`, `HEAD`, and `OPTIONS` operations are eligible.
+- `POST`, `PUT`, `PATCH`, `DELETE`, and `TRACE` are skipped.
+- Authenticated operations are skipped.
+- Operations with required request bodies are skipped.
+- Operations with unresolved path parameters are skipped unless a safe `example`, `default`, or `enum` value exists.
+- Required query parameters are sent only when a safe sample value exists.
+- Sensitive paths or query parameter names are skipped.
+- Redirects to external origins are not followed.
+- Response bodies and request bodies are not stored.
+
+API smoke reports include `api_results`, `api_summary`, API findings, `api_observations`, `openapi_summary`, and per-request `api_request` evidence metadata.
+
 ### `qualora-worker-api`
 
 The Node.js API worker consumes Redis API jobs and performs safe API checks against `api_base_url` and `openapi_url`.
@@ -135,6 +165,8 @@ It currently captures:
 
 It does not perform authenticated API checks, request body generation, schema fuzzing, or destructive methods.
 
+This worker remains available for legacy project-level API jobs. New v0.8 imported-spec API smoke runs use the control-plane executor so operation discovery and result rows are first-class API/UI concepts.
+
 ### PostgreSQL
 
 PostgreSQL stores durable metadata:
@@ -144,6 +176,9 @@ PostgreSQL stores durable metadata:
 - `run_jobs`
 - `findings`
 - `evidence`
+- `api_specs`
+- `api_operations`
+- `api_check_results`
 - `ai_providers`
 - `ai_analyses`
 - `test_plans`
@@ -160,6 +195,10 @@ Redis is the MVP queue for browser jobs, API jobs, and safe test plan execution 
 ### MinIO
 
 MinIO stores screenshot evidence through the S3-compatible API. API evidence is stored as metadata rows in PostgreSQL. The control plane can stream stored evidence objects by evidence ID so the UI can preview/download screenshots without exposing MinIO credentials.
+
+### `demo-api`
+
+The `demo-api` Compose service is profile-gated for smoke tests. It serves deterministic API endpoints and an OpenAPI 3.x document at `/openapi.yaml` for v0.8 OpenAPI import and safe API smoke validation.
 
 ### `mock-api`
 
@@ -182,9 +221,9 @@ Provider records store:
 - Safe-send toggles for screenshots, HTML, and network bodies.
 - Redaction setting, enabled by default.
 
-For v0.7, AI analysis and AI test planning run synchronously in the control plane. The database models are separated so both paths can move to a dedicated analyzer worker later.
+For v0.8, AI analysis and AI test planning run synchronously in the control plane. The database models are separated so both paths can move to a dedicated analyzer worker later.
 
-The safe AI input builder includes only sanitized report data such as run status, summary counts, finding titles/summaries, safe evidence metadata, browser/API metadata, and job metadata. It strips or redacts URL queries, cookies, authorization values, tokens, passwords, API keys, session IDs, JWT-looking strings, full response bodies, full HTML, and secret-looking fields. Screenshots, HTML, and network bodies are not sent by default.
+The safe AI input builder includes only sanitized report data such as run status, summary counts, finding titles/summaries, safe evidence metadata, browser/API metadata, API smoke result summaries, and job metadata. It strips or redacts URL queries, cookies, authorization values, tokens, passwords, API keys, session IDs, JWT-looking strings, full response bodies, full HTML, and secret-looking fields. Screenshots, HTML, request bodies, response bodies, and network bodies are not sent by default.
 
 AI-assisted test plans use sanitized project configuration, optional product context, selected focus areas, optional latest/run-specific report metadata, and optional AI analysis summaries. The strict plan parser accepts only a reviewable JSON structure with assumptions, coverage goals, scenarios, steps, assertions, test data needs, instrumentation suggestions, and limitations.
 
@@ -214,6 +253,10 @@ Generated plans are not executed automatically. A user can explicitly preview an
 20. The API stores execution/scenario/step rows and queues the browser worker.
 21. The browser worker executes persisted safe actions, writes evidence/findings, and updates step/scenario/execution status.
 22. The API serves JSON and HTML test plan execution reports.
+23. Optionally, a user imports an OpenAPI spec for a project.
+24. The API stores spec metadata and discovered operations without executing them.
+25. Optionally, a user starts a safe API smoke run for the imported spec.
+26. The control plane executes only safe read-only operations, records API results/evidence/findings, and serves JSON/HTML run reports with API result tables.
 
 ## Intentional Alpha Constraints
 
@@ -222,6 +265,9 @@ Generated plans are not executed automatically. A user can explicitly preview an
 - AI provider management is alpha and should be used only in trusted local/self-hosted environments.
 - AI-assisted test planning is alpha and should be treated as human-reviewable suggestions.
 - Safe test plan execution is alpha and limited to approved non-destructive browser DSL steps.
+- API smoke execution is alpha and read-only by default.
+- Authenticated API testing is not supported.
+- Request bodies and response bodies are not stored.
 - Only OpenAI-compatible chat completion providers are supported.
 - Evidence download is limited to stored evidence records and is not a signed URL system.
 - No authenticated API testing.

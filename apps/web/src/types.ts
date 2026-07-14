@@ -26,6 +26,8 @@ export type CreateProjectInput = {
 export type TestRun = {
   id: string;
   project_id: string;
+  run_type: "full" | "browser_smoke" | "api_smoke" | string;
+  api_spec_id?: string;
   status: "queued" | "pending" | "running" | "completed" | "failed" | "canceled" | "passed" | "error";
   error_message?: string;
   page_title?: string;
@@ -332,6 +334,84 @@ export type TestPlanExecutionReport = {
   generated_at: string;
 };
 
+export type APISpecImportInput = {
+  name: string;
+  source_type: "url" | "inline" | "demo";
+  source_url?: string;
+  raw_spec?: string;
+};
+
+export type APISpec = {
+  id: string;
+  project_id: string;
+  name: string;
+  source_type: "url" | "inline" | "demo" | string;
+  source_url?: string;
+  parsed_title?: string;
+  parsed_version?: string;
+  server_url?: string;
+  operation_count: number;
+  safe_operation_count: number;
+  skipped_operation_count: number;
+  status: "pending" | "parsed" | "invalid" | "error" | string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type APIOperation = {
+  id: string;
+  api_spec_id: string;
+  project_id: string;
+  method: string;
+  path: string;
+  resolved_path?: string;
+  query_string?: string;
+  operation_id?: string;
+  summary?: string;
+  description?: string;
+  tags: string[];
+  expected_statuses: string[];
+  expected_content_types: string[];
+  requires_authentication?: boolean;
+  safe_to_execute: boolean;
+  skip_reason?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type APISpecDetail = {
+  spec: APISpec;
+  operations?: APIOperation[];
+};
+
+export type APICheckResult = {
+  id: string;
+  run_id: string;
+  api_spec_id: string;
+  operation_id?: string;
+  method: string;
+  path: string;
+  resolved_url?: string;
+  status: "passed" | "failed" | "skipped" | "error" | string;
+  http_status?: number;
+  duration_ms?: number;
+  response_content_type?: string;
+  response_size_bytes?: number;
+  error_message?: string;
+  skipped_reason?: string;
+  created_at: string;
+};
+
+export type APISmokeSummary = {
+  total_operations: number;
+  executed_operations: number;
+  skipped_operations: number;
+  passed_operations: number;
+  failed_operations: number;
+  errored_operations: number;
+};
+
 export type ReportSummary = {
   total_findings: number;
   critical: number;
@@ -344,6 +424,7 @@ export type ReportSummary = {
 export type Report = {
   run_id: string;
   project_id: string;
+  run_type: string;
   status: string;
   summary: ReportSummary;
   findings: Finding[];
@@ -357,4 +438,7 @@ export type Report = {
   };
   ai_analysis: AIAnalysis | null;
   test_plans: TestPlanRef[];
+  api_spec?: APISpec;
+  api_summary?: APISmokeSummary;
+  api_results?: APICheckResult[];
 };

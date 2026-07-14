@@ -4,6 +4,41 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.8.0-alpha] - 2026-07-14
+
+### Added
+
+- OpenAPI 3.x import from URL or inline JSON/YAML.
+- API spec metadata and operation discovery tables.
+- Safe API operation classifier with persisted skip reasons.
+- Safe API smoke run endpoint at `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
+- API results endpoint at `GET /api/v1/runs/{run_id}/api-results`.
+- JSON and HTML run report sections for API smoke results.
+- Web UI API spec import, detail, operation list, and safe API smoke run workflows.
+- Deterministic local `demo-api` service with `openapi.yaml`, safe GET endpoints, skipped unsafe operations, and `/broken` 500 finding.
+- Go tests for OpenAPI parsing, safe operation classification, redirect blocking, 5xx findings, invalid JSON findings, and URL resolution.
+
+### Changed
+
+- Report and AI-safe input metadata now include API smoke summaries and sanitized API result summaries.
+- Smoke flow now imports the demo OpenAPI spec and validates operation discovery, skipped unsafe operations, API results, API reports, and deterministic `/broken` findings.
+- Package metadata has been updated to `0.8.0-alpha`.
+
+### Security
+
+- API smoke execution remains read-only and conservative.
+- Mutating, authenticated, request-body, unresolved-parameter, and sensitive operations are skipped.
+- Request bodies and response bodies are not stored or sent to AI.
+- External redirects are not followed.
+
+### Known Limitations
+
+- No authenticated API testing.
+- No schema fuzzing.
+- No destructive API testing.
+- OpenAPI import supports OpenAPI 3.x only.
+- The web UI remains alpha and intended for trusted local/self-hosted environments.
+
 ## [v0.7.0-alpha] - 2026-07-14
 
 ### Added

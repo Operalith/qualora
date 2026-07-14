@@ -4,23 +4,28 @@ import {
   createAIProvider,
   createProject,
   deleteAIProvider,
+  deleteAPISpec,
   deleteTestPlan,
   evidenceDownloadURL,
   executeTestPlan,
   generateAITestPlan,
+  getAPISpec,
   getProject,
   getReport,
   getRun,
   getTestPlan,
   getTestPlanExecutionReport,
   htmlReportURL,
+  importAPISpec,
   listAIProviders,
+  listAPISpecs,
   listProjects,
   listRuns,
   listTestPlanExecutions,
   listTestPlans,
   previewTestPlanExecution,
   runAIAnalysis,
+  startAPISmokeRun,
   startBrowserSmokeRun,
   startRun,
   testPlanExportURL,
@@ -30,6 +35,11 @@ import {
 } from "./api";
 import type {
   AIAnalysis,
+  APICheckResult,
+  APIOperation,
+  APISpec,
+  APISpecDetail,
+  APISpecImportInput,
   AIProvider,
   AIProviderInput,
   AIProviderTestResult,
@@ -55,6 +65,7 @@ type Route =
   | { name: "project"; id: string }
   | { name: "runs" }
   | { name: "ai-providers" }
+  | { name: "api-spec"; id: string }
   | { name: "test-plans" }
   | { name: "test-plan"; id: string }
   | { name: "test-plan-execution"; id: string }
@@ -117,7 +128,7 @@ export default function App() {
       <aside className="sidebar">
         <a className="brand" href="#/">
           <span>Qualora</span>
-          <small>v0.7.0-alpha</small>
+          <small>v0.8.0-alpha</small>
         </a>
         <nav>
           <a className={route.name === "dashboard" ? "active" : ""} href="#/">
@@ -170,6 +181,9 @@ export default function App() {
             onStartBrowserSmoke={startBrowserRun}
             onOpenTestPlan={(id) => setRoute({ name: "test-plan", id })}
           />
+        )}
+        {route.name === "api-spec" && (
+          <APISpecPage apiSpecID={route.id} projectByID={projectByID} onOpenRun={(id) => setRoute({ name: "run", id })} />
         )}
         {route.name === "runs" && <RunsPage runs={runs} projectByID={projectByID} />}
         {route.name === "ai-providers" && <AIProvidersPage />}
@@ -663,6 +677,7 @@ function RunTable({ runs, projectByID }: { runs: TestRun[]; projectByID: Map<str
           <tr>
             <th>Status</th>
             <th>Project</th>
+            <th>Type</th>
             <th>Run</th>
             <th>Created</th>
             <th>Completed</th>
@@ -675,6 +690,7 @@ function RunTable({ runs, projectByID }: { runs: TestRun[]; projectByID: Map<str
                 <StatusBadge status={run.status} />
               </td>
               <td>{projectByID.get(run.project_id)?.name || run.project_id}</td>
+              <td>{formatRunType(run.run_type)}</td>
               <td>
                 <a href={`#/runs/${run.id}`}>{shortID(run.id)}</a>
               </td>
@@ -705,29 +721,34 @@ function ProjectPage({
   const [runs, setRuns] = useState<LoadState<TestRun[]>>({ data: [], loading: true, error: "" });
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [testPlans, setTestPlans] = useState<LoadState<TestPlan[]>>({ data: [], loading: true, error: "" });
+  const [apiSpecs, setAPISpecs] = useState<LoadState<APISpec[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
   const [starting, setStarting] = useState("");
 
   const refresh = useCallback(async () => {
     setRuns((current) => ({ ...current, loading: true, error: "" }));
     setTestPlans((current) => ({ ...current, loading: true, error: "" }));
+    setAPISpecs((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
-      const [nextProject, nextRuns, nextProviders, nextTestPlans] = await Promise.all([
+      const [nextProject, nextRuns, nextProviders, nextTestPlans, nextAPISpecs] = await Promise.all([
         cachedProject ? Promise.resolve(cachedProject) : getProject(projectID),
         listRuns(projectID),
         listAIProviders(),
-        listTestPlans(projectID)
+        listTestPlans(projectID),
+        listAPISpecs(projectID)
       ]);
       setProject(nextProject);
       setRuns({ data: nextRuns, loading: false, error: "" });
       setProviders(nextProviders);
       setTestPlans({ data: nextTestPlans, loading: false, error: "" });
+      setAPISpecs({ data: nextAPISpecs, loading: false, error: "" });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
       setRuns((current) => ({ ...current, loading: false, error: message }));
       setTestPlans((current) => ({ ...current, loading: false, error: message }));
+      setAPISpecs((current) => ({ ...current, loading: false, error: message }));
     }
   }, [cachedProject, projectID]);
 
@@ -793,6 +814,27 @@ function ProjectPage({
       <section>
         <div className="section-heading">
           <div>
+            <h2>API Specs</h2>
+            <p>Import OpenAPI 3.x specs and discover safe read-only operations.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="Safe API smoke tests execute only GET, HEAD, and OPTIONS operations. Mutating, authenticated, ambiguous, or unsafe operations are skipped."
+        />
+        <APISpecImportForm project={project} onImported={() => void refresh()} />
+        <div className="section-split">
+          {apiSpecs.error && <Notice tone="danger" message={apiSpecs.error} />}
+          {apiSpecs.loading ? <SkeletonRows /> : <APISpecTable specs={apiSpecs.data} onDeleted={() => void refresh()} />}
+        </div>
+      </section>
+
+      <section>
+        <div className="section-heading">
+          <div>
             <h2>Runs</h2>
             <p>Runs for this project.</p>
           </div>
@@ -831,6 +873,292 @@ function ProjectPage({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function APISpecImportForm({ project, onImported }: { project: Project; onImported: () => void }) {
+  const [form, setForm] = useState({
+    name: "Demo OpenAPI Spec",
+    source_type: "url" as APISpecImportInput["source_type"],
+    source_url: project.openapi_url || "",
+    raw_spec: ""
+  });
+  const [importing, setImporting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setImporting(true);
+    setMessage("");
+    setError("");
+    const payload: APISpecImportInput = {
+      name: form.name.trim(),
+      source_type: form.source_type,
+      source_url: form.source_type === "url" ? form.source_url.trim() : undefined,
+      raw_spec: form.source_type === "url" ? undefined : form.raw_spec.trim()
+    };
+    try {
+      const detail = await importAPISpec(project.id, payload);
+      setMessage(`Imported ${detail.spec.operation_count} operations. ${detail.spec.safe_operation_count} are safe to execute.`);
+      onImported();
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : String(importError));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <form className="project-form api-spec-form" onSubmit={(event) => void submit(event)}>
+      {error && <Notice tone="danger" message={error} />}
+      {message && <Notice tone="info" message={message} />}
+      <div className="form-grid two">
+        <label>
+          Name
+          <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+        </label>
+        <label>
+          Source Type
+          <select value={form.source_type} onChange={(event) => setForm({ ...form, source_type: event.target.value as APISpecImportInput["source_type"] })}>
+            <option value="url">OpenAPI URL</option>
+            <option value="inline">Inline JSON/YAML</option>
+            <option value="demo">Demo inline spec</option>
+          </select>
+        </label>
+      </div>
+      {form.source_type === "url" ? (
+        <label>
+          OpenAPI URL
+          <input
+            value={form.source_url}
+            placeholder={project.openapi_url || "http://demo-api:8080/openapi.yaml"}
+            onChange={(event) => setForm({ ...form, source_url: event.target.value })}
+            required
+          />
+        </label>
+      ) : (
+        <label>
+          OpenAPI JSON/YAML
+          <textarea
+            className="spec-textarea"
+            value={form.raw_spec}
+            placeholder="openapi: 3.0.3&#10;info:&#10;  title: Demo API&#10;paths: {}"
+            onChange={(event) => setForm({ ...form, raw_spec: event.target.value })}
+            required
+          />
+        </label>
+      )}
+      <div className="form-actions">
+        <button type="submit" disabled={importing}>
+          {importing ? "Importing" : "Import OpenAPI Spec"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function APISpecTable({ specs, onDeleted }: { specs: APISpec[]; onDeleted: () => void }) {
+  if (specs.length === 0) {
+    return <EmptyState title="No API specs" body="Import an OpenAPI document to inspect operations and run safe API smoke checks." />;
+  }
+
+  async function removeSpec(apiSpecID: string) {
+    if (!window.confirm("Delete this API spec and its discovered operations?")) {
+      return;
+    }
+    await deleteAPISpec(apiSpecID);
+    onDeleted();
+  }
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Name</th>
+            <th>Operations</th>
+            <th>Source</th>
+            <th>Imported</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {specs.map((spec) => (
+            <tr key={spec.id}>
+              <td>
+                <StatusBadge status={spec.status} />
+              </td>
+              <td>
+                <a href={`#/api-specs/${spec.id}`}>{spec.name}</a>
+                {spec.error_message && <p className="muted">{spec.error_message}</p>}
+              </td>
+              <td>
+                {spec.operation_count} total · {spec.safe_operation_count} safe · {spec.skipped_operation_count} skipped
+              </td>
+              <td>{spec.source_type}</td>
+              <td>{formatDate(spec.created_at)}</td>
+              <td className="actions">
+                <div className="button-row compact">
+                  <a className="button secondary-link" href={`#/api-specs/${spec.id}`}>
+                    Open
+                  </a>
+                  <button type="button" className="secondary danger" onClick={() => void removeSpec(spec.id)}>
+                    Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function APISpecPage({
+  apiSpecID,
+  projectByID,
+  onOpenRun
+}: {
+  apiSpecID: string;
+  projectByID: Map<string, Project>;
+  onOpenRun: (runID: string) => void;
+}) {
+  const [detail, setDetail] = useState<APISpecDetail | undefined>();
+  const [project, setProject] = useState<Project | undefined>();
+  const [running, setRunning] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const nextDetail = await getAPISpec(apiSpecID);
+      const nextProject = projectByID.get(nextDetail.spec.project_id) ?? (await getProject(nextDetail.spec.project_id));
+      setDetail(nextDetail);
+      setProject(nextProject);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [apiSpecID, projectByID]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function runSmoke() {
+    if (!detail) {
+      return;
+    }
+    setRunning(true);
+    setError("");
+    try {
+      const run = await startAPISmokeRun(detail.spec.id);
+      onOpenRun(run.id);
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : String(runError));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  if (error) {
+    return <Notice tone="danger" message={error} />;
+  }
+  if (loading || !detail || !project) {
+    return <SkeletonRows />;
+  }
+
+  const operations = detail.operations || [];
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>{detail.spec.name}</h2>
+            <p>
+              <StatusBadge status={detail.spec.status} /> <span className="muted">{detail.spec.parsed_title || "OpenAPI 3.x document"}</span>
+            </p>
+          </div>
+          <div className="button-row">
+            <a className="button secondary-link" href={`#/projects/${project.id}`}>
+              Project
+            </a>
+            <button type="button" disabled={running || detail.spec.status !== "parsed"} onClick={() => void runSmoke()}>
+              {running ? "Running" : "Run safe API smoke test"}
+            </button>
+          </div>
+        </div>
+        {detail.spec.error_message && <Notice tone="danger" message={detail.spec.error_message} />}
+        <Notice
+          tone="info"
+          message="Only safe read-only operations are executed. Mutating, authenticated, ambiguous, or unsafe operations are skipped."
+        />
+        <div className="summary-grid">
+          <Metric label="Operations" value={detail.spec.operation_count} />
+          <Metric label="Safe" value={detail.spec.safe_operation_count} />
+          <Metric label="Skipped" value={detail.spec.skipped_operation_count} tone="medium" />
+        </div>
+        <div className="detail-grid compact">
+          <Field label="Project" value={project.name} />
+          <Field label="Title" value={detail.spec.parsed_title || "Not provided"} />
+          <Field label="Version" value={detail.spec.parsed_version || "Not provided"} />
+          <Field label="Server URL" value={detail.spec.server_url || project.api_base_url || "Not provided"} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Operations</h2>
+        <APIOperationTable operations={operations} />
+      </section>
+    </div>
+  );
+}
+
+function APIOperationTable({ operations }: { operations: APIOperation[] }) {
+  if (operations.length === 0) {
+    return <EmptyState title="No operations" body="No OpenAPI operations were discovered for this spec." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Safe</th>
+            <th>Method</th>
+            <th>Path</th>
+            <th>Summary</th>
+            <th>Tags</th>
+            <th>Skip Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {operations.map((operation) => (
+            <tr key={operation.id}>
+              <td>
+                <StatusBadge status={operation.safe_to_execute ? "passed" : "skipped"} />
+              </td>
+              <td>
+                <code>{operation.method}</code>
+              </td>
+              <td>
+                <code>{operation.path}</code>
+                {operation.query_string && <p className="muted">?{operation.query_string}</p>}
+              </td>
+              <td>{operation.summary || operation.operation_id || "Not provided"}</td>
+              <td>{operation.tags.length ? operation.tags.join(", ") : "None"}</td>
+              <td>{operation.skip_reason || ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1815,6 +2143,7 @@ function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cache
   const browserEvidence = report.evidence.filter((item) => item.type === "browser_observations");
   const apiEvidence = report.evidence.filter((item) => item.type === "api_observations" || item.type === "openapi_summary");
   const relatedTestPlans = report.test_plans || [];
+  const apiResults = report.api_results || [];
 
   async function runAnalysis() {
     if (!run) {
@@ -1855,12 +2184,36 @@ function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cache
           <Metric label="Info" value={report.summary.info} tone="info" />
         </div>
         <div className="detail-grid compact">
+          <Field label="Run Type" value={formatRunType(run.run_type || report.run_type)} />
           <Field label="Created" value={formatDate(run.created_at)} />
           <Field label="Started" value={run.started_at ? formatDate(run.started_at) : "Not started"} />
           <Field label="Completed" value={run.completed_at ? formatDate(run.completed_at) : "Not completed"} />
           <Field label="Page Title" value={run.page_title || "Not captured"} />
         </div>
       </section>
+
+      {apiResults.length > 0 && (
+        <section>
+          <div className="section-heading">
+            <div>
+              <h2>API Smoke Results</h2>
+              <p>{report.api_spec ? `${report.api_spec.name} · ${report.api_spec.parsed_title || "OpenAPI spec"}` : "Safe API operation results."}</p>
+            </div>
+          </div>
+          {report.api_summary && (
+            <div className="summary-grid">
+              <Metric label="Total" value={report.api_summary.total_operations} />
+              <Metric label="Executed" value={report.api_summary.executed_operations} />
+              <Metric label="Passed" value={report.api_summary.passed_operations} />
+              <Metric label="Failed" value={report.api_summary.failed_operations} tone="high" />
+              <Metric label="Errors" value={report.api_summary.errored_operations} tone="high" />
+              <Metric label="Skipped" value={report.api_summary.skipped_operations} tone="medium" />
+            </div>
+          )}
+          <Notice tone="info" message="Response bodies, request bodies, cookies, auth headers, and tokens are not stored or sent to AI." />
+          <APIResultsTable results={apiResults} />
+        </section>
+      )}
 
       <section>
         <div className="section-heading">
@@ -2113,6 +2466,51 @@ function MetadataBlocks({ evidence, empty }: { evidence: Evidence[]; empty: stri
   );
 }
 
+function APIResultsTable({ results }: { results: APICheckResult[] }) {
+  if (results.length === 0) {
+    return <EmptyState title="No API results" body="This run did not record API operation results." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Method</th>
+            <th>Path</th>
+            <th>HTTP</th>
+            <th>Duration</th>
+            <th>Size</th>
+            <th>Content Type</th>
+            <th>Reason/Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((result) => (
+            <tr key={result.id}>
+              <td>
+                <StatusBadge status={result.status} />
+              </td>
+              <td>
+                <code>{result.method}</code>
+              </td>
+              <td>
+                <code>{result.path}</code>
+                {result.resolved_url && <p className="muted">{result.resolved_url}</p>}
+              </td>
+              <td>{result.http_status ?? "n/a"}</td>
+              <td>{result.duration_ms === undefined ? "n/a" : `${result.duration_ms}ms`}</td>
+              <td>{result.response_size_bytes === undefined ? "n/a" : `${result.response_size_bytes} bytes`}</td>
+              <td>{result.response_content_type || "n/a"}</td>
+              <td>{result.skipped_reason || result.error_message || ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function JobsTable({ jobs }: { jobs: RunJob[] }) {
   if (jobs.length === 0) {
     return <p className="muted">No job metadata is available for this run.</p>;
@@ -2229,6 +2627,9 @@ function parseHash(hash: string): Route {
   if (parts[0] === "ai-providers") {
     return { name: "ai-providers" };
   }
+  if (parts[0] === "api-specs" && parts[1]) {
+    return { name: "api-spec", id: parts[1] };
+  }
   if (parts[0] === "test-plans" && parts[1]) {
     return { name: "test-plan", id: parts[1] };
   }
@@ -2253,6 +2654,8 @@ function hashForRoute(route: Route): string {
       return "/runs";
     case "ai-providers":
       return "/ai-providers";
+    case "api-spec":
+      return `/api-specs/${route.id}`;
     case "test-plans":
       return "/test-plans";
     case "test-plan":
@@ -2276,6 +2679,8 @@ function titleForRoute(route: Route): string {
       return "Runs";
     case "ai-providers":
       return "AI Providers";
+    case "api-spec":
+      return "API Spec";
     case "test-plans":
       return "AI Test Plans";
     case "test-plan":
@@ -2473,6 +2878,19 @@ function targetSummary(project: Project): string {
 
 function shortID(id: string): string {
   return id.slice(0, 8);
+}
+
+function formatRunType(value: string): string {
+  if (value === "api_smoke") {
+    return "API smoke";
+  }
+  if (value === "browser_smoke") {
+    return "Browser smoke";
+  }
+  if (value === "full") {
+    return "Full";
+  }
+  return value || "Full";
 }
 
 function formatDate(value: string): string {

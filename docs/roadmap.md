@@ -78,7 +78,7 @@ Delivered:
 
 ## v0.7.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Approved safe execution for AI test plans.
 - Deterministic test plan safety mapper with explicit skip reasons.
@@ -90,7 +90,22 @@ Current alpha scope:
 - Deterministic demo-web routes and fake LLM executable plan output.
 - Smoke validation for preview, execution, reports, and evidence download.
 
-## Phase 8: Run And Worker Hardening
+## v0.8.0-alpha
+
+Current alpha scope:
+
+- OpenAPI 3.x import from URL or inline JSON/YAML.
+- Imported API spec metadata and operation discovery.
+- Safe operation classification with persisted skip reasons.
+- Safe API smoke runs for `GET`, `HEAD`, and `OPTIONS` only.
+- Skips for mutating methods, auth-required operations, required request bodies, unresolved parameters, and sensitive paths/parameters.
+- API check result rows with method, path, HTTP status, duration, content type, response size, error, and skip reason.
+- JSON and HTML run reports with API summary and operation result tables.
+- Web UI import, spec detail, operation list, safe API smoke run, and API result display.
+- Deterministic local `demo-api` OpenAPI smoke target with a `/broken` 500 finding.
+- Smoke validation for OpenAPI import, operation discovery, skipped unsafe operations, API results, API reports, browser smoke, AI analysis, AI test planning, and safe plan execution.
+
+## Phase 9: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -102,14 +117,14 @@ Current alpha scope:
 - Move AI analysis to an async analyzer worker.
 - Move AI-assisted test planning to an async analyzer worker.
 
-## Phase 9: Deeper API Checks
+## Phase 10: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 10: Passive Security Checks
+## Phase 11: Passive Security Checks
 
 - Passive security headers.
 - Cookie flag checks.

@@ -10,9 +10,10 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.7.0-alpha` Docker Compose MVP working.
+- Keep the `v0.8.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
+- Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
 - Minimal web UI support for local project/run/report workflows.
 - Browser-only smoke run support and screenshot evidence preview/download.
 - Optional OpenAI-compatible AI provider management and AI report analysis.
@@ -50,6 +51,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Do not execute AI-generated test plan steps automatically or as free-form model instructions.
 - Safe test plan execution must remain explicit, previewable, same-origin, allowlist-enforced, non-destructive, and limited to the supported persisted DSL.
 - API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
+- Imported OpenAPI API smoke runs must stay read-only: skip mutating methods, authenticated operations, required request bodies, unresolved parameters, sensitive paths/parameters, and external redirects.
+- Do not store API request bodies or response bodies in v0.8.
 - Keep worker contracts narrow and serializable.
 - Prefer OpenAPI-first internal API design where practical.
 - Keep report schemas structured enough for future UI/API consumers.
@@ -71,6 +74,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Redaction must remain enabled by default for AI analysis and AI-assisted test planning.
 - AI test planning must use sanitized project/run/report metadata only. Do not send screenshots, full HTML, cookies, credentials, authorization headers, raw traces, or full network bodies to AI by default.
 - Safe test plan execution must skip authenticated, destructive, mutating, submit/upload/admin, exploit, SQLi, XSS, SSRF, brute-force, out-of-scope, and unsupported actions with clear reasons.
+- Safe API smoke must skip unsafe OpenAPI operations with clear reasons and must not send auth headers, cookies, tokens, request bodies, or secrets.
 
 ## Contribution Style
 

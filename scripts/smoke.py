@@ -16,13 +16,13 @@ BROWSER_ALLOWED_HOST = os.environ.get(
     urllib.parse.urlparse(BROWSER_TARGET_URL).hostname or "demo-web",
 )
 DEMO_WEB_HEALTH_URL = os.environ.get("DEMO_WEB_HEALTH_URL", "http://localhost:18082/health")
-API_SMOKE_URL = os.environ.get("QUALORA_API_SMOKE_URL", "http://mock-api:8080")
+API_SMOKE_URL = os.environ.get("QUALORA_API_SMOKE_URL", "http://demo-api:8080")
 API_SMOKE_OPENAPI_URL = os.environ.get(
     "QUALORA_API_SMOKE_OPENAPI_URL",
-    "http://mock-api:8080/openapi.json",
+    "http://demo-api:8080/openapi.yaml",
 )
-API_SMOKE_ALLOWED_HOST = os.environ.get("QUALORA_API_SMOKE_ALLOWED_HOST", "mock-api")
-MOCK_API_HEALTH_URL = os.environ.get("MOCK_API_HEALTH_URL", "http://localhost:18081/health")
+API_SMOKE_ALLOWED_HOST = os.environ.get("QUALORA_API_SMOKE_ALLOWED_HOST", "demo-api")
+DEMO_API_HEALTH_URL = os.environ.get("DEMO_API_HEALTH_URL", "http://localhost:18084/health")
 FAKE_LLM_BASE_URL = os.environ.get("QUALORA_FAKE_LLM_URL", "http://fake-llm:8080/v1")
 FAKE_LLM_HEALTH_URL = os.environ.get("FAKE_LLM_HEALTH_URL", "http://localhost:18083/health")
 TIMEOUT_SECONDS = int(os.environ.get("QUALORA_SMOKE_TIMEOUT_SECONDS", "120"))
@@ -271,6 +271,103 @@ def execute_test_plan(plan):
     return report
 
 
+def import_demo_api_spec(project):
+    detail = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/api-specs",
+        {
+            "name": "Qualora Demo API",
+            "source_type": "url",
+            "source_url": API_SMOKE_OPENAPI_URL,
+        },
+    )
+    print(f"API spec import: {json.dumps(detail, indent=2)}")
+    spec = detail["spec"]
+    if spec.get("status") != "parsed":
+        raise RuntimeError(f"demo API spec did not parse: {detail}")
+    if int(spec.get("operation_count") or 0) < 6:
+        raise RuntimeError(f"demo API spec discovered too few operations: {detail}")
+    if int(spec.get("safe_operation_count") or 0) < 4:
+        raise RuntimeError(f"demo API spec discovered too few safe operations: {detail}")
+    if int(spec.get("skipped_operation_count") or 0) < 2:
+        raise RuntimeError(f"demo API spec did not skip unsafe operations: {detail}")
+
+    listed = request("GET", f"/api/v1/projects/{project['id']}/api-specs").get("api_specs", [])
+    if not any(item.get("id") == spec["id"] for item in listed):
+        raise RuntimeError("project API spec list did not include imported spec")
+
+    fetched = request("GET", f"/api/v1/api-specs/{spec['id']}")
+    if fetched["spec"]["id"] != spec["id"]:
+        raise RuntimeError("API spec detail did not match imported spec")
+
+    operations = request("GET", f"/api/v1/api-specs/{spec['id']}/operations").get("operations", [])
+    if not operations:
+        raise RuntimeError("API operations endpoint returned no operations")
+    if not any(item.get("method") == "POST" and not item.get("safe_to_execute") for item in operations):
+        raise RuntimeError("POST operation was not skipped")
+    if not any(item.get("method") == "DELETE" and not item.get("safe_to_execute") for item in operations):
+        raise RuntimeError("DELETE operation was not skipped")
+    if not any(item.get("path") == "/profile" and "auth" in (item.get("skip_reason") or "") for item in operations):
+        raise RuntimeError("auth-required operation was not skipped")
+    if not any(item.get("path") == "/users/{id}" and item.get("safe_to_execute") for item in operations):
+        raise RuntimeError("path parameter operation with safe example was not executable")
+
+    print(f"API spec detail: {API_URL}/api/v1/api-specs/{spec['id']}")
+    print(f"Web API spec detail: {WEB_URL}/#/api-specs/{spec['id']}")
+    return spec
+
+
+def run_api_smoke(spec):
+    run = request("POST", f"/api/v1/api-specs/{spec['id']}/api-smoke-runs")
+    run_id = run["id"]
+    print(f"started API smoke run: {run_id}")
+
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/runs/{run_id}")
+        status = current["status"]
+        print(f"API smoke status: {status}")
+        if status in ("completed", "passed", "failed", "canceled", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"API smoke run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    report = request("GET", f"/api/v1/runs/{run_id}/report")
+    print(f"API smoke report: {json.dumps(report, indent=2)}")
+    if report.get("run_type") != "api_smoke":
+        raise RuntimeError(f"API smoke report had unexpected run type: {report.get('run_type')}")
+    if report.get("status") != "completed":
+        raise RuntimeError(f"API smoke run did not complete: {report}")
+    api_results = report.get("api_results") or []
+    if not api_results:
+        raise RuntimeError("API smoke report did not include api_results")
+    if not any(item.get("status") == "skipped" and item.get("method") in ("POST", "DELETE") for item in api_results):
+        raise RuntimeError("API smoke report did not include skipped unsafe operations")
+    broken = [item for item in api_results if item.get("path") == "/broken"]
+    if not broken or broken[0].get("http_status") != 500 or broken[0].get("status") != "failed":
+        raise RuntimeError(f"API smoke did not record deterministic /broken failure: {broken}")
+    if not any("5xx" in item.get("title", "") for item in report.get("findings", [])):
+        raise RuntimeError("API smoke report did not include deterministic 5xx finding")
+    if "deterministic_failure" in json.dumps(report):
+        raise RuntimeError("API smoke report exposed response body content")
+
+    api_results_endpoint = request("GET", f"/api/v1/runs/{run_id}/api-results").get("api_results", [])
+    if len(api_results_endpoint) != len(api_results):
+        raise RuntimeError("API results endpoint did not match report results")
+
+    html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    if "API Smoke Results" not in html or "/broken" not in html:
+        raise RuntimeError("API smoke HTML report did not include expected API result content")
+    if "deterministic_failure" in html:
+        raise RuntimeError("API smoke HTML report exposed response body content")
+
+    print(f"API smoke JSON report: {API_URL}/api/v1/runs/{run_id}/report")
+    print(f"API smoke HTML report: {API_URL}/api/v1/runs/{run_id}/report.html")
+    print(f"Web API smoke report: {WEB_URL}/#/runs/{run_id}")
+    return report
+
+
 def run_project(project, run_path=None):
     path = run_path or f"/api/v1/projects/{project['id']}/runs"
     run = request("POST", path)
@@ -354,7 +451,7 @@ def main():
     execute_test_plan(browser_plan)
 
     print("== API smoke ==")
-    wait_for_url(MOCK_API_HEALTH_URL)
+    wait_for_url(DEMO_API_HEALTH_URL)
     api_project = create_project(
         {
             "name": "Qualora API Smoke Target",
@@ -367,7 +464,8 @@ def main():
             "allow_private_targets": True,
         }
     )
-    api_report = run_project(api_project)
+    api_spec = import_demo_api_spec(api_project)
+    api_report = run_api_smoke(api_spec)
     api_report = run_ai_analysis(api_report, provider)
     generate_ai_test_plan(api_project, api_report, provider)
 

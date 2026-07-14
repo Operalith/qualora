@@ -40,6 +40,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/ai/providers/", a.handleAIProviderSubroutes)
 	mux.HandleFunc("/api/v1/test-plans/", a.handleTestPlanSubroutes)
 	mux.HandleFunc("/api/v1/test-plan-executions/", a.handleTestPlanExecutionSubroutes)
+	mux.HandleFunc("/api/v1/api-specs/", a.handleAPISpecSubroutes)
 	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, mux)))
 }
 
@@ -153,6 +154,17 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 		a.listTestPlans(w, r, parts[0])
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "api-specs" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createAPISpec(w, r, parts[0])
+		case http.MethodGet:
+			a.listAPISpecs(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
 	writeError(w, http.StatusNotFound, "not_found", "route not found")
 }
 
@@ -215,7 +227,7 @@ func (a *App) createBrowserSmokeRun(w http.ResponseWriter, r *http.Request, proj
 		return
 	}
 
-	run, jobs, err := a.store.CreateRunForKinds(r.Context(), *project, []string{JobKindBrowser})
+	run, jobs, err := a.store.CreateRunForKindsWithType(r.Context(), *project, []string{JobKindBrowser}, RunTypeBrowserSmoke, "")
 	if err != nil {
 		a.logger.Error("create browser smoke run failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "create_run_failed", "browser smoke run could not be created")
@@ -293,6 +305,14 @@ func (a *App) handleRunSubroutes(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
 		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "api-results" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.getAPIResults(w, r, parts[0])
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "route not found")

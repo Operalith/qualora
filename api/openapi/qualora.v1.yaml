@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.7.0-alpha
-  description: API for creating QA projects, starting browser/API smoke runs, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading reports, and downloading stored evidence objects.
+  version: 0.8.0-alpha
+  description: API for creating QA projects, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading reports, and downloading stored evidence objects.
 servers:
   - url: http://localhost:8080
 paths:
@@ -173,6 +173,116 @@ paths:
                       $ref: "#/components/schemas/TestPlan"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/api-specs:
+    get:
+      summary: List OpenAPI specs for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: API spec list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [api_specs]
+                properties:
+                  api_specs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/APISpec"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Import an OpenAPI spec
+      description: Imports OpenAPI 3.x from a project-scoped URL or inline JSON/YAML. Import discovers operations only; it does not execute API requests.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/APISpecImportRequest"
+      responses:
+        "201":
+          description: Imported API spec detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APISpecDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/api-specs/{api_spec_id}:
+    get:
+      summary: Get OpenAPI spec metadata and discovered operations
+      parameters:
+        - $ref: "#/components/parameters/APISpecID"
+      responses:
+        "200":
+          description: API spec detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APISpecDetail"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete an imported OpenAPI spec
+      parameters:
+        - $ref: "#/components/parameters/APISpecID"
+      responses:
+        "200":
+          description: Delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: boolean
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/api-specs/{api_spec_id}/operations:
+    get:
+      summary: List discovered API operations
+      parameters:
+        - $ref: "#/components/parameters/APISpecID"
+      responses:
+        "200":
+          description: Operation list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operations]
+                properties:
+                  operations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/APIOperation"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/api-specs/{api_spec_id}/api-smoke-runs:
+    post:
+      summary: Run safe API smoke checks
+      description: Executes only imported operations classified as safe read-only operations. Mutating, authenticated, ambiguous, and unsupported operations are skipped.
+      parameters:
+        - $ref: "#/components/parameters/APISpecID"
+      responses:
+        "201":
+          description: Completed API smoke run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestRun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/runs:
     get:
       summary: List runs
@@ -285,6 +395,26 @@ paths:
             text/html:
               schema:
                 type: string
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/runs/{run_id}/api-results:
+    get:
+      summary: Get API smoke check results for a run
+      parameters:
+        - $ref: "#/components/parameters/RunID"
+      responses:
+        "200":
+          description: API result list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [api_results]
+                properties:
+                  api_results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/APICheckResult"
         "404":
           $ref: "#/components/responses/Error"
   /api/v1/runs/{run_id}/ai-analysis:
@@ -602,6 +732,13 @@ components:
       schema:
         type: string
         format: uuid
+    APISpecID:
+      name: api_spec_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     EvidenceID:
       name: evidence_id
       in: path
@@ -721,6 +858,7 @@ components:
       required:
         - id
         - project_id
+        - run_type
         - status
         - created_at
         - updated_at
@@ -731,6 +869,13 @@ components:
         project_id:
           type: string
           format: uuid
+        run_type:
+          type: string
+          enum: [full, browser_smoke, api_smoke]
+        api_spec_id:
+          type: string
+          format: uuid
+          nullable: true
         status:
           type: string
           enum: [queued, pending, running, completed, failed, canceled, passed, error]
@@ -760,11 +905,228 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TestRun"
+    APISpecImportRequest:
+      type: object
+      additionalProperties: false
+      required: [name, source_type]
+      properties:
+        name:
+          type: string
+        source_type:
+          type: string
+          enum: [url, inline, demo]
+        source_url:
+          type: string
+          nullable: true
+        raw_spec:
+          type: string
+          nullable: true
+          description: Inline OpenAPI JSON/YAML. Stored locally for the alpha import record.
+    APISpec:
+      type: object
+      required:
+        - id
+        - project_id
+        - name
+        - source_type
+        - operation_count
+        - safe_operation_count
+        - skipped_operation_count
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        source_type:
+          type: string
+          enum: [url, inline, demo]
+        source_url:
+          type: string
+        parsed_title:
+          type: string
+        parsed_version:
+          type: string
+        server_url:
+          type: string
+        operation_count:
+          type: integer
+        safe_operation_count:
+          type: integer
+        skipped_operation_count:
+          type: integer
+        status:
+          type: string
+          enum: [pending, parsed, invalid, error]
+        error_message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    APISpecDetail:
+      type: object
+      required: [spec]
+      properties:
+        spec:
+          $ref: "#/components/schemas/APISpec"
+        operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/APIOperation"
+    APIOperation:
+      type: object
+      required:
+        - id
+        - api_spec_id
+        - project_id
+        - method
+        - path
+        - tags
+        - expected_statuses
+        - expected_content_types
+        - safe_to_execute
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        api_spec_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        method:
+          type: string
+          example: GET
+        path:
+          type: string
+          example: /users/{id}
+        resolved_path:
+          type: string
+          example: /users/1
+        query_string:
+          type: string
+        operation_id:
+          type: string
+        summary:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        expected_statuses:
+          type: array
+          items:
+            type: string
+        expected_content_types:
+          type: array
+          items:
+            type: string
+        requires_authentication:
+          type: boolean
+          nullable: true
+        safe_to_execute:
+          type: boolean
+        skip_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    APISmokeSummary:
+      type: object
+      required:
+        - total_operations
+        - executed_operations
+        - skipped_operations
+        - passed_operations
+        - failed_operations
+        - errored_operations
+      properties:
+        total_operations:
+          type: integer
+        executed_operations:
+          type: integer
+        skipped_operations:
+          type: integer
+        passed_operations:
+          type: integer
+        failed_operations:
+          type: integer
+        errored_operations:
+          type: integer
+    APICheckResult:
+      type: object
+      required:
+        - id
+        - run_id
+        - api_spec_id
+        - method
+        - path
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+        api_spec_id:
+          type: string
+          format: uuid
+        operation_id:
+          type: string
+          format: uuid
+          nullable: true
+        method:
+          type: string
+        path:
+          type: string
+        resolved_url:
+          type: string
+        status:
+          type: string
+          enum: [passed, failed, skipped, error]
+        http_status:
+          type: integer
+          nullable: true
+        duration_ms:
+          type: integer
+          nullable: true
+        response_content_type:
+          type: string
+        response_size_bytes:
+          type: integer
+          nullable: true
+        error_message:
+          type: string
+        skipped_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
     Report:
       type: object
       required:
         - run_id
         - project_id
+        - run_type
         - status
         - summary
         - findings
@@ -792,6 +1154,9 @@ components:
         project_id:
           type: string
           format: uuid
+        run_type:
+          type: string
+          example: api_smoke
         status:
           type: string
           enum: [queued, pending, running, completed, failed, canceled, passed, error]
@@ -816,6 +1181,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TestPlanRef"
+        api_spec:
+          allOf:
+            - $ref: "#/components/schemas/APISpec"
+          nullable: true
+        api_summary:
+          allOf:
+            - $ref: "#/components/schemas/APISmokeSummary"
+          nullable: true
+        api_results:
+          type: array
+          items:
+            $ref: "#/components/schemas/APICheckResult"
     ReportSummary:
       type: object
       required: [total_findings, critical, high, medium, low, info]

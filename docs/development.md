@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.7.0-alpha.
+This document covers local development for Qualora v0.8.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, mock API, and fake LLM profile services; creates an AI provider, browser project, and API project; starts runs; polls to completion; runs AI analysis; generates AI test plans; previews and executes a safe browser test plan; prints JSON/HTML report, test-plan, and execution URLs; validates HTML report export; validates test-plan export; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; creates an AI provider, browser project, and API project; imports the demo OpenAPI spec; starts browser and safe API smoke runs; polls to completion; runs AI analysis; generates AI test plans; previews and executes a safe browser test plan; prints JSON/HTML report, API spec, test-plan, and execution URLs; validates HTML report export; validates API result rows; validates skipped unsafe API operations; validates test-plan export; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -107,7 +107,9 @@ The smoke script runs:
 - AI analysis for the completed browser smoke run.
 - AI test plan generation/export validation for the browser smoke run.
 - Safe test plan execution preview and run validation for the browser smoke project.
-- API/OpenAPI smoke against the local `mock-api` Compose service.
+- OpenAPI import and safe API smoke against the local `demo-api` Compose service.
+- Operation discovery validation, including skipped POST/DELETE/auth-required operations.
+- Deterministic `/broken` API finding validation.
 - AI analysis and AI test plan generation/export validation for the API smoke run.
 - HTML report export validation for each completed run.
 - Screenshot evidence metadata and download validation for the browser run.
@@ -123,9 +125,9 @@ make smoke
 Override API target:
 
 ```bash
-QUALORA_API_SMOKE_URL=http://mock-api:8080 \
-QUALORA_API_SMOKE_OPENAPI_URL=http://mock-api:8080/openapi.json \
-QUALORA_API_SMOKE_ALLOWED_HOST=mock-api \
+QUALORA_API_SMOKE_URL=http://demo-api:8080 \
+QUALORA_API_SMOKE_OPENAPI_URL=http://demo-api:8080/openapi.yaml \
+QUALORA_API_SMOKE_ALLOWED_HOST=demo-api \
 make smoke
 ```
 
@@ -133,7 +135,7 @@ For private or local targets, create projects manually with `allow_private_targe
 
 ## AI Provider Development
 
-The v0.7 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.8 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -148,6 +150,20 @@ The default Compose encryption key is intentionally insecure and only for local 
 AI-assisted test plans are reviewable suggestions and are never executed automatically. Qualora can execute only explicitly approved, deterministic safe DSL steps after a preview. It does not send screenshots/full HTML/raw traces/full network bodies to AI by default, and it redacts secret-looking values before prompt construction and storage.
 
 Safe test plan execution currently supports only browser actions that stay on the project frontend origin: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`.
+
+## Safe API Smoke Development
+
+Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
+
+The v0.8 API executor:
+
+- Supports OpenAPI 3.x JSON/YAML.
+- Executes only `GET`, `HEAD`, and `OPTIONS`.
+- Skips mutating methods, auth-required operations, required request bodies, unresolved path parameters, sensitive paths, and sensitive required query parameters.
+- Sends no auth headers, cookies, request bodies, or secrets.
+- Does not store response bodies.
+- Blocks redirects to external origins.
+- Persists `api_check_results` plus metadata-only API evidence.
 
 OpenRouter example headers:
 

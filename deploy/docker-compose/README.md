@@ -30,7 +30,8 @@ The MVP Compose stack includes:
 
 The smoke profile also includes:
 
-- `mock-api`: deterministic local API used by `make smoke`.
+- `mock-api`: older deterministic local API retained for compatibility with earlier alpha API worker checks.
+- `demo-api`: deterministic OpenAPI demo API used by v0.8 safe API smoke tests.
 - `demo-web`: deterministic local frontend used by browser smoke tests.
 - `fake-llm`: deterministic OpenAI-compatible provider used by AI smoke tests.
 

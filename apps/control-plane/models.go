@@ -20,6 +20,12 @@ const (
 )
 
 const (
+	RunTypeFull         = "full"
+	RunTypeBrowserSmoke = "browser_smoke"
+	RunTypeAPISmoke     = "api_smoke"
+)
+
+const (
 	AIProviderOpenAICompatible = "openai-compatible"
 )
 
@@ -51,6 +57,8 @@ type Project struct {
 type TestRun struct {
 	ID           string     `json:"id"`
 	ProjectID    string     `json:"project_id"`
+	RunType      string     `json:"run_type"`
+	APISpecID    string     `json:"api_spec_id,omitempty"`
 	Status       string     `json:"status"`
 	ErrorMessage string     `json:"error_message,omitempty"`
 	PageTitle    string     `json:"page_title,omitempty"`
@@ -99,15 +107,19 @@ type Evidence struct {
 }
 
 type Report struct {
-	RunID      string         `json:"run_id"`
-	ProjectID  string         `json:"project_id"`
-	Status     string         `json:"status"`
-	Summary    ReportSummary  `json:"summary"`
-	Findings   []Finding      `json:"findings"`
-	Evidence   []Evidence     `json:"evidence"`
-	Metadata   map[string]any `json:"metadata"`
-	AIAnalysis *AIAnalysis    `json:"ai_analysis"`
-	TestPlans  []TestPlanRef  `json:"test_plans"`
+	RunID      string           `json:"run_id"`
+	ProjectID  string           `json:"project_id"`
+	RunType    string           `json:"run_type"`
+	Status     string           `json:"status"`
+	Summary    ReportSummary    `json:"summary"`
+	Findings   []Finding        `json:"findings"`
+	Evidence   []Evidence       `json:"evidence"`
+	Metadata   map[string]any   `json:"metadata"`
+	AIAnalysis *AIAnalysis      `json:"ai_analysis"`
+	TestPlans  []TestPlanRef    `json:"test_plans"`
+	APISpec    *APISpec         `json:"api_spec,omitempty"`
+	APISummary *APISmokeSummary `json:"api_summary,omitempty"`
+	APIResults []APICheckResult `json:"api_results,omitempty"`
 }
 
 type ReportSummary struct {
@@ -346,4 +358,82 @@ type TestPlanExecutionReport struct {
 	Evidence      []Evidence                    `json:"evidence"`
 	SafetySummary TestPlanExecutionSafetyReport `json:"safety_summary"`
 	GeneratedAt   time.Time                     `json:"generated_at"`
+}
+
+type APISpecImportRequest struct {
+	Name       string `json:"name"`
+	SourceType string `json:"source_type"`
+	SourceURL  string `json:"source_url"`
+	RawSpec    string `json:"raw_spec"`
+}
+
+type APISpec struct {
+	ID                    string    `json:"id"`
+	ProjectID             string    `json:"project_id"`
+	Name                  string    `json:"name"`
+	SourceType            string    `json:"source_type"`
+	SourceURL             string    `json:"source_url,omitempty"`
+	ParsedTitle           string    `json:"parsed_title,omitempty"`
+	ParsedVersion         string    `json:"parsed_version,omitempty"`
+	ServerURL             string    `json:"server_url,omitempty"`
+	OperationCount        int       `json:"operation_count"`
+	SafeOperationCount    int       `json:"safe_operation_count"`
+	SkippedOperationCount int       `json:"skipped_operation_count"`
+	Status                string    `json:"status"`
+	ErrorMessage          string    `json:"error_message,omitempty"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+}
+
+type APISpecDetail struct {
+	Spec       APISpec        `json:"spec"`
+	Operations []APIOperation `json:"operations,omitempty"`
+}
+
+type APIOperation struct {
+	ID                     string    `json:"id"`
+	APISpecID              string    `json:"api_spec_id"`
+	ProjectID              string    `json:"project_id"`
+	Method                 string    `json:"method"`
+	Path                   string    `json:"path"`
+	ResolvedPath           string    `json:"resolved_path,omitempty"`
+	QueryString            string    `json:"query_string,omitempty"`
+	OperationID            string    `json:"operation_id,omitempty"`
+	Summary                string    `json:"summary,omitempty"`
+	Description            string    `json:"description,omitempty"`
+	Tags                   []string  `json:"tags"`
+	ExpectedStatuses       []string  `json:"expected_statuses"`
+	ExpectedContentTypes   []string  `json:"expected_content_types"`
+	RequiresAuthentication *bool     `json:"requires_authentication,omitempty"`
+	SafeToExecute          bool      `json:"safe_to_execute"`
+	SkipReason             string    `json:"skip_reason,omitempty"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
+}
+
+type APICheckResult struct {
+	ID                  string    `json:"id"`
+	RunID               string    `json:"run_id"`
+	APISpecID           string    `json:"api_spec_id"`
+	OperationID         string    `json:"operation_id,omitempty"`
+	Method              string    `json:"method"`
+	Path                string    `json:"path"`
+	ResolvedURL         string    `json:"resolved_url,omitempty"`
+	Status              string    `json:"status"`
+	HTTPStatus          *int      `json:"http_status,omitempty"`
+	DurationMS          *int      `json:"duration_ms,omitempty"`
+	ResponseContentType string    `json:"response_content_type,omitempty"`
+	ResponseSizeBytes   *int      `json:"response_size_bytes,omitempty"`
+	ErrorMessage        string    `json:"error_message,omitempty"`
+	SkippedReason       string    `json:"skipped_reason,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+}
+
+type APISmokeSummary struct {
+	TotalOperations    int `json:"total_operations"`
+	ExecutedOperations int `json:"executed_operations"`
+	SkippedOperations  int `json:"skipped_operations"`
+	PassedOperations   int `json:"passed_operations"`
+	FailedOperations   int `json:"failed_operations"`
+	ErroredOperations  int `json:"errored_operations"`
 }

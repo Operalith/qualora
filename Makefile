@@ -25,5 +25,5 @@ logs:
 	docker compose logs -f qualora-api qualora-web qualora-worker-browser qualora-worker-api
 
 smoke:
-	docker compose --profile smoke up -d --build --force-recreate mock-api demo-web fake-llm
+	docker compose --profile smoke up -d --build --force-recreate demo-api demo-web fake-llm
 	python3 scripts/smoke.py

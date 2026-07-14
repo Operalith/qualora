@@ -121,6 +121,10 @@ func (s *Store) CreateRun(ctx context.Context, project Project) (*TestRun, []Run
 }
 
 func (s *Store) CreateRunForKinds(ctx context.Context, project Project, kinds []string) (*TestRun, []RunJob, error) {
+	return s.CreateRunForKindsWithType(ctx, project, kinds, RunTypeFull, "")
+}
+
+func (s *Store) CreateRunForKindsWithType(ctx context.Context, project Project, kinds []string, runType string, apiSpecID string) (*TestRun, []RunJob, error) {
 	for _, kind := range kinds {
 		switch kind {
 		case JobKindBrowser:
@@ -146,13 +150,16 @@ func (s *Store) CreateRunForKinds(ctx context.Context, project Project, kinds []
 	defer tx.Rollback(ctx)
 
 	run := &TestRun{}
+	var runAPISpecID sql.NullString
 	err = tx.QueryRow(ctx, `
-INSERT INTO test_runs (id, project_id, status)
-VALUES ($1, $2, $3)
-RETURNING id, project_id, status, error_message, page_title, started_at, completed_at, created_at, updated_at
-`, uuid.NewString(), project.ID, StatusQueued).Scan(
+INSERT INTO test_runs (id, project_id, run_type, api_spec_id, status)
+VALUES ($1, $2, $3, NULLIF($4, '')::uuid, $5)
+RETURNING id, project_id, run_type, api_spec_id::text, status, error_message, page_title, started_at, completed_at, created_at, updated_at
+`, uuid.NewString(), project.ID, runType, apiSpecID, StatusQueued).Scan(
 		&run.ID,
 		&run.ProjectID,
+		&run.RunType,
+		&runAPISpecID,
 		&run.Status,
 		&run.ErrorMessage,
 		&run.PageTitle,
@@ -163,6 +170,9 @@ RETURNING id, project_id, status, error_message, page_title, started_at, complet
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("insert test run: %w", err)
+	}
+	if runAPISpecID.Valid {
+		run.APISpecID = runAPISpecID.String
 	}
 
 	jobs := make([]RunJob, 0, len(kinds))
@@ -224,29 +234,18 @@ WHERE id = $1
 }
 
 func (s *Store) GetRun(ctx context.Context, id string) (*TestRun, error) {
-	run := &TestRun{}
-	err := s.db.QueryRow(ctx, `
-SELECT id, project_id, status, error_message, page_title, started_at, completed_at, created_at, updated_at
+	run, err := scanRun(s.db.QueryRow(ctx, `
+SELECT id, project_id, run_type, api_spec_id::text, status, error_message, page_title, started_at, completed_at, created_at, updated_at
 FROM test_runs
 WHERE id = $1
-`, id).Scan(
-		&run.ID,
-		&run.ProjectID,
-		&run.Status,
-		&run.ErrorMessage,
-		&run.PageTitle,
-		&run.StartedAt,
-		&run.CompletedAt,
-		&run.CreatedAt,
-		&run.UpdatedAt,
-	)
+`, id))
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("get test run: %w", err)
 	}
-	return run, nil
+	return &run, nil
 }
 
 func (s *Store) ListRuns(ctx context.Context, projectID string) ([]TestRun, error) {
@@ -256,13 +255,13 @@ func (s *Store) ListRuns(ctx context.Context, projectID string) ([]TestRun, erro
 	)
 	if projectID == "" {
 		rows, err = s.db.Query(ctx, `
-SELECT id, project_id, status, error_message, page_title, started_at, completed_at, created_at, updated_at
+SELECT id, project_id, run_type, api_spec_id::text, status, error_message, page_title, started_at, completed_at, created_at, updated_at
 FROM test_runs
 ORDER BY created_at DESC
 `)
 	} else {
 		rows, err = s.db.Query(ctx, `
-SELECT id, project_id, status, error_message, page_title, started_at, completed_at, created_at, updated_at
+SELECT id, project_id, run_type, api_spec_id::text, status, error_message, page_title, started_at, completed_at, created_at, updated_at
 FROM test_runs
 WHERE project_id = $1
 ORDER BY created_at DESC
@@ -275,19 +274,9 @@ ORDER BY created_at DESC
 
 	runs := make([]TestRun, 0)
 	for rows.Next() {
-		var run TestRun
-		if err := rows.Scan(
-			&run.ID,
-			&run.ProjectID,
-			&run.Status,
-			&run.ErrorMessage,
-			&run.PageTitle,
-			&run.StartedAt,
-			&run.CompletedAt,
-			&run.CreatedAt,
-			&run.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan test run: %w", err)
+		run, err := scanRun(rows)
+		if err != nil {
+			return nil, err
 		}
 		runs = append(runs, run)
 	}
@@ -327,6 +316,7 @@ func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 	report := &Report{
 		RunID:      run.ID,
 		ProjectID:  run.ProjectID,
+		RunType:    run.RunType,
 		Status:     run.Status,
 		Summary:    summarizeFindings(findings),
 		Findings:   findings,
@@ -337,7 +327,26 @@ func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 			"page_title": run.PageTitle,
 			"created_at": run.CreatedAt.Format(time.RFC3339),
 			"jobs":       jobs,
+			"run_type":   run.RunType,
 		},
+	}
+	if run.APISpecID != "" {
+		spec, err := s.GetAPISpec(ctx, run.APISpecID)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		if spec != nil {
+			report.APISpec = spec
+			report.Metadata["api_spec"] = spec
+		}
+		apiResults, err := s.ListAPICheckResults(ctx, run.ID)
+		if err != nil {
+			return nil, err
+		}
+		report.APIResults = apiResults
+		apiSummary := summarizeAPICheckResults(apiResults)
+		report.APISummary = &apiSummary
+		report.Metadata["api_summary"] = apiSummary
 	}
 	if run.ErrorMessage != "" {
 		report.Metadata["error_message"] = run.ErrorMessage
@@ -451,6 +460,33 @@ WHERE id = $1
 
 type scanRow interface {
 	Scan(dest ...any) error
+}
+
+func scanRun(row scanRow) (TestRun, error) {
+	var run TestRun
+	var apiSpecID sql.NullString
+	if err := row.Scan(
+		&run.ID,
+		&run.ProjectID,
+		&run.RunType,
+		&apiSpecID,
+		&run.Status,
+		&run.ErrorMessage,
+		&run.PageTitle,
+		&run.StartedAt,
+		&run.CompletedAt,
+		&run.CreatedAt,
+		&run.UpdatedAt,
+	); err != nil {
+		return TestRun{}, fmt.Errorf("scan test run: %w", err)
+	}
+	if run.RunType == "" {
+		run.RunType = RunTypeFull
+	}
+	if apiSpecID.Valid {
+		run.APISpecID = apiSpecID.String
+	}
+	return run, nil
 }
 
 func scanEvidence(row scanRow) (Evidence, error) {

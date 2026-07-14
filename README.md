@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.7.0-alpha` adds approved safe test plan execution. Qualora remains deterministic and useful without AI: browser/API checks, evidence collection, JSON reports, HTML reports, and safe execution of supported DSL steps do not depend on an LLM. AI-generated plans are still suggestions until a user previews and starts a safe execution.
+`v0.8.0-alpha` adds OpenAPI import and safe API smoke testing. Qualora remains deterministic and useful without AI: browser checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
 
 ## Current Alpha Capabilities
 
@@ -17,9 +17,14 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Execute Playwright Chromium checks against a configured frontend URL.
 - Execute safe API checks against `api_base_url`.
 - Fetch and parse OpenAPI 3.x JSON/YAML from `openapi_url`.
+- Import OpenAPI 3.x specs from URL or pasted JSON/YAML.
+- Discover API operations, classify safe operations, and persist skip reasons.
+- Run safe API smoke tests from imported OpenAPI specs.
 - Test only safe OpenAPI methods by default: `GET`, `HEAD`, and `OPTIONS`.
+- Skip mutating, authenticated, ambiguous, request-body, unresolved-parameter, and sensitive API operations.
 - Enforce project `allowed_hosts` for browser and API requests.
 - Collect page title, final URL, status code, screenshot evidence, browser observations, API observations, OpenAPI summaries, and API request evidence.
+- Persist API smoke result rows with method, path, status, HTTP status, duration, content type, response size, error, and skip reason.
 - Store metadata in PostgreSQL.
 - Queue worker jobs with Redis.
 - Store screenshots in MinIO/S3, with a local filesystem fallback.
@@ -45,7 +50,7 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
@@ -56,9 +61,12 @@ qualora-api
         |       +--> MinIO/S3 screenshot evidence
         |
         +--> qualora-worker-api
-                +--> API base URL checks
-                +--> OpenAPI 3.x safe method checks
-                +--> PostgreSQL evidence and findings
+        |       +--> Legacy project API base URL/OpenAPI checks
+        |
+        +--> Safe OpenAPI import and API smoke execution in control plane
+                +--> OpenAPI 3.x operation discovery
+                +--> GET/HEAD/OPTIONS-only API smoke checks
+                +--> API result rows, evidence, findings, reports
 ```
 
 The web UI is served separately as `qualora-web` on `http://localhost:3000` and calls the API on `http://localhost:8080`.
@@ -99,7 +107,7 @@ make smoke
 The smoke target includes:
 
 - Browser smoke against the local `demo-web` Compose service.
-- API/OpenAPI smoke against a local mock API service started by the Makefile.
+- OpenAPI import and safe API smoke against a local `demo-api` service started by the Makefile.
 - AI provider smoke against a local fake OpenAI-compatible provider.
 - Safe test plan execution smoke against the local `demo-web` service.
 
@@ -148,6 +156,39 @@ curl -s http://localhost:8080/api/v1/projects \
     "security_mode": "passive",
     "destructive_actions": false
   }'
+```
+
+Import an OpenAPI spec for a project:
+
+```bash
+API_SPEC_ID=$(curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/api-specs" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Demo API",
+    "source_type": "url",
+    "source_url": "http://demo-api:8080/openapi.yaml"
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["spec"]["id"])')
+```
+
+List discovered operations and skip reasons:
+
+```bash
+curl -s "http://localhost:8080/api/v1/api-specs/${API_SPEC_ID}/operations" | python3 -m json.tool
+```
+
+Run a safe API smoke test from the imported spec:
+
+```bash
+API_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/api-specs/${API_SPEC_ID}/api-smoke-runs" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+```
+
+Fetch API smoke results:
+
+```bash
+curl -s "http://localhost:8080/api/v1/runs/${API_RUN_ID}/api-results" | python3 -m json.tool
+curl -s "http://localhost:8080/api/v1/runs/${API_RUN_ID}/report" | python3 -m json.tool
+open "http://localhost:8080/api/v1/runs/${API_RUN_ID}/report.html"
 ```
 
 Create a project and save its ID:
@@ -282,7 +323,7 @@ open "http://localhost:8080/api/v1/test-plan-executions/${EXECUTION_ID}/report.h
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.7.0-alpha`:
+Supported provider type in `v0.8.0-alpha`:
 
 - `openai-compatible`
 
@@ -302,7 +343,7 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.7.0-alpha`, a user may explicitly preview and execute only the supported safe DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons.
+AI-assisted test plans are reviewable suggestions. In `v0.8.0-alpha`, a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons.
 
 ## Report Example
 

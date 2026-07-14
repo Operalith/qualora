@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.7.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.8.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -33,7 +33,7 @@ The browser worker routes Playwright requests through the host policy:
 
 ## API Request Enforcement
 
-The API worker validates `api_base_url`, `openapi_url`, and every OpenAPI endpoint URL against the same host policy.
+The API worker and v0.8 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
 
 Default API behavior:
 
@@ -41,7 +41,13 @@ Default API behavior:
 - OpenAPI document fetch from `openapi_url`.
 - Safe OpenAPI methods only: `GET`, `HEAD`, and `OPTIONS`.
 - Unsafe methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are skipped.
-- `destructive_actions=true` is not supported by the v0.7.0-alpha API worker.
+- Imported OpenAPI specs are parsed and classified before any API requests are executed.
+- Auth-required operations are skipped in v0.8.
+- Operations with required request bodies are skipped.
+- Path parameters are skipped unless a safe `example`, `default`, or `enum` value exists.
+- Required query parameters are sent only when a safe sample exists and the parameter name is not secret-like.
+- API smoke execution does not store request bodies or response bodies.
+- `destructive_actions=true` is not supported by the safe API smoke executor.
 
 ## Safe Test Plan Execution
 
@@ -73,7 +79,7 @@ Unsupported, ambiguous, authenticated, destructive, mutating, out-of-scope, and 
 
 ## Web UI Exposure
 
-The v0.7.0-alpha web UI has no authentication or authorization. It can create projects, start runs, configure AI providers, run AI analysis, generate AI-assisted test plans, preview/start safe test plan executions, and display report/evidence metadata through the control-plane API.
+The v0.8.0-alpha web UI has no authentication or authorization. It can create projects, import API specs, start runs, start safe API smoke runs, configure AI providers, run AI analysis, generate AI-assisted test plans, preview/start safe test plan executions, and display report/evidence metadata through the control-plane API.
 
 Use it only in trusted local or self-hosted environments. Do not expose `qualora-web` or `qualora-api` directly to untrusted networks without adding an external access-control layer.
 
@@ -86,6 +92,7 @@ Current safeguards:
 - API request logs do not include request bodies or query strings.
 - Worker logs redact common token, password, secret, cookie, and authorization patterns.
 - API evidence strips URL userinfo, query strings, and fragments.
+- API smoke result rows store method, path, resolved URL, status, HTTP status, duration, content type, response size, errors, and skip reasons, but not request bodies or response bodies.
 - Evidence object downloads are served only for evidence records already known to Qualora; callers cannot provide arbitrary S3 keys or filesystem paths.
 - AI provider API keys are encrypted at rest.
 - AI provider extra headers are treated as sensitive and encrypted at rest.
@@ -98,7 +105,7 @@ The Docker Compose default `QUALORA_ENCRYPTION_KEY` is an insecure development f
 
 AI is disabled until a provider is configured. Qualora works without AI.
 
-The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API metadata, and job metadata.
+The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API metadata, API smoke result summaries, and job metadata.
 
 The AI input builder does not send by default:
 
@@ -117,7 +124,7 @@ The AI input builder does not send by default:
 
 Redaction is enabled by default and masks common bearer/basic auth values, API keys, passwords, access/refresh tokens, session IDs, cookies, and JWT-looking values. AI output is parsed as strict JSON and redacted before storage.
 
-AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.7 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps.
+AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.8 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps.
 
 ## Non-Goals For This Alpha
 
