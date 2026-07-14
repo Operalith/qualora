@@ -13,8 +13,10 @@ Responsibilities:
 - Stored evidence object access by evidence ID.
 - Optional AI provider management.
 - Optional AI report analysis.
+- AI-assisted test plan storage.
+- Approved safe test plan execution orchestration.
 
-The MVP delegates browser checks and API checks to workers through Redis queues.
+The MVP delegates browser checks, API checks, and safe test plan execution to workers through Redis queues.
 
 The API performs project target validation, including `allowed_hosts` enforcement, blocked private/metadata targets by default, and DNS resolution checks for hostnames.
 
@@ -31,6 +33,7 @@ The service expects PostgreSQL and Redis. Defaults are suitable for local develo
 - `REDIS_ADDR=localhost:6379`
 - `BROWSER_RUN_QUEUE=qualora:browser-runs`
 - `API_RUN_QUEUE=qualora:api-runs`
+- `TEST_PLAN_EXECUTION_QUEUE=qualora:test-plan-executions`
 - `S3_ENDPOINT=http://localhost:9000`
 - `S3_BUCKET=qualora-evidence`
 - `S3_ACCESS_KEY_ID=qualora`
@@ -49,5 +52,10 @@ Current report endpoints:
 - `POST /api/v1/ai/providers/{provider_id}/test`
 - `GET /api/v1/runs/{run_id}/ai-analysis`
 - `POST /api/v1/runs/{run_id}/ai-analysis`
+- `POST /api/v1/test-plans/{test_plan_id}/executions`
+- `GET /api/v1/test-plans/{test_plan_id}/executions`
+- `GET /api/v1/test-plan-executions/{execution_id}`
+- `GET /api/v1/test-plan-executions/{execution_id}/report`
+- `GET /api/v1/test-plan-executions/{execution_id}/report.html`
 
 The default encryption key is for local development only. Set a strong `QUALORA_ENCRYPTION_KEY` before storing real AI provider credentials.

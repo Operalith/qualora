@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.6.0-alpha is the sixth public alpha release. It adds AI-assisted test plan generation, test plan storage/export, web UI plan workflows, JSON/HTML report references, and deterministic fake LLM smoke coverage while keeping deterministic QA useful without AI.
+Qualora v0.7.0-alpha is the seventh public alpha release. It adds approved safe test plan execution, persisted execution step reports, execution HTML reports, web UI execution workflows, and deterministic smoke coverage while keeping AI-generated plans as suggestions and deterministic QA useful without AI.
 
 ## Pre-Release Checklist
 
@@ -32,6 +32,9 @@ Confirm:
 - AI analysis completes for the browser and API smoke runs.
 - AI test plan generation completes for the browser and API smoke runs.
 - Test plan detail and export JSON URLs work.
+- Safe test plan preview returns executable browser DSL steps for the browser smoke plan.
+- Safe test plan execution reaches `completed`.
+- Safe execution reports include scenarios, steps, screenshot evidence, browser observations, and HTML report output.
 - JSON reports include `ai_analysis` when analysis has been generated.
 - HTML reports include an AI Analysis section when analysis has been generated.
 - JSON and HTML reports include related test plan references when a plan was generated from a run.
@@ -39,17 +42,17 @@ Confirm:
 - JSON report URLs work.
 - HTML report URLs work and render a self-contained report.
 - Screenshot evidence uses an `s3://qualora-evidence/...` URI when MinIO is healthy.
-- Documentation does not claim unsupported auth, login automation, active security scanning, destructive API testing, schema fuzzing, trace export, autonomous AI browser control, automatic execution of generated test plans, native Anthropic/Gemini support, or full browser/API test coverage.
+- Documentation does not claim unsupported auth, login automation, active security scanning, destructive API testing, schema fuzzing, trace export, autonomous AI browser control, automatic/free-form execution of generated test plans, native Anthropic/Gemini support, or full browser/API test coverage.
 
 ## Tagging
 
 ```bash
 git status --short
 git add .
-git commit -m "feat: add AI-assisted test planning for v0.6.0-alpha"
-git tag -a v0.6.0-alpha -m "v0.6.0-alpha"
+git commit -m "feat: add safe test plan execution for v0.7.0-alpha"
+git tag -a v0.7.0-alpha -m "v0.7.0-alpha"
 git push origin main
-git push origin v0.6.0-alpha
+git push origin v0.7.0-alpha
 ```
 
 ## GitHub Release
@@ -57,7 +60,7 @@ git push origin v0.6.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.6.0-alpha
+Qualora v0.7.0-alpha
 ```
 
-Use [release-notes/v0.6.0-alpha.md](release-notes/v0.6.0-alpha.md) as the release body.
+Use [release-notes/v0.7.0-alpha.md](release-notes/v0.7.0-alpha.md) as the release body.

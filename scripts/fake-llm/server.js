@@ -16,77 +16,140 @@ const testPlan = {
   summary: "A conservative reviewable plan generated from sanitized project and run metadata.",
   assumptions: [
     "Only sanitized project configuration, findings, and evidence metadata were available.",
-    "Generated steps are suggestions and are not executed automatically by Qualora."
+    "Generated steps are suggestions until a user approves safe execution."
   ],
   coverage_goals: [
-    "Confirm the primary frontend or API smoke path remains reachable.",
-    "Review deterministic findings and evidence metadata for regression candidates.",
+    "Confirm the demo homepage renders stable public text.",
+    "Confirm same-origin public links are visible and reachable.",
     "Prioritize safe, non-destructive checks suitable for an alpha release."
   ],
   scenarios: [
     {
       id: "scenario-01",
-      name: "Baseline target availability",
+      name: "Homepage public smoke checks",
       type: "smoke",
       priority: "high",
       risk: "medium",
-      description: "Verify that configured frontend and API targets respond successfully from the Qualora environment.",
-      preconditions: ["Project targets and allowed hosts are configured.", "A completed Qualora run is available when possible."],
+      description: "Verify that the public demo homepage renders stable content and same-origin navigation.",
+      preconditions: ["The project frontend URL points at the Qualora demo web target."],
       steps: [
         {
           order: 1,
-          action: "Open the project target through the existing browser or API smoke workflow.",
-          target: "Configured frontend URL or API base URL",
+          action: "goto",
+          target: "/",
           data: "",
-          expected_result: "The target is reachable and does not return an obvious 5xx response."
+          expected_result: "The homepage loads."
         },
         {
           order: 2,
-          action: "Review collected findings and evidence metadata.",
-          target: "Qualora run report",
+          action: "assert_title_contains",
+          target: "Qualora Demo Web",
           data: "",
-          expected_result: "Findings are understood and mapped to concrete follow-up checks."
+          expected_result: "The page title identifies the demo web target."
+        },
+        {
+          order: 3,
+          action: "assert_text_visible",
+          target: "Self-hosted QA automation demo",
+          data: "",
+          expected_result: "The demo description is visible."
+        },
+        {
+          order: 4,
+          action: "assert_link_exists",
+          target: "/status",
+          data: "",
+          expected_result: "The status link exists on the page."
+        },
+        {
+          order: 5,
+          action: "capture_screenshot",
+          target: "",
+          data: "",
+          expected_result: "Screenshot evidence is captured."
+        },
+        {
+          order: 6,
+          action: "collect_browser_signals",
+          target: "",
+          data: "",
+          expected_result: "Browser observations are recorded."
         }
       ],
-      assertions: ["No unexpected critical availability finding is present.", "Evidence metadata is present for the executed worker."],
-      test_data_needed: ["A safe test project target."],
+      assertions: ["The homepage title and body text are visible.", "Same-origin links are discoverable."],
+      test_data_needed: [],
       automation_candidate: true,
       destructive: false,
       requires_authentication: false,
       related_findings: [],
-      tags: ["alpha", "safe", "smoke"]
+      tags: ["alpha", "safe", "smoke", "browser"]
     },
     {
       id: "scenario-02",
-      name: "API contract visibility",
-      type: "api",
+      name: "Status page public checks",
+      type: "regression",
       priority: "medium",
       risk: "medium",
-      description: "Review safe OpenAPI-derived checks and confirm documented read-only endpoints behave consistently.",
-      preconditions: ["An OpenAPI URL is configured or API observation evidence exists."],
+      description: "Verify the public status page text and same-origin about link without any mutating interaction.",
+      preconditions: ["The status page is linked from the homepage."],
       steps: [
         {
           order: 1,
-          action: "Inspect the OpenAPI summary evidence.",
-          target: "openapi_summary evidence",
+          action: "goto",
+          target: "/status",
           data: "",
-          expected_result: "Safe methods and skipped unsafe methods are clearly reported."
+          expected_result: "The status page loads."
         },
         {
           order: 2,
-          action: "Compare failed endpoints with declared responses.",
-          target: "api_observations evidence",
+          action: "assert_url_contains",
+          target: "/status",
           data: "",
-          expected_result: "Unexpected status codes are identified for manual review."
+          expected_result: "The browser remains on the status route."
+        },
+        {
+          order: 3,
+          action: "assert_text_visible",
+          target: "System status: OK",
+          data: "",
+          expected_result: "The status text is visible."
+        },
+        {
+          order: 4,
+          action: "assert_link_exists",
+          target: "/about",
+          data: "",
+          expected_result: "The about link exists on the page."
+        },
+        {
+          order: 5,
+          action: "check_link_status",
+          target: "/about",
+          data: "",
+          expected_result: "The about link returns a successful status."
+        },
+        {
+          order: 6,
+          action: "assert_no_console_errors",
+          target: "",
+          data: "",
+          expected_result: "No console errors are observed."
+        },
+        {
+          order: 7,
+          action: "assert_no_failed_requests",
+          target: "",
+          data: "",
+          expected_result: "No failed network requests are observed."
         }
       ],
-      assertions: ["Unsafe methods are not called by default.", "5xx and unexpected safe-method statuses are reviewable."],
-      test_data_needed: ["Published OpenAPI document when available."],
+      assertions: ["The status route remains public and readable.", "Same-origin link checks use safe methods only."],
+      test_data_needed: [],
       automation_candidate: true,
       destructive: false,
       requires_authentication: false,
       related_findings: [],
-      tags: ["api", "openapi", "safe-methods"]
+      tags: ["alpha", "safe", "regression", "browser"]
     }
   ],
   suggested_next_instrumentation: [

@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.6.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.7.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -41,11 +41,39 @@ Default API behavior:
 - OpenAPI document fetch from `openapi_url`.
 - Safe OpenAPI methods only: `GET`, `HEAD`, and `OPTIONS`.
 - Unsafe methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are skipped.
-- `destructive_actions=true` is not supported by the v0.6.0-alpha API worker.
+- `destructive_actions=true` is not supported by the v0.7.0-alpha API worker.
+
+## Safe Test Plan Execution
+
+AI test plans are suggestions and are never executed automatically. A user must explicitly preview and start safe execution.
+
+The control plane maps model-generated plan JSON into a deterministic safe execution DSL. It queues only steps from scenarios that are:
+
+- `automation_candidate=true`.
+- `destructive=false`.
+- `requires_authentication=false`.
+- Not obviously login, payment, submit, upload, mutation, admin, exploit, SQLi, XSS, SSRF, brute-force, or destructive flows.
+
+Supported browser actions:
+
+- `goto`
+- `assert_title_contains`
+- `assert_url_contains`
+- `assert_text_visible`
+- `assert_element_visible`
+- `assert_link_exists`
+- `check_link_status`
+- `capture_screenshot`
+- `collect_browser_signals`
+- `wait_for_load_state`
+- `assert_no_console_errors`
+- `assert_no_failed_requests`
+
+Unsupported, ambiguous, authenticated, destructive, mutating, out-of-scope, and sensitive-query steps are persisted as skipped with reasons. The worker revalidates same-origin frontend URLs and `allowed_hosts` before navigation or link checks. The worker never executes model text as code and never performs POST/PUT/PATCH/DELETE actions from a generated plan.
 
 ## Web UI Exposure
 
-The v0.6.0-alpha web UI has no authentication or authorization. It can create projects, start runs, configure AI providers, run AI analysis, generate AI-assisted test plans, and display report/evidence metadata through the control-plane API.
+The v0.7.0-alpha web UI has no authentication or authorization. It can create projects, start runs, configure AI providers, run AI analysis, generate AI-assisted test plans, preview/start safe test plan executions, and display report/evidence metadata through the control-plane API.
 
 Use it only in trusted local or self-hosted environments. Do not expose `qualora-web` or `qualora-api` directly to untrusted networks without adding an external access-control layer.
 
@@ -89,7 +117,7 @@ The AI input builder does not send by default:
 
 Redaction is enabled by default and masks common bearer/basic auth values, API keys, passwords, access/refresh tokens, session IDs, cookies, and JWT-looking values. AI output is parsed as strict JSON and redacted before storage.
 
-AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.6 planner must not control the browser, call APIs, submit forms, or perform generated steps.
+AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.7 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps.
 
 ## Non-Goals For This Alpha
 
@@ -101,6 +129,7 @@ AI-assisted test planning uses the same sanitized input path, plus optional user
 - Schema fuzzing.
 - Autonomous AI browser control.
 - Automatic execution of generated AI test plans.
+- Free-form AI-controlled browser automation.
 - OWASP ZAP integration.
 - Active security scanning.
 

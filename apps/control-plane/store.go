@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -382,7 +383,8 @@ ORDER BY created_at ASC
 
 func (s *Store) ListFindings(ctx context.Context, runID string) ([]Finding, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT id, run_id, title, severity, category, confidence, description, recommendation, evidence_ids, created_at
+SELECT id, run_id::text, test_plan_execution_id::text, scenario_execution_id::text, step_execution_id::text,
+	title, severity, category, confidence, description, recommendation, evidence_ids, created_at
 FROM findings
 WHERE run_id = $1
 ORDER BY created_at ASC
@@ -394,24 +396,9 @@ ORDER BY created_at ASC
 
 	findings := make([]Finding, 0)
 	for rows.Next() {
-		var finding Finding
-		var evidenceIDsRaw []byte
-		if err := rows.Scan(
-			&finding.ID,
-			&finding.RunID,
-			&finding.Title,
-			&finding.Severity,
-			&finding.Category,
-			&finding.Confidence,
-			&finding.Description,
-			&finding.Recommendation,
-			&evidenceIDsRaw,
-			&finding.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan finding: %w", err)
-		}
-		if err := json.Unmarshal(evidenceIDsRaw, &finding.EvidenceIDs); err != nil {
-			return nil, fmt.Errorf("unmarshal finding evidence ids: %w", err)
+		finding, err := scanFinding(rows)
+		if err != nil {
+			return nil, err
 		}
 		findings = append(findings, finding)
 	}
@@ -423,7 +410,7 @@ ORDER BY created_at ASC
 
 func (s *Store) ListEvidence(ctx context.Context, runID string) ([]Evidence, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT id, run_id, type, uri, metadata, created_at
+SELECT id, run_id::text, test_plan_execution_id::text, type, uri, metadata, created_at
 FROM evidence
 WHERE run_id = $1
 ORDER BY created_at ASC
@@ -449,7 +436,7 @@ ORDER BY created_at ASC
 
 func (s *Store) GetEvidence(ctx context.Context, id string) (*Evidence, error) {
 	record, err := scanEvidence(s.db.QueryRow(ctx, `
-SELECT id, run_id, type, uri, metadata, created_at
+SELECT id, run_id::text, test_plan_execution_id::text, type, uri, metadata, created_at
 FROM evidence
 WHERE id = $1
 `, id))
@@ -468,10 +455,13 @@ type scanRow interface {
 
 func scanEvidence(row scanRow) (Evidence, error) {
 	var record Evidence
+	var runID sql.NullString
+	var executionID sql.NullString
 	var metadataRaw []byte
 	if err := row.Scan(
 		&record.ID,
-		&record.RunID,
+		&runID,
+		&executionID,
 		&record.Type,
 		&record.URI,
 		&metadataRaw,
@@ -482,7 +472,55 @@ func scanEvidence(row scanRow) (Evidence, error) {
 	if err := json.Unmarshal(metadataRaw, &record.Metadata); err != nil {
 		return Evidence{}, fmt.Errorf("unmarshal evidence metadata: %w", err)
 	}
+	if runID.Valid {
+		record.RunID = runID.String
+	}
+	if executionID.Valid {
+		record.TestPlanExecutionID = executionID.String
+	}
 	return record, nil
+}
+
+func scanFinding(row scanRow) (Finding, error) {
+	var finding Finding
+	var runID sql.NullString
+	var executionID sql.NullString
+	var scenarioExecutionID sql.NullString
+	var stepExecutionID sql.NullString
+	var evidenceIDsRaw []byte
+	if err := row.Scan(
+		&finding.ID,
+		&runID,
+		&executionID,
+		&scenarioExecutionID,
+		&stepExecutionID,
+		&finding.Title,
+		&finding.Severity,
+		&finding.Category,
+		&finding.Confidence,
+		&finding.Description,
+		&finding.Recommendation,
+		&evidenceIDsRaw,
+		&finding.CreatedAt,
+	); err != nil {
+		return Finding{}, fmt.Errorf("scan finding: %w", err)
+	}
+	if err := json.Unmarshal(evidenceIDsRaw, &finding.EvidenceIDs); err != nil {
+		return Finding{}, fmt.Errorf("unmarshal finding evidence ids: %w", err)
+	}
+	if runID.Valid {
+		finding.RunID = runID.String
+	}
+	if executionID.Valid {
+		finding.TestPlanExecutionID = executionID.String
+	}
+	if scenarioExecutionID.Valid {
+		finding.ScenarioExecutionID = scenarioExecutionID.String
+	}
+	if stepExecutionID.Valid {
+		finding.StepExecutionID = stepExecutionID.String
+	}
+	return finding, nil
 }
 
 func scanProject(row pgx.Row) (Project, error) {

@@ -50,6 +50,9 @@ export type RunJob = {
 export type Finding = {
   id: string;
   run_id?: string;
+  test_plan_execution_id?: string;
+  scenario_execution_id?: string;
+  step_execution_id?: string;
   title: string;
   severity: "critical" | "high" | "medium" | "low" | "info";
   category: string;
@@ -63,6 +66,7 @@ export type Finding = {
 export type Evidence = {
   id: string;
   run_id?: string;
+  test_plan_execution_id?: string;
   type: string;
   uri: string;
   metadata: Record<string, unknown>;
@@ -204,6 +208,128 @@ export type AITestPlanInput = {
   product_context?: string;
   focus_areas: string[];
   max_scenarios: number;
+};
+
+export type TestPlanExecutionRequest = {
+  max_scenarios: number;
+  max_steps_per_scenario: number;
+  scenario_ids?: string[];
+  dry_run: boolean;
+};
+
+export type MappedExecutionStep = {
+  step_order: number;
+  original_action: string;
+  mapped_action: string;
+  target: string;
+  expected_result: string;
+  status: string;
+  skip_reason?: string;
+};
+
+export type MappedExecutionScenario = {
+  scenario_id_from_plan: string;
+  name: string;
+  type: string;
+  priority: string;
+  status: string;
+  skip_reason?: string;
+  steps: MappedExecutionStep[];
+};
+
+export type TestPlanExecutionPreview = {
+  dry_run: boolean;
+  test_plan_id: string;
+  project_id: string;
+  max_scenarios: number;
+  max_steps_per_scenario: number;
+  total_scenarios: number;
+  executable_scenarios: number;
+  skipped_scenarios: number;
+  total_steps: number;
+  executable_steps: number;
+  skipped_steps: number;
+  scenarios: MappedExecutionScenario[];
+  safety_summary: TestPlanExecutionSafetyReport;
+};
+
+export type TestPlanExecution = {
+  id: string;
+  test_plan_id: string;
+  project_id: string;
+  source_run_id?: string;
+  status: string;
+  total_scenarios: number;
+  passed_scenarios: number;
+  failed_scenarios: number;
+  skipped_scenarios: number;
+  total_steps: number;
+  passed_steps: number;
+  failed_steps: number;
+  skipped_steps: number;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TestPlanExecutionScenario = {
+  id: string;
+  execution_id: string;
+  scenario_id_from_plan: string;
+  name: string;
+  type: string;
+  priority: string;
+  status: string;
+  skip_reason?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+  steps?: TestPlanExecutionStep[];
+};
+
+export type TestPlanExecutionStep = {
+  id: string;
+  execution_id: string;
+  scenario_execution_id: string;
+  step_order: number;
+  original_action: string;
+  mapped_action: string;
+  target: string;
+  expected_result: string;
+  status: string;
+  skip_reason?: string;
+  actual_result?: string;
+  error_message?: string;
+  duration_ms?: number;
+  evidence_id?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TestPlanExecutionDetail = {
+  execution: TestPlanExecution;
+  scenarios: TestPlanExecutionScenario[];
+};
+
+export type TestPlanExecutionSafetyReport = {
+  executed_steps: number;
+  skipped_unsafe_steps: number;
+  skipped_unsupported_steps: number;
+  skipped_scenarios: number;
+};
+
+export type TestPlanExecutionReport = {
+  execution: TestPlanExecution;
+  test_plan: TestPlan;
+  project: Project;
+  scenarios: TestPlanExecutionScenario[];
+  findings: Finding[];
+  evidence: Evidence[];
+  safety_summary: TestPlanExecutionSafetyReport;
+  generated_at: string;
 };
 
 export type ReportSummary = {

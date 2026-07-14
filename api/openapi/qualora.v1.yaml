@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.6.0-alpha
-  description: API for creating QA projects, starting browser/API smoke runs, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, reading reports, and downloading stored evidence objects.
+  version: 0.7.0-alpha
+  description: API for creating QA projects, starting browser/API smoke runs, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading reports, and downloading stored evidence objects.
 servers:
   - url: http://localhost:8080
 paths:
@@ -133,7 +133,7 @@ paths:
   /api/v1/projects/{project_id}/ai-test-plans:
     post:
       summary: Generate an AI-assisted test plan for a project
-      description: Synchronously builds a sanitized project/run context and sends it to the selected or default OpenAI-compatible provider. Generated plans are suggestions and are not executed by Qualora.
+      description: Synchronously builds a sanitized project/run context and sends it to the selected or default OpenAI-compatible provider. Generated plans are suggestions; only explicitly approved safe DSL steps can be executed.
       parameters:
         - $ref: "#/components/parameters/ProjectID"
       requestBody:
@@ -474,6 +474,98 @@ paths:
                 $ref: "#/components/schemas/TestPlanPayload"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/test-plans/{test_plan_id}/executions:
+    get:
+      summary: List safe executions for a test plan
+      parameters:
+        - $ref: "#/components/parameters/TestPlanID"
+      responses:
+        "200":
+          description: Test plan execution list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [executions]
+                properties:
+                  executions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TestPlanExecution"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Preview or start an approved safe test plan execution
+      description: Runs the deterministic safety mapper. With dry_run=true, returns a preview only. With dry_run=false, queues only supported safe browser DSL steps and skips unsupported, destructive, authenticated, or ambiguous steps.
+      parameters:
+        - $ref: "#/components/parameters/TestPlanID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestPlanExecutionRequest"
+      responses:
+        "200":
+          description: Dry-run execution preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestPlanExecutionPreview"
+        "201":
+          description: Queued execution detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestPlanExecutionDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/test-plan-executions/{execution_id}:
+    get:
+      summary: Get a safe test plan execution
+      parameters:
+        - $ref: "#/components/parameters/ExecutionID"
+      responses:
+        "200":
+          description: Execution detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestPlanExecutionDetail"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/test-plan-executions/{execution_id}/report:
+    get:
+      summary: Get a structured safe test plan execution report
+      parameters:
+        - $ref: "#/components/parameters/ExecutionID"
+      responses:
+        "200":
+          description: Execution report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestPlanExecutionReport"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/test-plan-executions/{execution_id}/report.html:
+    get:
+      summary: Get a self-contained HTML safe test plan execution report
+      parameters:
+        - $ref: "#/components/parameters/ExecutionID"
+      responses:
+        "200":
+          description: HTML execution report
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/evidence/{evidence_id}:
     get:
       summary: Download a stored evidence object
@@ -531,6 +623,13 @@ components:
       schema:
         type: string
         format: uuid
+    ExecutionID:
+      name: execution_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   responses:
     Error:
       description: Error response
@@ -570,7 +669,7 @@ components:
         destructive_actions:
           type: boolean
           default: false
-          description: Destructive actions are still off by default for v0.6.0-alpha.
+          description: Destructive actions are off by default and are not used by safe test plan execution in v0.7.0-alpha.
         allow_private_targets:
           type: boolean
           default: false
@@ -677,6 +776,19 @@ components:
         run_id:
           type: string
           format: uuid
+          nullable: true
+        test_plan_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        scenario_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        step_execution_id:
+          type: string
+          format: uuid
+          nullable: true
         project_id:
           type: string
           format: uuid
@@ -738,6 +850,11 @@ components:
         run_id:
           type: string
           format: uuid
+          nullable: true
+        test_plan_execution_id:
+          type: string
+          format: uuid
+          nullable: true
         title:
           type: string
         severity:
@@ -1175,7 +1292,7 @@ components:
           type: boolean
         destructive:
           type: boolean
-          description: Qualora does not execute generated steps in v0.6.0-alpha.
+          description: Safe execution skips destructive scenarios.
         requires_authentication:
           type: boolean
         related_findings:
@@ -1200,6 +1317,350 @@ components:
           type: string
         expected_result:
           type: string
+    TestPlanExecutionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        max_scenarios:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+        max_steps_per_scenario:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 10
+        scenario_ids:
+          type: array
+          items:
+            type: string
+          description: Optional scenario IDs from the normalized test plan.
+        dry_run:
+          type: boolean
+          default: false
+    TestPlanExecutionPreview:
+      type: object
+      required:
+        - dry_run
+        - test_plan_id
+        - project_id
+        - max_scenarios
+        - max_steps_per_scenario
+        - total_scenarios
+        - executable_scenarios
+        - skipped_scenarios
+        - total_steps
+        - executable_steps
+        - skipped_steps
+        - scenarios
+        - safety_summary
+      properties:
+        dry_run:
+          type: boolean
+        test_plan_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        max_scenarios:
+          type: integer
+        max_steps_per_scenario:
+          type: integer
+        total_scenarios:
+          type: integer
+        executable_scenarios:
+          type: integer
+        skipped_scenarios:
+          type: integer
+        total_steps:
+          type: integer
+        executable_steps:
+          type: integer
+        skipped_steps:
+          type: integer
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/MappedExecutionScenario"
+        safety_summary:
+          $ref: "#/components/schemas/TestPlanExecutionSafetyReport"
+    MappedExecutionScenario:
+      type: object
+      required: [scenario_id_from_plan, name, type, priority, status, steps]
+      properties:
+        scenario_id_from_plan:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        priority:
+          type: string
+        status:
+          type: string
+          enum: [queued, skipped]
+        skip_reason:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/MappedExecutionStep"
+    MappedExecutionStep:
+      type: object
+      required: [step_order, original_action, mapped_action, target, expected_result, status]
+      properties:
+        step_order:
+          type: integer
+        original_action:
+          type: string
+        mapped_action:
+          type: string
+          enum:
+            - goto
+            - assert_title_contains
+            - assert_url_contains
+            - assert_text_visible
+            - assert_element_visible
+            - assert_link_exists
+            - check_link_status
+            - capture_screenshot
+            - collect_browser_signals
+            - wait_for_load_state
+            - assert_no_console_errors
+            - assert_no_failed_requests
+            - ""
+        target:
+          type: string
+        expected_result:
+          type: string
+        status:
+          type: string
+          enum: [queued, skipped]
+        skip_reason:
+          type: string
+    TestPlanExecution:
+      type: object
+      required:
+        - id
+        - test_plan_id
+        - project_id
+        - status
+        - total_scenarios
+        - passed_scenarios
+        - failed_scenarios
+        - skipped_scenarios
+        - total_steps
+        - passed_steps
+        - failed_steps
+        - skipped_steps
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        test_plan_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        source_run_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        total_scenarios:
+          type: integer
+        passed_scenarios:
+          type: integer
+        failed_scenarios:
+          type: integer
+        skipped_scenarios:
+          type: integer
+        total_steps:
+          type: integer
+        passed_steps:
+          type: integer
+        failed_steps:
+          type: integer
+        skipped_steps:
+          type: integer
+        error_message:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TestPlanExecutionScenario:
+      type: object
+      required:
+        - id
+        - execution_id
+        - scenario_id_from_plan
+        - name
+        - type
+        - priority
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        execution_id:
+          type: string
+          format: uuid
+        scenario_id_from_plan:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        priority:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, passed, failed, skipped, error]
+        skip_reason:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/TestPlanExecutionStep"
+    TestPlanExecutionStep:
+      type: object
+      required:
+        - id
+        - execution_id
+        - scenario_execution_id
+        - step_order
+        - original_action
+        - mapped_action
+        - target
+        - expected_result
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        execution_id:
+          type: string
+          format: uuid
+        scenario_execution_id:
+          type: string
+          format: uuid
+        step_order:
+          type: integer
+        original_action:
+          type: string
+        mapped_action:
+          type: string
+        target:
+          type: string
+        expected_result:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, passed, failed, skipped, error]
+        skip_reason:
+          type: string
+        actual_result:
+          type: string
+        error_message:
+          type: string
+        duration_ms:
+          type: integer
+          nullable: true
+        evidence_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TestPlanExecutionDetail:
+      type: object
+      required: [execution, scenarios]
+      properties:
+        execution:
+          $ref: "#/components/schemas/TestPlanExecution"
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/TestPlanExecutionScenario"
+    TestPlanExecutionSafetyReport:
+      type: object
+      required: [executed_steps, skipped_unsafe_steps, skipped_unsupported_steps, skipped_scenarios]
+      properties:
+        executed_steps:
+          type: integer
+        skipped_unsafe_steps:
+          type: integer
+        skipped_unsupported_steps:
+          type: integer
+        skipped_scenarios:
+          type: integer
+    TestPlanExecutionReport:
+      type: object
+      required: [execution, test_plan, project, scenarios, findings, evidence, safety_summary, generated_at]
+      properties:
+        execution:
+          $ref: "#/components/schemas/TestPlanExecution"
+        test_plan:
+          $ref: "#/components/schemas/TestPlan"
+        project:
+          $ref: "#/components/schemas/Project"
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/TestPlanExecutionScenario"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+        safety_summary:
+          $ref: "#/components/schemas/TestPlanExecutionSafetyReport"
+        generated_at:
+          type: string
+          format: date-time
     ErrorResponse:
       type: object
       required: [error]

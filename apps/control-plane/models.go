@@ -11,6 +11,7 @@ const (
 	StatusCanceled  = "canceled"
 	StatusPassed    = "passed"
 	StatusError     = "error"
+	StatusSkipped   = "skipped"
 )
 
 const (
@@ -72,25 +73,29 @@ type RunJob struct {
 }
 
 type Finding struct {
-	ID             string    `json:"id"`
-	RunID          string    `json:"run_id,omitempty"`
-	Title          string    `json:"title"`
-	Severity       string    `json:"severity"`
-	Category       string    `json:"category"`
-	Confidence     string    `json:"confidence"`
-	Description    string    `json:"description"`
-	Recommendation string    `json:"recommendation"`
-	EvidenceIDs    []string  `json:"evidence_ids"`
-	CreatedAt      time.Time `json:"created_at,omitempty"`
+	ID                  string    `json:"id"`
+	RunID               string    `json:"run_id,omitempty"`
+	TestPlanExecutionID string    `json:"test_plan_execution_id,omitempty"`
+	ScenarioExecutionID string    `json:"scenario_execution_id,omitempty"`
+	StepExecutionID     string    `json:"step_execution_id,omitempty"`
+	Title               string    `json:"title"`
+	Severity            string    `json:"severity"`
+	Category            string    `json:"category"`
+	Confidence          string    `json:"confidence"`
+	Description         string    `json:"description"`
+	Recommendation      string    `json:"recommendation"`
+	EvidenceIDs         []string  `json:"evidence_ids"`
+	CreatedAt           time.Time `json:"created_at,omitempty"`
 }
 
 type Evidence struct {
-	ID        string         `json:"id"`
-	RunID     string         `json:"run_id,omitempty"`
-	Type      string         `json:"type"`
-	URI       string         `json:"uri"`
-	Metadata  map[string]any `json:"metadata"`
-	CreatedAt time.Time      `json:"created_at,omitempty"`
+	ID                  string         `json:"id"`
+	RunID               string         `json:"run_id,omitempty"`
+	TestPlanExecutionID string         `json:"test_plan_execution_id,omitempty"`
+	Type                string         `json:"type"`
+	URI                 string         `json:"uri"`
+	Metadata            map[string]any `json:"metadata"`
+	CreatedAt           time.Time      `json:"created_at,omitempty"`
 }
 
 type Report struct {
@@ -219,4 +224,126 @@ type TestPlanRef struct {
 	RiskLevel      string    `json:"risk_level"`
 	TotalScenarios int       `json:"total_scenarios"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+type TestPlanExecutionRequest struct {
+	MaxScenarios        int      `json:"max_scenarios"`
+	MaxStepsPerScenario int      `json:"max_steps_per_scenario"`
+	ScenarioIDs         []string `json:"scenario_ids"`
+	DryRun              bool     `json:"dry_run"`
+}
+
+type TestPlanExecutionPreview struct {
+	DryRun              bool                          `json:"dry_run"`
+	TestPlanID          string                        `json:"test_plan_id"`
+	ProjectID           string                        `json:"project_id"`
+	MaxScenarios        int                           `json:"max_scenarios"`
+	MaxStepsPerScenario int                           `json:"max_steps_per_scenario"`
+	TotalScenarios      int                           `json:"total_scenarios"`
+	ExecutableScenarios int                           `json:"executable_scenarios"`
+	SkippedScenarios    int                           `json:"skipped_scenarios"`
+	TotalSteps          int                           `json:"total_steps"`
+	ExecutableSteps     int                           `json:"executable_steps"`
+	SkippedSteps        int                           `json:"skipped_steps"`
+	Scenarios           []MappedExecutionScenario     `json:"scenarios"`
+	SafetySummary       TestPlanExecutionSafetyReport `json:"safety_summary"`
+}
+
+type MappedExecutionScenario struct {
+	ScenarioIDFromPlan string                `json:"scenario_id_from_plan"`
+	Name               string                `json:"name"`
+	Type               string                `json:"type"`
+	Priority           string                `json:"priority"`
+	Status             string                `json:"status"`
+	SkipReason         string                `json:"skip_reason,omitempty"`
+	Steps              []MappedExecutionStep `json:"steps"`
+}
+
+type MappedExecutionStep struct {
+	StepOrder      int    `json:"step_order"`
+	OriginalAction string `json:"original_action"`
+	MappedAction   string `json:"mapped_action"`
+	Target         string `json:"target"`
+	ExpectedResult string `json:"expected_result"`
+	Status         string `json:"status"`
+	SkipReason     string `json:"skip_reason,omitempty"`
+}
+
+type TestPlanExecution struct {
+	ID               string     `json:"id"`
+	TestPlanID       string     `json:"test_plan_id"`
+	ProjectID        string     `json:"project_id"`
+	SourceRunID      string     `json:"source_run_id,omitempty"`
+	Status           string     `json:"status"`
+	TotalScenarios   int        `json:"total_scenarios"`
+	PassedScenarios  int        `json:"passed_scenarios"`
+	FailedScenarios  int        `json:"failed_scenarios"`
+	SkippedScenarios int        `json:"skipped_scenarios"`
+	TotalSteps       int        `json:"total_steps"`
+	PassedSteps      int        `json:"passed_steps"`
+	FailedSteps      int        `json:"failed_steps"`
+	SkippedSteps     int        `json:"skipped_steps"`
+	ErrorMessage     string     `json:"error_message,omitempty"`
+	StartedAt        *time.Time `json:"started_at,omitempty"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+type TestPlanExecutionScenario struct {
+	ID                 string                  `json:"id"`
+	ExecutionID        string                  `json:"execution_id"`
+	ScenarioIDFromPlan string                  `json:"scenario_id_from_plan"`
+	Name               string                  `json:"name"`
+	Type               string                  `json:"type"`
+	Priority           string                  `json:"priority"`
+	Status             string                  `json:"status"`
+	SkipReason         string                  `json:"skip_reason,omitempty"`
+	StartedAt          *time.Time              `json:"started_at,omitempty"`
+	CompletedAt        *time.Time              `json:"completed_at,omitempty"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
+	Steps              []TestPlanExecutionStep `json:"steps,omitempty"`
+}
+
+type TestPlanExecutionStep struct {
+	ID                  string    `json:"id"`
+	ExecutionID         string    `json:"execution_id"`
+	ScenarioExecutionID string    `json:"scenario_execution_id"`
+	StepOrder           int       `json:"step_order"`
+	OriginalAction      string    `json:"original_action"`
+	MappedAction        string    `json:"mapped_action"`
+	Target              string    `json:"target"`
+	ExpectedResult      string    `json:"expected_result"`
+	Status              string    `json:"status"`
+	SkipReason          string    `json:"skip_reason,omitempty"`
+	ActualResult        string    `json:"actual_result,omitempty"`
+	ErrorMessage        string    `json:"error_message,omitempty"`
+	DurationMS          *int      `json:"duration_ms,omitempty"`
+	EvidenceID          string    `json:"evidence_id,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+type TestPlanExecutionDetail struct {
+	Execution TestPlanExecution           `json:"execution"`
+	Scenarios []TestPlanExecutionScenario `json:"scenarios"`
+}
+
+type TestPlanExecutionSafetyReport struct {
+	ExecutedSteps           int `json:"executed_steps"`
+	SkippedUnsafeSteps      int `json:"skipped_unsafe_steps"`
+	SkippedUnsupportedSteps int `json:"skipped_unsupported_steps"`
+	SkippedScenarios        int `json:"skipped_scenarios"`
+}
+
+type TestPlanExecutionReport struct {
+	Execution     TestPlanExecution             `json:"execution"`
+	TestPlan      TestPlan                      `json:"test_plan"`
+	Project       Project                       `json:"project"`
+	Scenarios     []TestPlanExecutionScenario   `json:"scenarios"`
+	Findings      []Finding                     `json:"findings"`
+	Evidence      []Evidence                    `json:"evidence"`
+	SafetySummary TestPlanExecutionSafetyReport `json:"safety_summary"`
+	GeneratedAt   time.Time                     `json:"generated_at"`
 }

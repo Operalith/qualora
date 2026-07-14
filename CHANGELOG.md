@@ -4,6 +4,43 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.7.0-alpha] - 2026-07-14
+
+### Added
+
+- Approved safe test plan execution endpoint at `POST /api/v1/test-plans/{test_plan_id}/executions`.
+- Dry-run preview mode for safe execution mapping with executable/skipped counts and skip reasons.
+- Execution list, detail, JSON report, and HTML report endpoints for test plan executions.
+- `test_plan_executions`, `test_plan_execution_scenarios`, and `test_plan_execution_steps` persistence.
+- Nullable execution ownership on findings and evidence so execution reports can include findings, screenshots, browser observations, and link-check metadata.
+- Browser worker support for the safe execution queue.
+- Supported safe browser DSL actions: `goto`, title/URL/text/element/link assertions, same-origin link status checks, screenshots, browser signal collection, load-state waits, and no-error/no-failed-request assertions.
+- Web UI safe execution preview, execute, history, and execution report pages.
+- Deterministic `demo-web` routes for `/`, `/status`, and `/about`.
+- Fake LLM test plan output using executable safe DSL steps.
+- Smoke validation for safe execution preview, execution completion, JSON/HTML execution reports, and execution screenshot evidence download.
+- Unit tests for safe execution request normalization, allowed-host/same-origin URL mapping, unsupported actions, sensitive query rejection, and unsafe scenario skips.
+
+### Changed
+
+- Browser worker now consumes both browser smoke jobs and safe test plan execution jobs.
+- `make smoke` now validates approved safe plan execution in addition to browser/API runs, AI analysis, and test plan generation.
+- OpenAPI contract now documents safe test plan execution endpoints and schemas.
+- Package metadata has been updated to `0.7.0-alpha`.
+
+### Security
+
+- AI-generated plans remain suggestions and are never executed automatically.
+- Safe execution runs only persisted deterministic DSL actions after explicit user action.
+- Unsupported, ambiguous, authenticated, destructive, mutating, admin, upload, exploit, SQLi, XSS, SSRF, brute-force, out-of-scope, and sensitive-query steps are skipped with reasons.
+- Browser worker revalidates same-origin frontend targets and project `allowed_hosts` before executing navigation or link checks.
+
+### Known Limitations
+
+- Safe test plan execution is browser-only and alpha.
+- No login automation, form submission, authenticated flows, file uploads, POST/PUT/PATCH/DELETE plan actions, active security scanning, or autonomous AI browser control.
+- No retries or robust interrupted-worker recovery for plan executions yet.
+
 ## [v0.6.0-alpha] - 2026-07-14
 
 ### Added

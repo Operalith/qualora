@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.6.0-alpha.
+This document covers local development for Qualora v0.7.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, mock API, and fake LLM profile services; creates an AI provider, browser project, and API project; starts runs; polls to completion; runs AI analysis; generates AI test plans; prints JSON/HTML report and test-plan URLs; validates HTML report export; validates test-plan export; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, mock API, and fake LLM profile services; creates an AI provider, browser project, and API project; starts runs; polls to completion; runs AI analysis; generates AI test plans; previews and executes a safe browser test plan; prints JSON/HTML report, test-plan, and execution URLs; validates HTML report export; validates test-plan export; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -106,6 +106,7 @@ The smoke script runs:
 - Browser smoke against the local `demo-web` Compose service.
 - AI analysis for the completed browser smoke run.
 - AI test plan generation/export validation for the browser smoke run.
+- Safe test plan execution preview and run validation for the browser smoke project.
 - API/OpenAPI smoke against the local `mock-api` Compose service.
 - AI analysis and AI test plan generation/export validation for the API smoke run.
 - HTML report export validation for each completed run.
@@ -132,7 +133,7 @@ For private or local targets, create projects manually with `allow_private_targe
 
 ## AI Provider Development
 
-The v0.6 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.7 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -144,7 +145,9 @@ FAKE_LLM_HEALTH_URL=http://localhost:18083/health
 
 The default Compose encryption key is intentionally insecure and only for local development. Set a strong `QUALORA_ENCRYPTION_KEY` before storing real provider credentials.
 
-AI-assisted test plans are reviewable suggestions. Qualora does not execute generated steps, does not send screenshots/full HTML/raw traces/full network bodies to AI by default, and redacts secret-looking values before prompt construction and storage.
+AI-assisted test plans are reviewable suggestions and are never executed automatically. Qualora can execute only explicitly approved, deterministic safe DSL steps after a preview. It does not send screenshots/full HTML/raw traces/full network bodies to AI by default, and it redacts secret-looking values before prompt construction and storage.
+
+Safe test plan execution currently supports only browser actions that stay on the project frontend origin: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`.
 
 OpenRouter example headers:
 

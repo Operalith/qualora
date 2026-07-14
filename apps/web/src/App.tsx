@@ -6,20 +6,25 @@ import {
   deleteAIProvider,
   deleteTestPlan,
   evidenceDownloadURL,
+  executeTestPlan,
   generateAITestPlan,
   getProject,
   getReport,
   getRun,
   getTestPlan,
+  getTestPlanExecutionReport,
   htmlReportURL,
   listAIProviders,
   listProjects,
   listRuns,
+  listTestPlanExecutions,
   listTestPlans,
+  previewTestPlanExecution,
   runAIAnalysis,
   startBrowserSmokeRun,
   startRun,
   testPlanExportURL,
+  testPlanExecutionHTMLReportURL,
   testAIProvider,
   updateAIProvider
 } from "./api";
@@ -35,6 +40,10 @@ import type {
   Report,
   RunJob,
   TestPlan,
+  TestPlanExecution,
+  TestPlanExecutionPreview,
+  TestPlanExecutionReport,
+  TestPlanExecutionRequest,
   TestPlanPayload,
   TestPlanScenario,
   TestRun
@@ -48,6 +57,7 @@ type Route =
   | { name: "ai-providers" }
   | { name: "test-plans" }
   | { name: "test-plan"; id: string }
+  | { name: "test-plan-execution"; id: string }
   | { name: "run"; id: string };
 
 type LoadState<T> = {
@@ -107,7 +117,7 @@ export default function App() {
       <aside className="sidebar">
         <a className="brand" href="#/">
           <span>Qualora</span>
-          <small>v0.6.0-alpha</small>
+          <small>v0.7.0-alpha</small>
         </a>
         <nav>
           <a className={route.name === "dashboard" ? "active" : ""} href="#/">
@@ -122,7 +132,10 @@ export default function App() {
           <a className={route.name === "ai-providers" ? "active" : ""} href="#/ai-providers">
             AI Providers
           </a>
-          <a className={route.name === "test-plans" || route.name === "test-plan" ? "active" : ""} href="#/test-plans">
+          <a
+            className={route.name === "test-plans" || route.name === "test-plan" || route.name === "test-plan-execution" ? "active" : ""}
+            href="#/test-plans"
+          >
             Test Plans
           </a>
         </nav>
@@ -161,7 +174,14 @@ export default function App() {
         {route.name === "runs" && <RunsPage runs={runs} projectByID={projectByID} />}
         {route.name === "ai-providers" && <AIProvidersPage />}
         {route.name === "test-plans" && <TestPlansPage projects={projects} />}
-        {route.name === "test-plan" && <TestPlanDetailPage testPlanID={route.id} projectByID={projectByID} />}
+        {route.name === "test-plan" && (
+          <TestPlanDetailPage
+            testPlanID={route.id}
+            projectByID={projectByID}
+            onOpenExecution={(id) => setRoute({ name: "test-plan-execution", id })}
+          />
+        )}
+        {route.name === "test-plan-execution" && <TestPlanExecutionPage executionID={route.id} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
       </main>
     </div>
@@ -790,7 +810,10 @@ function ProjectPage({
             View All Plans
           </a>
         </div>
-        <Notice tone="info" message="AI test plans are suggestions only. Qualora does not execute generated steps in this alpha release." />
+        <Notice
+          tone="info"
+          message="AI test plans are suggestions. Qualora can execute only approved safe DSL steps, and skips unsupported, authenticated, destructive, or ambiguous steps."
+        />
         <GenerateAITestPlanForm
           project={project}
           runs={runs.data}
@@ -1069,22 +1092,42 @@ function TestPlanTable({
   );
 }
 
-function TestPlanDetailPage({ testPlanID, projectByID }: { testPlanID: string; projectByID: Map<string, Project> }) {
+function TestPlanDetailPage({
+  testPlanID,
+  projectByID,
+  onOpenExecution
+}: {
+  testPlanID: string;
+  projectByID: Map<string, Project>;
+  onOpenExecution: (executionID: string) => void;
+}) {
   const [plan, setPlan] = useState<TestPlan | undefined>();
   const [project, setProject] = useState<Project | undefined>();
+  const [executions, setExecutions] = useState<LoadState<TestPlanExecution[]>>({ data: [], loading: true, error: "" });
+  const [preview, setPreview] = useState<TestPlanExecutionPreview | undefined>();
+  const [executionInput, setExecutionInput] = useState({ max_scenarios: 5, max_steps_per_scenario: 10 });
+  const [executionBusy, setExecutionBusy] = useState("");
+  const [executionError, setExecutionError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setExecutions((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
       const nextPlan = await getTestPlan(testPlanID);
-      const nextProject = projectByID.get(nextPlan.project_id) ?? (await getProject(nextPlan.project_id));
+      const [nextProject, nextExecutions] = await Promise.all([
+        projectByID.get(nextPlan.project_id) ?? getProject(nextPlan.project_id),
+        listTestPlanExecutions(testPlanID)
+      ]);
       setPlan(nextPlan);
       setProject(nextProject);
+      setExecutions({ data: nextExecutions, loading: false, error: "" });
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
+      const message = loadError instanceof Error ? loadError.message : String(loadError);
+      setError(message);
+      setExecutions((current) => ({ ...current, loading: false, error: message }));
     } finally {
       setLoading(false);
     }
@@ -1094,6 +1137,14 @@ function TestPlanDetailPage({ testPlanID, projectByID }: { testPlanID: string; p
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    if (!executions.data.some((execution) => isActiveRunStatus(execution.status))) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => window.clearInterval(timer);
+  }, [executions.data, refresh]);
+
   if (error) {
     return <Notice tone="danger" message={error} />;
   }
@@ -1102,6 +1153,41 @@ function TestPlanDetailPage({ testPlanID, projectByID }: { testPlanID: string; p
   }
 
   const payload = normalizeTestPlanPayload(plan.plan_json);
+  const currentPlan = plan;
+  const canExecutePlan = plan.status === "completed" && Boolean(project.frontend_url);
+  const requestPayload = (): TestPlanExecutionRequest => ({
+    max_scenarios: executionInput.max_scenarios,
+    max_steps_per_scenario: executionInput.max_steps_per_scenario,
+    dry_run: false
+  });
+
+  async function previewSafeExecution() {
+    setExecutionBusy("preview");
+    setExecutionError("");
+    try {
+      const nextPreview = await previewTestPlanExecution(currentPlan.id, { ...requestPayload(), dry_run: true });
+      setPreview(nextPreview);
+    } catch (previewError) {
+      setExecutionError(previewError instanceof Error ? previewError.message : String(previewError));
+    } finally {
+      setExecutionBusy("");
+    }
+  }
+
+  async function executeSafePlan() {
+    setExecutionBusy("execute");
+    setExecutionError("");
+    try {
+      const detail = await executeTestPlan(currentPlan.id, requestPayload());
+      setPreview(undefined);
+      await refresh();
+      onOpenExecution(detail.execution.id);
+    } catch (executeError) {
+      setExecutionError(executeError instanceof Error ? executeError.message : String(executeError));
+    } finally {
+      setExecutionBusy("");
+    }
+  }
 
   return (
     <div className="grid">
@@ -1139,6 +1225,66 @@ function TestPlanDetailPage({ testPlanID, projectByID }: { testPlanID: string; p
       </section>
 
       <section>
+        <div className="section-heading">
+          <div>
+            <h2>Approved Safe Execution</h2>
+            <p>Preview or run supported safe browser checks from this plan.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="Execution is limited to the Qualora safe DSL. Login, form submit, mutation, upload, admin, destructive, and unsupported steps are skipped with reasons."
+        />
+        {!canExecutePlan && (
+          <Notice tone="danger" message="This plan needs completed status and a project frontend URL before safe browser execution is available." />
+        )}
+        {executionError && <Notice tone="danger" message={executionError} />}
+        <div className="form-grid two execution-controls">
+          <label>
+            Max Scenarios
+            <input
+              type="number"
+              min="1"
+              max="20"
+              value={executionInput.max_scenarios}
+              onChange={(event) => setExecutionInput({ ...executionInput, max_scenarios: Number(event.target.value) })}
+            />
+          </label>
+          <label>
+            Max Steps Per Scenario
+            <input
+              type="number"
+              min="1"
+              max="30"
+              value={executionInput.max_steps_per_scenario}
+              onChange={(event) => setExecutionInput({ ...executionInput, max_steps_per_scenario: Number(event.target.value) })}
+            />
+          </label>
+        </div>
+        <div className="form-actions">
+          <button type="button" className="secondary" disabled={!canExecutePlan || executionBusy !== ""} onClick={() => void previewSafeExecution()}>
+            {executionBusy === "preview" ? "Previewing" : "Preview safe execution"}
+          </button>
+          <button type="button" disabled={!canExecutePlan || executionBusy !== ""} onClick={() => void executeSafePlan()}>
+            {executionBusy === "execute" ? "Starting" : "Execute safe plan"}
+          </button>
+        </div>
+        {preview && <ExecutionPreview preview={preview} />}
+        <div className="section-split">
+          <h3>Executions</h3>
+          {executions.error && <Notice tone="danger" message={executions.error} />}
+          {executions.loading ? (
+            <SkeletonRows />
+          ) : (
+            <TestPlanExecutionTable executions={executions.data} onOpen={onOpenExecution} />
+          )}
+        </div>
+      </section>
+
+      <section>
         <h2>Coverage</h2>
         <div className="analysis-grid">
           <AnalysisList title="Assumptions" items={payload.assumptions} />
@@ -1152,6 +1298,310 @@ function TestPlanDetailPage({ testPlanID, projectByID }: { testPlanID: string; p
         <h2>Scenarios</h2>
         {payload.scenarios.length === 0 ? <p className="muted">No scenarios were returned.</p> : <ScenarioList scenarios={payload.scenarios} />}
       </section>
+    </div>
+  );
+}
+
+function ExecutionPreview({ preview }: { preview: TestPlanExecutionPreview }) {
+  return (
+    <div className="execution-preview">
+      <div className="summary-grid">
+        <Metric label="Executable Scenarios" value={preview.executable_scenarios} />
+        <Metric label="Skipped Scenarios" value={preview.skipped_scenarios} tone="medium" />
+        <Metric label="Executable Steps" value={preview.executable_steps} />
+        <Metric label="Skipped Steps" value={preview.skipped_steps} tone="medium" />
+        <Metric label="Unsafe Skips" value={preview.safety_summary.skipped_unsafe_steps} tone="high" />
+        <Metric label="Unsupported Skips" value={preview.safety_summary.skipped_unsupported_steps} tone="info" />
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Scenario</th>
+              <th>Status</th>
+              <th>Step</th>
+              <th>Action</th>
+              <th>Target</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {preview.scenarios.flatMap((scenario) =>
+              scenario.steps.map((step) => (
+                <tr key={`${scenario.scenario_id_from_plan}-${step.step_order}`}>
+                  <td>{scenario.name}</td>
+                  <td>
+                    <StatusBadge status={step.status} />
+                  </td>
+                  <td>{step.step_order}</td>
+                  <td>
+                    <code>{step.mapped_action || step.original_action}</code>
+                  </td>
+                  <td>
+                    <code>{step.target || ""}</code>
+                  </td>
+                  <td>{step.skip_reason || scenario.skip_reason || ""}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TestPlanExecutionTable({ executions, onOpen }: { executions: TestPlanExecution[]; onOpen: (executionID: string) => void }) {
+  if (executions.length === 0) {
+    return <EmptyState title="No executions" body="Preview or execute this plan to create an approved safe execution record." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Execution</th>
+            <th>Scenarios</th>
+            <th>Steps</th>
+            <th>Created</th>
+            <th>Completed</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {executions.map((execution) => (
+            <tr key={execution.id}>
+              <td>
+                <StatusBadge status={execution.status} />
+              </td>
+              <td>
+                <button type="button" className="link-button" onClick={() => onOpen(execution.id)}>
+                  {shortID(execution.id)}
+                </button>
+                {execution.error_message && <p className="muted">{execution.error_message}</p>}
+              </td>
+              <td>
+                {execution.passed_scenarios} passed · {execution.failed_scenarios} failed · {execution.skipped_scenarios} skipped
+              </td>
+              <td>
+                {execution.passed_steps} passed · {execution.failed_steps} failed · {execution.skipped_steps} skipped
+              </td>
+              <td>{formatDate(execution.created_at)}</td>
+              <td>{execution.completed_at ? formatDate(execution.completed_at) : "Not completed"}</td>
+              <td className="actions">
+                <div className="button-row compact">
+                  <button type="button" className="secondary" onClick={() => onOpen(execution.id)}>
+                    Open
+                  </button>
+                  <a className="button secondary-link" href={testPlanExecutionHTMLReportURL(execution.id)} target="_blank" rel="noreferrer">
+                    HTML
+                  </a>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TestPlanExecutionPage({ executionID }: { executionID: string }) {
+  const [report, setReport] = useState<TestPlanExecutionReport | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const nextReport = await getTestPlanExecutionReport(executionID);
+      setReport(nextReport);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [executionID]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!report || !isActiveRunStatus(report.execution.status)) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => window.clearInterval(timer);
+  }, [refresh, report]);
+
+  if (error) {
+    return <Notice tone="danger" message={error} />;
+  }
+  if (loading && !report) {
+    return <SkeletonRows />;
+  }
+  if (!report) {
+    return <Notice tone="danger" message="Test plan execution report could not be loaded." />;
+  }
+
+  const summary = summarizeFindingsForUI(report.findings);
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>{report.test_plan.title}</h2>
+            <p>
+              <StatusBadge status={report.execution.status} /> <span className="muted">Execution {report.execution.id}</span>
+            </p>
+          </div>
+          <div className="button-row">
+            <a className="button secondary-link" href={`#/test-plans/${report.test_plan.id}`}>
+              Test Plan
+            </a>
+            <a className="button secondary-link" href={`#/projects/${report.project.id}`}>
+              Project
+            </a>
+            <a className="button" href={testPlanExecutionHTMLReportURL(report.execution.id)} target="_blank" rel="noreferrer">
+              HTML Report
+            </a>
+          </div>
+        </div>
+        {report.execution.error_message && <Notice tone="danger" message={report.execution.error_message} />}
+        <div className="summary-grid">
+          <Metric label="Findings" value={summary.total_findings} />
+          <Metric label="Passed Steps" value={report.execution.passed_steps} />
+          <Metric label="Failed Steps" value={report.execution.failed_steps} tone="high" />
+          <Metric label="Skipped Steps" value={report.execution.skipped_steps} tone="medium" />
+          <Metric label="Unsafe Skips" value={report.safety_summary.skipped_unsafe_steps} tone="high" />
+          <Metric label="Evidence" value={report.evidence.length} tone="info" />
+        </div>
+        <div className="detail-grid compact">
+          <Field label="Project" value={report.project.name} />
+          <Field label="Created" value={formatDate(report.execution.created_at)} />
+          <Field label="Started" value={report.execution.started_at ? formatDate(report.execution.started_at) : "Not started"} />
+          <Field label="Completed" value={report.execution.completed_at ? formatDate(report.execution.completed_at) : "Not completed"} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Safety Scope</h2>
+        <div className="detail-grid compact">
+          <Field label="Executed Steps" value={String(report.safety_summary.executed_steps)} />
+          <Field label="Skipped Unsafe" value={String(report.safety_summary.skipped_unsafe_steps)} />
+          <Field label="Skipped Unsupported" value={String(report.safety_summary.skipped_unsupported_steps)} />
+          <Field label="Skipped Scenarios" value={String(report.safety_summary.skipped_scenarios)} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Scenarios and Steps</h2>
+        <ExecutionScenarioList scenarios={report.scenarios} />
+      </section>
+
+      <section>
+        <h2>Findings</h2>
+        <ExecutionFindingsTable findings={report.findings} />
+      </section>
+
+      <section>
+        <h2>Evidence</h2>
+        <EvidenceTable evidence={report.evidence} />
+      </section>
+    </div>
+  );
+}
+
+function ExecutionScenarioList({ scenarios }: { scenarios: TestPlanExecutionReport["scenarios"] }) {
+  if (scenarios.length === 0) {
+    return <EmptyState title="No scenarios" body="No execution scenarios were persisted for this run." />;
+  }
+  return (
+    <div className="scenario-stack">
+      {scenarios.map((scenario) => (
+        <div key={scenario.id} className="scenario-card">
+          <div className="scenario-heading">
+            <div>
+              <h3>{scenario.name}</h3>
+              {scenario.skip_reason && <p>{scenario.skip_reason}</p>}
+            </div>
+            <div className="scenario-badges">
+              <span className="pill">{scenario.type || "scenario"}</span>
+              <StatusBadge status={scenario.status} />
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Action</th>
+                  <th>Target</th>
+                  <th>Status</th>
+                  <th>Duration</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(scenario.steps || []).map((step) => (
+                  <tr key={step.id}>
+                    <td>{step.step_order}</td>
+                    <td>
+                      <code>{step.mapped_action}</code>
+                    </td>
+                    <td>
+                      <code>{step.target}</code>
+                    </td>
+                    <td>
+                      <StatusBadge status={step.status} />
+                    </td>
+                    <td>{step.duration_ms === undefined ? "" : `${step.duration_ms}ms`}</td>
+                    <td>{step.actual_result || step.error_message || step.skip_reason || ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ExecutionFindingsTable({ findings }: { findings: TestPlanExecutionReport["findings"] }) {
+  if (findings.length === 0) {
+    return <EmptyState title="No findings" body="This execution did not record findings." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Title</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th>Recommendation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {findings.map((finding) => (
+            <tr key={finding.id}>
+              <td>
+                <span className={`severity ${finding.severity}`}>{finding.severity}</span>
+              </td>
+              <td>{finding.title}</td>
+              <td>{finding.category}</td>
+              <td>{finding.description}</td>
+              <td>{finding.recommendation}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1785,6 +2235,9 @@ function parseHash(hash: string): Route {
   if (parts[0] === "test-plans") {
     return { name: "test-plans" };
   }
+  if (parts[0] === "test-plan-executions" && parts[1]) {
+    return { name: "test-plan-execution", id: parts[1] };
+  }
   return { name: "dashboard" };
 }
 
@@ -1804,6 +2257,8 @@ function hashForRoute(route: Route): string {
       return "/test-plans";
     case "test-plan":
       return `/test-plans/${route.id}`;
+    case "test-plan-execution":
+      return `/test-plan-executions/${route.id}`;
     case "run":
       return `/runs/${route.id}`;
   }
@@ -1825,6 +2280,8 @@ function titleForRoute(route: Route): string {
       return "AI Test Plans";
     case "test-plan":
       return "Test Plan";
+    case "test-plan-execution":
+      return "Plan Execution";
     case "run":
       return "Run Report";
   }
@@ -1908,6 +2365,31 @@ function analysisStringList(value: unknown): string[] {
     return [];
   }
   return value.map((item) => String(item)).filter(Boolean);
+}
+
+function summarizeFindingsForUI(findings: { severity: string }[]): Report["summary"] {
+  const summary: Report["summary"] = {
+    total_findings: findings.length,
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    info: 0
+  };
+  for (const finding of findings) {
+    if (finding.severity === "critical") {
+      summary.critical += 1;
+    } else if (finding.severity === "high") {
+      summary.high += 1;
+    } else if (finding.severity === "medium") {
+      summary.medium += 1;
+    } else if (finding.severity === "low") {
+      summary.low += 1;
+    } else if (finding.severity === "info") {
+      summary.info += 1;
+    }
+  }
+  return summary;
 }
 
 function normalizeTestPlanPayload(value: Partial<TestPlanPayload> | Record<string, unknown> | undefined): TestPlanPayload {

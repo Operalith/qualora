@@ -194,6 +194,83 @@ def generate_ai_test_plan(project, report, provider):
     return plan
 
 
+def preview_test_plan_execution(plan):
+    preview = request(
+        "POST",
+        f"/api/v1/test-plans/{plan['id']}/executions",
+        {
+            "max_scenarios": 5,
+            "max_steps_per_scenario": 10,
+            "dry_run": True,
+        },
+    )
+    print(f"safe execution preview: {json.dumps(preview, indent=2)}")
+    if not preview.get("dry_run"):
+        raise RuntimeError("safe execution preview did not preserve dry_run=true")
+    if int(preview.get("executable_steps") or 0) < 1:
+        raise RuntimeError(f"safe execution preview had no executable steps: {preview}")
+    if int(preview.get("skipped_steps") or 0) != 0:
+        raise RuntimeError(f"fake safe execution plan unexpectedly skipped steps: {preview}")
+    return preview
+
+
+def execute_test_plan(plan):
+    detail = request(
+        "POST",
+        f"/api/v1/test-plans/{plan['id']}/executions",
+        {
+            "max_scenarios": 5,
+            "max_steps_per_scenario": 10,
+            "dry_run": False,
+        },
+    )
+    execution_id = detail["execution"]["id"]
+    print(f"started safe test plan execution: {execution_id}")
+
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/test-plan-executions/{execution_id}")
+        status = current["execution"]["status"]
+        print(f"safe execution status: {status}")
+        if status in ("completed", "failed", "canceled", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"safe execution {execution_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    report = request("GET", f"/api/v1/test-plan-executions/{execution_id}/report")
+    print(f"safe execution report: {json.dumps(report, indent=2)}")
+    if report["execution"]["status"] != "completed":
+        raise RuntimeError(f"safe execution finished with status {report['execution']['status']}")
+    if int(report["execution"].get("passed_steps") or 0) < 1:
+        raise RuntimeError("safe execution did not pass any steps")
+    if not report.get("scenarios"):
+        raise RuntimeError("safe execution report did not include scenarios")
+
+    evidence = report.get("evidence", [])
+    types = {item.get("type") for item in evidence}
+    if "screenshot" not in types or "browser_observations" not in types:
+        raise RuntimeError(f"safe execution report missed expected evidence types: {types}")
+    screenshot = next(item for item in evidence if item.get("type") == "screenshot")
+    headers, body = fetch_binary(f"/api/v1/evidence/{screenshot['id']}")
+    content_type = headers.get("content-type", "")
+    if "image/png" not in content_type or not body.startswith(b"\x89PNG"):
+        raise RuntimeError("safe execution screenshot evidence was not downloadable PNG data")
+
+    html = fetch_text(f"/api/v1/test-plan-executions/{execution_id}/report.html")
+    if "Qualora safe test plan execution report" not in html or "Homepage public smoke checks" not in html:
+        raise RuntimeError("safe execution HTML report did not include expected content")
+
+    listed = request("GET", f"/api/v1/test-plans/{plan['id']}/executions").get("executions", [])
+    if not any(item.get("id") == execution_id for item in listed):
+        raise RuntimeError("test plan execution list did not include completed execution")
+
+    print(f"safe execution JSON report: {API_URL}/api/v1/test-plan-executions/{execution_id}/report")
+    print(f"safe execution HTML report: {API_URL}/api/v1/test-plan-executions/{execution_id}/report.html")
+    print(f"Web safe execution detail: {WEB_URL}/#/test-plan-executions/{execution_id}")
+    return report
+
+
 def run_project(project, run_path=None):
     path = run_path or f"/api/v1/projects/{project['id']}/runs"
     run = request("POST", path)
@@ -272,7 +349,9 @@ def main():
     browser_report = run_project(browser_project, f"/api/v1/projects/{browser_project['id']}/browser-smoke-runs")
     assert_browser_report(browser_report)
     browser_report = run_ai_analysis(browser_report, provider)
-    generate_ai_test_plan(browser_project, browser_report, provider)
+    browser_plan = generate_ai_test_plan(browser_project, browser_report, provider)
+    preview_test_plan_execution(browser_plan)
+    execute_test_plan(browser_plan)
 
     print("== API smoke ==")
     wait_for_url(MOCK_API_HEALTH_URL)

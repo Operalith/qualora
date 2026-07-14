@@ -1,6 +1,6 @@
 # Qualora Web
 
-Minimal React/Vite web UI for Qualora v0.6.0-alpha.
+Minimal React/Vite web UI for Qualora v0.7.0-alpha.
 
 The UI supports:
 
@@ -16,6 +16,7 @@ The UI supports:
 - Testing AI provider connectivity.
 - Running and viewing AI analysis for completed runs.
 - Generating, listing, viewing, deleting, and exporting AI-assisted test plans.
+- Previewing, starting, listing, and viewing approved safe test plan executions.
 
 ## Local Development
 
@@ -45,6 +46,7 @@ QUALORA_API_BASE_URL=http://localhost:8080 docker compose up -d --build qualora-
 - No authentication or authorization.
 - Intended for trusted local/self-hosted alpha environments only.
 - AI provider credentials should only be configured in trusted environments.
-- AI-assisted test plans are suggestions only and are not executed by Qualora.
+- AI-assisted test plans are suggestions and are never executed automatically.
+- Safe test plan execution is limited to the supported non-destructive browser DSL.
 - Evidence preview/download is limited to evidence records known to Qualora.
 - No advanced filtering, pagination, or project editing yet.

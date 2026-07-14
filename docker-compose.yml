@@ -10,6 +10,7 @@ services:
       REDIS_ADDR: redis:6379
       BROWSER_RUN_QUEUE: qualora:browser-runs
       API_RUN_QUEUE: qualora:api-runs
+      TEST_PLAN_EXECUTION_QUEUE: ${TEST_PLAN_EXECUTION_QUEUE:-qualora:test-plan-executions}
       S3_ENDPOINT: http://minio:9000
       S3_REGION: us-east-1
       S3_BUCKET: ${S3_BUCKET:-qualora-evidence}
@@ -66,6 +67,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-qualora}:${POSTGRES_PASSWORD:-qualora}@postgres:5432/${POSTGRES_DB:-qualora}?sslmode=disable
       REDIS_URL: redis://redis:6379
       RUN_QUEUE: qualora:browser-runs
+      TEST_PLAN_EXECUTION_QUEUE: ${TEST_PLAN_EXECUTION_QUEUE:-qualora:test-plan-executions}
       S3_ENDPOINT: http://minio:9000
       S3_REGION: us-east-1
       S3_BUCKET: ${S3_BUCKET:-qualora-evidence}

@@ -8,6 +8,11 @@ import type {
   Project,
   Report,
   TestPlan,
+  TestPlanExecution,
+  TestPlanExecutionDetail,
+  TestPlanExecutionPreview,
+  TestPlanExecutionReport,
+  TestPlanExecutionRequest,
   TestRun
 } from "./types";
 
@@ -33,6 +38,10 @@ export function evidenceDownloadURL(evidenceID: string): string {
 
 export function testPlanExportURL(testPlanID: string): string {
   return `${API_BASE_URL}/api/v1/test-plans/${testPlanID}/export.json`;
+}
+
+export function testPlanExecutionHTMLReportURL(executionID: string): string {
+  return `${API_BASE_URL}/api/v1/test-plan-executions/${executionID}/report.html`;
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -140,6 +149,33 @@ export async function deleteTestPlan(testPlanID: string): Promise<void> {
   await request<{ deleted: boolean }>(`/api/v1/test-plans/${testPlanID}`, {
     method: "DELETE"
   });
+}
+
+export async function previewTestPlanExecution(testPlanID: string, input: TestPlanExecutionRequest): Promise<TestPlanExecutionPreview> {
+  return request<TestPlanExecutionPreview>(`/api/v1/test-plans/${testPlanID}/executions`, {
+    method: "POST",
+    body: JSON.stringify({ ...input, dry_run: true })
+  });
+}
+
+export async function executeTestPlan(testPlanID: string, input: TestPlanExecutionRequest): Promise<TestPlanExecutionDetail> {
+  return request<TestPlanExecutionDetail>(`/api/v1/test-plans/${testPlanID}/executions`, {
+    method: "POST",
+    body: JSON.stringify({ ...input, dry_run: false })
+  });
+}
+
+export async function listTestPlanExecutions(testPlanID: string): Promise<TestPlanExecution[]> {
+  const response = await request<{ executions: TestPlanExecution[] }>(`/api/v1/test-plans/${testPlanID}/executions`);
+  return response.executions;
+}
+
+export async function getTestPlanExecution(executionID: string): Promise<TestPlanExecutionDetail> {
+  return request<TestPlanExecutionDetail>(`/api/v1/test-plan-executions/${executionID}`);
+}
+
+export async function getTestPlanExecutionReport(executionID: string): Promise<TestPlanExecutionReport> {
+  return request<TestPlanExecutionReport>(`/api/v1/test-plan-executions/${executionID}/report`);
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

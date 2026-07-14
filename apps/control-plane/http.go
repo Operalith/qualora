@@ -39,6 +39,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/ai/providers", a.handleAIProviders)
 	mux.HandleFunc("/api/v1/ai/providers/", a.handleAIProviderSubroutes)
 	mux.HandleFunc("/api/v1/test-plans/", a.handleTestPlanSubroutes)
+	mux.HandleFunc("/api/v1/test-plan-executions/", a.handleTestPlanExecutionSubroutes)
 	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, mux)))
 }
 
@@ -393,7 +394,172 @@ func (a *App) handleTestPlanSubroutes(w http.ResponseWriter, r *http.Request) {
 		a.exportTestPlanJSON(w, r, parts[0])
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "executions" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createTestPlanExecution(w, r, parts[0])
+		case http.MethodGet:
+			a.listTestPlanExecutions(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
 	writeError(w, http.StatusNotFound, "not_found", "route not found")
+}
+
+func (a *App) handleTestPlanExecutionSubroutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/test-plan-executions/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 1 && parts[0] != "" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.getTestPlanExecution(w, r, parts[0])
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "report" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.getTestPlanExecutionReport(w, r, parts[0])
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "report.html" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.getTestPlanExecutionHTMLReport(w, r, parts[0])
+		return
+	}
+	writeError(w, http.StatusNotFound, "not_found", "route not found")
+}
+
+func (a *App) createTestPlanExecution(w http.ResponseWriter, r *http.Request, planID string) {
+	input, err := decodeTestPlanExecutionRequest(w, r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_test_plan_execution", err.Error())
+		return
+	}
+
+	plan, err := a.store.GetTestPlan(r.Context(), planID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "test_plan_not_found", "test plan was not found")
+			return
+		}
+		a.logger.Error("get test plan for execution failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_test_plan_failed", "test plan could not be loaded")
+		return
+	}
+	if plan.Status != StatusCompleted {
+		writeError(w, http.StatusBadRequest, "test_plan_not_executable", "only completed test plans can be executed")
+		return
+	}
+
+	project, err := a.store.GetProject(r.Context(), plan.ProjectID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "project_not_found", "project was not found")
+			return
+		}
+		a.logger.Error("get project for test plan execution failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_project_failed", "project could not be loaded")
+		return
+	}
+
+	preview, err := BuildTestPlanExecutionPreview(*plan, *project, input)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "test_plan_not_executable", err.Error())
+		return
+	}
+	if preview.DryRun {
+		writeJSON(w, http.StatusOK, preview)
+		return
+	}
+
+	detail, err := a.store.CreateTestPlanExecution(r.Context(), *plan, *preview)
+	if err != nil {
+		a.logger.Error("create test plan execution failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create_test_plan_execution_failed", "test plan execution could not be created")
+		return
+	}
+	if preview.ExecutableSteps > 0 {
+		if err := a.queue.EnqueueTestPlanExecution(r.Context(), TestPlanExecutionJob{ExecutionID: detail.Execution.ID}); err != nil {
+			a.logger.Error("enqueue test plan execution failed", "execution_id", detail.Execution.ID, "error", err)
+			_ = a.store.MarkTestPlanExecutionFailed(r.Context(), detail.Execution.ID, "test plan execution could not be queued")
+			writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "test plan execution could not be queued")
+			return
+		}
+	}
+	writeJSON(w, http.StatusCreated, detail)
+}
+
+func (a *App) listTestPlanExecutions(w http.ResponseWriter, r *http.Request, planID string) {
+	if _, err := a.store.GetTestPlan(r.Context(), planID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "test_plan_not_found", "test plan was not found")
+			return
+		}
+		a.logger.Error("get test plan for executions failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_test_plan_failed", "test plan could not be loaded")
+		return
+	}
+	executions, err := a.store.ListTestPlanExecutions(r.Context(), planID)
+	if err != nil {
+		a.logger.Error("list test plan executions failed", "test_plan_id", planID, "error", err)
+		writeError(w, http.StatusInternalServerError, "list_test_plan_executions_failed", "test plan executions could not be listed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"executions": executions})
+}
+
+func (a *App) getTestPlanExecution(w http.ResponseWriter, r *http.Request, executionID string) {
+	detail, err := a.store.GetTestPlanExecution(r.Context(), executionID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "test_plan_execution_not_found", "test plan execution was not found")
+			return
+		}
+		a.logger.Error("get test plan execution failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_test_plan_execution_failed", "test plan execution could not be loaded")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (a *App) getTestPlanExecutionReport(w http.ResponseWriter, r *http.Request, executionID string) {
+	report, err := a.store.GetTestPlanExecutionReport(r.Context(), executionID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "test_plan_execution_not_found", "test plan execution was not found")
+			return
+		}
+		a.logger.Error("get test plan execution report failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_test_plan_execution_report_failed", "test plan execution report could not be loaded")
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (a *App) getTestPlanExecutionHTMLReport(w http.ResponseWriter, r *http.Request, executionID string) {
+	report, err := a.store.GetTestPlanExecutionReport(r.Context(), executionID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "test_plan_execution_not_found", "test plan execution was not found")
+			return
+		}
+		a.logger.Error("get test plan execution html report failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_test_plan_execution_report_failed", "test plan execution report could not be loaded")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := RenderTestPlanExecutionHTMLReport(w, report); err != nil {
+		a.logger.Error("render test plan execution html report failed", "error", err)
+	}
 }
 
 func (a *App) createAITestPlan(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -845,6 +1011,17 @@ func decodeAITestPlanRequest(w http.ResponseWriter, r *http.Request) (AITestPlan
 		return input, fmt.Errorf("request body must be valid AI test plan JSON")
 	}
 	return NormalizeAITestPlanRequest(input)
+}
+
+func decodeTestPlanExecutionRequest(w http.ResponseWriter, r *http.Request) (TestPlanExecutionRequest, error) {
+	var input TestPlanExecutionRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+		return input, fmt.Errorf("request body must be valid test plan execution JSON")
+	}
+	return NormalizeTestPlanExecutionRequest(input), nil
 }
 
 func (a *App) reportForTestPlan(ctx context.Context, projectID string, runID string) (*Report, error) {

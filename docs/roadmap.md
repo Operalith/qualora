@@ -67,7 +67,7 @@ Delivered:
 
 ## v0.6.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - AI-assisted test plan generation from sanitized project/run/report metadata.
 - Strict normalized test plan JSON with assumptions, coverage goals, scenarios, steps, assertions, test data needs, instrumentation suggestions, and limitations.
@@ -76,10 +76,25 @@ Current alpha scope:
 - JSON/HTML run report references for plans generated from a run.
 - Deterministic local fake LLM plan response and smoke validation.
 
-## Phase 6: Run And Worker Hardening
+## v0.7.0-alpha
+
+Current alpha scope:
+
+- Approved safe execution for AI test plans.
+- Deterministic test plan safety mapper with explicit skip reasons.
+- Supported browser DSL actions only: navigation, visibility assertions, link checks, screenshots, browser signal collection, and no-error assertions.
+- Persisted execution, scenario, and step status.
+- Execution findings and evidence linked to test plan executions.
+- JSON and self-contained HTML execution reports.
+- Web UI preview, execute, history, and detail pages.
+- Deterministic demo-web routes and fake LLM executable plan output.
+- Smoke validation for preview, execution, reports, and evidence download.
+
+## Phase 8: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
+- Safe test plan execution retries and clearer interrupted-worker recovery.
 - Better per-job error reporting in the public API.
 - Signed URL support or stronger evidence access controls.
 - Additional safety tests for DNS and worker request blocking.
@@ -87,14 +102,14 @@ Current alpha scope:
 - Move AI analysis to an async analyzer worker.
 - Move AI-assisted test planning to an async analyzer worker.
 
-## Phase 7: Deeper API Checks
+## Phase 9: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 8: Passive Security Checks
+## Phase 10: Passive Security Checks
 
 - Passive security headers.
 - Cookie flag checks.
