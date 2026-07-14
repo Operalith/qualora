@@ -1,11 +1,11 @@
 # Development
 
-This document covers local development for Qualora v0.3.0-alpha.
+This document covers local development for Qualora v0.4.0-alpha.
 
 ## Requirements
 
 - Docker with Docker Compose.
-- Go 1.22 or newer for control plane development.
+- Go 1.24 or newer for control plane development.
 - Node.js 22 or newer for web, browser worker, and API worker development.
 - Python 3 for the smoke script.
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the mock API profile service, creates browser and API projects, starts runs, polls to completion, prints JSON/HTML report URLs, and validates HTML report export.
+- `make smoke`: starts the local demo web and mock API profile services, creates browser and API projects, starts runs, polls to completion, prints JSON/HTML report URLs, validates HTML report export, and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -102,15 +102,16 @@ make smoke
 
 The smoke script runs:
 
-- Browser smoke against `https://example.com`.
+- Browser smoke against the local `demo-web` Compose service.
 - API/OpenAPI smoke against the local `mock-api` Compose service.
 - HTML report export validation for each completed run.
+- Screenshot evidence metadata and download validation for the browser run.
 
 Override browser target:
 
 ```bash
-QUALORA_TARGET_URL=https://example.com \
-QUALORA_ALLOWED_HOST=example.com \
+QUALORA_TARGET_URL=http://demo-web:8080 \
+QUALORA_ALLOWED_HOST=demo-web \
 make smoke
 ```
 

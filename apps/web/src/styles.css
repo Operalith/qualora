@@ -316,6 +316,13 @@ textarea {
   gap: 10px;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .detail-grid {
   display: grid;
   gap: 12px;
@@ -411,12 +418,14 @@ textarea {
 }
 
 .status.failed,
-.status.canceled {
+.status.canceled,
+.status.error {
   background: #fff1f0;
   color: var(--danger);
 }
 
-.status.pending {
+.status.pending,
+.status.queued {
   background: #fff8eb;
   color: var(--warning);
 }
@@ -424,6 +433,12 @@ textarea {
 .status.running {
   background: #eff8ff;
   color: var(--blue);
+}
+
+.status.passed,
+.status.completed {
+  background: #eef8f7;
+  color: var(--brand);
 }
 
 .severity {
@@ -479,6 +494,24 @@ textarea {
   gap: 12px;
 }
 
+.evidence-object {
+  align-items: flex-start;
+  display: grid;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.evidence-preview {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: block;
+  height: auto;
+  max-height: 140px;
+  max-width: 220px;
+  object-fit: contain;
+  width: 100%;
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -512,7 +545,8 @@ textarea {
 
   .topbar,
   .section-heading,
-  .form-actions {
+  .form-actions,
+  .button-row {
     align-items: stretch;
     flex-direction: column;
   }

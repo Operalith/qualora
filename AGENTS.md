@@ -10,10 +10,11 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.3.0-alpha` Docker Compose MVP working.
+- Keep the `v0.4.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Minimal web UI support for local project/run/report workflows.
+- Browser-only smoke run support and screenshot evidence preview/download.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
 - Redis for queues and short-lived run state.
@@ -57,6 +58,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Security checks are passive and non-destructive by default.
 - Do not add active exploitation, destructive payloads, brute force behavior, or broad crawling unless the user explicitly asks and a safe policy model exists.
 - Treat screenshots, traces, and reports as sensitive artifacts.
+- Evidence download endpoints must only serve database-backed Qualora evidence records and must never expose arbitrary S3 keys, local paths, or object-store credentials.
 - Store credentials through a dedicated abstraction so local MVP storage can later move to Vault or Kubernetes Secrets.
 
 ## Contribution Style

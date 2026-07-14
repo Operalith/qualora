@@ -16,6 +16,10 @@ export function htmlReportURL(runID: string): string {
   return `${API_BASE_URL}/api/v1/runs/${runID}/report.html`;
 }
 
+export function evidenceDownloadURL(evidenceID: string): string {
+  return `${API_BASE_URL}/api/v1/evidence/${evidenceID}`;
+}
+
 export async function listProjects(): Promise<Project[]> {
   const response = await request<{ projects: Project[] }>("/api/v1/projects");
   return response.projects;
@@ -40,6 +44,12 @@ export async function listRuns(projectID?: string): Promise<TestRun[]> {
 
 export async function startRun(projectID: string): Promise<TestRun> {
   return request<TestRun>(`/api/v1/projects/${projectID}/runs`, {
+    method: "POST"
+  });
+}
+
+export async function startBrowserSmokeRun(projectID: string): Promise<TestRun> {
+  return request<TestRun>(`/api/v1/projects/${projectID}/browser-smoke-runs`, {
     method: "POST"
   });
 }

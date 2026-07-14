@@ -38,6 +38,24 @@ func TestRenderHTMLReportEscapesContentAndIncludesSummary(t *testing.T) {
 		},
 		Evidence: []Evidence{
 			{
+				Type: "screenshot",
+				URI:  "s3://qualora-evidence/runs/run-1/screenshots/screen.png",
+				Metadata: map[string]any{
+					"filename":     "screen.png",
+					"content_type": "image/png",
+					"size_bytes":   12345,
+					"final_url":    "http://demo-web:8080/",
+				},
+			},
+			{
+				Type: "browser_observations",
+				URI:  "inline://browser-observations",
+				Metadata: map[string]any{
+					"page_title":       "Qualora Demo Web",
+					"body_text_length": 42,
+				},
+			},
+			{
 				Type: "api_observations",
 				URI:  "inline://api-observations",
 				Metadata: map[string]any{
@@ -61,6 +79,9 @@ func TestRenderHTMLReportEscapesContentAndIncludesSummary(t *testing.T) {
 		"Example &lt;App&gt;",
 		"API endpoint returned 5xx",
 		"checked_endpoints",
+		"browser_observations",
+		"screen.png",
+		"image/png",
 		"Inspect service logs.",
 	} {
 		if !strings.Contains(html, expected) {

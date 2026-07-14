@@ -92,7 +92,7 @@ async function handleJob(job: APIRunJob): Promise<void> {
     const project = await getProject(job.project_id);
 
     if (project.destructive_actions) {
-      throw new Error("destructive_actions=true is not supported by the v0.3.0-alpha API worker");
+      throw new Error("destructive_actions=true is not supported by the v0.4.0-alpha API worker");
     }
 
     const result = await runAPIChecks(project);
@@ -247,7 +247,7 @@ async function requestEndpoint(
       redirect: "manual",
       signal: controller.signal,
       headers: {
-        "User-Agent": "Qualora API Worker v0.3.0-alpha",
+        "User-Agent": "Qualora API Worker v0.4.0-alpha",
         Accept: "application/json, application/yaml, text/yaml, text/plain, */*"
       }
     });

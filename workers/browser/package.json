@@ -1,6 +1,6 @@
 {
   "name": "@operalith/qualora-worker-browser",
-  "version": "0.3.0-alpha",
+  "version": "0.4.0-alpha",
   "private": true,
   "description": "Qualora browser worker for Playwright smoke checks",
   "type": "commonjs",
@@ -9,7 +9,7 @@
     "dev": "tsx src/index.ts",
     "lint": "tsc --noEmit",
     "start": "node dist/index.js",
-    "test": "tsc --noEmit"
+    "test": "tsx --test src/*.test.ts && tsc --noEmit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.730.0",

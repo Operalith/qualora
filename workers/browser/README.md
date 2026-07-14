@@ -6,11 +6,13 @@ Responsibilities:
 
 - Visit the configured frontend URL.
 - Capture screenshots.
+- Capture page title, final URL, initial status code, and body text length.
 - Collect console errors and failed network requests.
 - Block out-of-scope requests outside project allowed hosts.
 - Block unsafe private, loopback, link-local, and metadata targets by default.
 - Write findings and evidence metadata to PostgreSQL.
 - Store screenshots in MinIO/S3 with a local filesystem fallback.
+- Record screenshot metadata including filename, storage key, content type, size, storage backend, and created timestamp.
 
 All navigation and network activity must respect project allowed hosts.
 

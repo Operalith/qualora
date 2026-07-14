@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.3.0-alpha
-  description: API for creating QA projects, starting browser/API smoke runs, and reading JSON or HTML reports.
+  version: 0.4.0-alpha
+  description: API for creating QA projects, starting browser/API smoke runs, reading reports, and downloading stored evidence objects.
 servers:
   - url: http://localhost:8080
 paths:
@@ -111,6 +111,25 @@ paths:
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/browser-smoke-runs:
+    post:
+      summary: Start a browser smoke run
+      description: Creates a run with only a browser smoke job. The project must have frontend_url configured.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "201":
+          description: Created browser smoke run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestRun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
   /api/v1/runs:
     get:
       summary: List runs
@@ -162,6 +181,30 @@ paths:
                   info: 0
                 findings: []
                 evidence:
+                  - id: 90d77c2a-7599-4e6f-8d66-d7e8fd0b7c1f
+                    type: screenshot
+                    uri: s3://qualora-evidence/runs/d76f71c6-60d0-42fd-9bce-fae54ab6bef1/screenshots/1720944000-screen.png
+                    metadata:
+                      filename: 1720944000-screen.png
+                      key: runs/d76f71c6-60d0-42fd-9bce-fae54ab6bef1/screenshots/1720944000-screen.png
+                      content_type: image/png
+                      size_bytes: 30421
+                      target_url: http://demo-web:8080/
+                      final_url: http://demo-web:8080/
+                      page_title: Qualora Demo Web
+                      status_code: 200
+                  - id: cc5616bb-2b11-4c91-8c0a-ec3c1f890dd8
+                    type: browser_observations
+                    uri: inline://browser-observations
+                    metadata:
+                      target_url: http://demo-web:8080/
+                      final_url: http://demo-web:8080/
+                      page_title: Qualora Demo Web
+                      status_code: 200
+                      body_text_length: 73
+                      timed_out: false
+                      console_errors: []
+                      failed_requests: []
                   - id: afcf6fd9-2512-45d0-a9a5-5d9073c55981
                     type: api_observations
                     uri: inline://api-observations
@@ -199,6 +242,26 @@ paths:
                 type: string
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/evidence/{evidence_id}:
+    get:
+      summary: Download a stored evidence object
+      description: Serves only Qualora evidence records known to the database. Inline metadata evidence is not downloadable.
+      parameters:
+        - $ref: "#/components/parameters/EvidenceID"
+      responses:
+        "200":
+          description: Evidence object
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/Error"
 components:
   parameters:
     ProjectID:
@@ -210,6 +273,13 @@ components:
         format: uuid
     RunID:
       name: run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EvidenceID:
+      name: evidence_id
       in: path
       required: true
       schema:
@@ -254,7 +324,7 @@ components:
         destructive_actions:
           type: boolean
           default: false
-          description: Must be false in v0.3.0-alpha.
+          description: Must be false in v0.4.0-alpha.
         allow_private_targets:
           type: boolean
           default: false
@@ -318,7 +388,7 @@ components:
           format: uuid
         status:
           type: string
-          enum: [pending, running, completed, failed, canceled]
+          enum: [queued, pending, running, completed, failed, canceled, passed, error]
         error_message:
           type: string
         page_title:
@@ -364,7 +434,7 @@ components:
           format: uuid
         status:
           type: string
-          enum: [pending, running, completed, failed, canceled]
+          enum: [queued, pending, running, completed, failed, canceled, passed, error]
         summary:
           $ref: "#/components/schemas/ReportSummary"
         findings:

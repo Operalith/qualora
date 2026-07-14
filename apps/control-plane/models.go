@@ -3,11 +3,14 @@ package main
 import "time"
 
 const (
+	StatusQueued    = "queued"
 	StatusPending   = "pending"
 	StatusRunning   = "running"
 	StatusCompleted = "completed"
 	StatusFailed    = "failed"
 	StatusCanceled  = "canceled"
+	StatusPassed    = "passed"
+	StatusError     = "error"
 )
 
 const (

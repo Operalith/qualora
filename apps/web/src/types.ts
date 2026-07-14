@@ -26,7 +26,7 @@ export type CreateProjectInput = {
 export type TestRun = {
   id: string;
   project_id: string;
-  status: "pending" | "running" | "completed" | "failed" | "canceled";
+  status: "queued" | "pending" | "running" | "completed" | "failed" | "canceled" | "passed" | "error";
   error_message?: string;
   page_title?: string;
   started_at?: string;

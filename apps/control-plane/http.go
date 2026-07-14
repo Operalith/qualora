@@ -4,21 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type App struct {
-	store       *Store
-	queue       *Queue
-	logger      *slog.Logger
-	corsOrigins []string
+	store         *Store
+	queue         *Queue
+	evidenceStore *EvidenceStore
+	logger        *slog.Logger
+	corsOrigins   []string
 }
 
-func NewApp(store *Store, queue *Queue, logger *slog.Logger, corsOrigins []string) *App {
-	return &App{store: store, queue: queue, logger: logger, corsOrigins: corsOrigins}
+func NewApp(store *Store, queue *Queue, evidenceStore *EvidenceStore, logger *slog.Logger, corsOrigins []string) *App {
+	return &App{store: store, queue: queue, evidenceStore: evidenceStore, logger: logger, corsOrigins: corsOrigins}
 }
 
 func (a *App) Routes() http.Handler {
@@ -28,6 +32,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/projects/", a.handleProjectSubroutes)
 	mux.HandleFunc("/api/v1/runs", a.handleRuns)
 	mux.HandleFunc("/api/v1/runs/", a.handleRunSubroutes)
+	mux.HandleFunc("/api/v1/evidence/", a.handleEvidenceSubroutes)
 	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, mux)))
 }
 
@@ -117,6 +122,14 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "browser-smoke-runs" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.createBrowserSmokeRun(w, r, parts[0])
+		return
+	}
 	writeError(w, http.StatusNotFound, "not_found", "route not found")
 }
 
@@ -153,26 +166,62 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request, projectID string
 		return
 	}
 
-	for _, job := range jobs {
-		switch job.Kind {
-		case JobKindBrowser:
-			if err := a.queue.EnqueueBrowserRun(r.Context(), BrowserRunJob{JobID: job.ID, RunID: run.ID, ProjectID: project.ID}); err != nil {
-				a.logger.Error("enqueue browser run failed", "run_id", run.ID, "job_id", job.ID, "error", err)
-				_ = a.store.MarkRunFailed(r.Context(), run.ID, "run could not be queued")
-				writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "run could not be queued")
-				return
-			}
-		case JobKindAPI:
-			if err := a.queue.EnqueueAPIRun(r.Context(), APIRunJob{JobID: job.ID, RunID: run.ID, ProjectID: project.ID}); err != nil {
-				a.logger.Error("enqueue api run failed", "run_id", run.ID, "job_id", job.ID, "error", err)
-				_ = a.store.MarkRunFailed(r.Context(), run.ID, "run could not be queued")
-				writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "run could not be queued")
-				return
-			}
-		}
+	if err := a.enqueueRunJobs(r.Context(), *project, run, jobs); err != nil {
+		a.logger.Error("enqueue run failed", "run_id", run.ID, "error", err)
+		_ = a.store.MarkRunFailed(r.Context(), run.ID, "run could not be queued")
+		writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "run could not be queued")
+		return
 	}
 
 	writeJSON(w, http.StatusCreated, run)
+}
+
+func (a *App) createBrowserSmokeRun(w http.ResponseWriter, r *http.Request, projectID string) {
+	project, err := a.store.GetProject(r.Context(), projectID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "project_not_found", "project was not found")
+			return
+		}
+		a.logger.Error("get project for browser smoke run failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_project_failed", "project could not be loaded")
+		return
+	}
+	if project.FrontendURL == "" {
+		writeError(w, http.StatusBadRequest, "frontend_url_required", "project must have frontend_url to start a browser smoke run")
+		return
+	}
+
+	run, jobs, err := a.store.CreateRunForKinds(r.Context(), *project, []string{JobKindBrowser})
+	if err != nil {
+		a.logger.Error("create browser smoke run failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create_run_failed", "browser smoke run could not be created")
+		return
+	}
+	if err := a.enqueueRunJobs(r.Context(), *project, run, jobs); err != nil {
+		a.logger.Error("enqueue browser smoke run failed", "run_id", run.ID, "error", err)
+		_ = a.store.MarkRunFailed(r.Context(), run.ID, "run could not be queued")
+		writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "browser smoke run could not be queued")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, run)
+}
+
+func (a *App) enqueueRunJobs(ctx context.Context, project Project, run *TestRun, jobs []RunJob) error {
+	for _, job := range jobs {
+		switch job.Kind {
+		case JobKindBrowser:
+			if err := a.queue.EnqueueBrowserRun(ctx, BrowserRunJob{JobID: job.ID, RunID: run.ID, ProjectID: project.ID}); err != nil {
+				return err
+			}
+		case JobKindAPI:
+			if err := a.queue.EnqueueAPIRun(ctx, APIRunJob{JobID: job.ID, RunID: run.ID, ProjectID: project.ID}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (a *App) handleRuns(w http.ResponseWriter, r *http.Request) {
@@ -272,6 +321,51 @@ func (a *App) getHTMLReport(w http.ResponseWriter, r *http.Request, runID string
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := RenderHTMLReport(w, project, run, report, time.Now().UTC()); err != nil {
 		a.logger.Error("render html report failed", "error", err)
+	}
+}
+
+func (a *App) handleEvidenceSubroutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/evidence/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 1 || parts[0] == "" {
+		writeError(w, http.StatusNotFound, "not_found", "route not found")
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		return
+	}
+	a.getEvidenceObject(w, r, parts[0])
+}
+
+func (a *App) getEvidenceObject(w http.ResponseWriter, r *http.Request, evidenceID string) {
+	record, err := a.store.GetEvidence(r.Context(), evidenceID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "evidence_not_found", "evidence was not found")
+			return
+		}
+		a.logger.Error("get evidence failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_evidence_failed", "evidence could not be loaded")
+		return
+	}
+
+	object, err := a.evidenceStore.Open(r.Context(), *record)
+	if err != nil {
+		a.logger.Error("open evidence object failed", "evidence_id", evidenceID, "error", err)
+		writeError(w, http.StatusNotFound, "evidence_object_unavailable", "evidence object could not be loaded")
+		return
+	}
+	defer object.Body.Close()
+
+	w.Header().Set("Content-Type", object.ContentType)
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": object.Filename}))
+	if object.ContentLength >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(object.ContentLength, 10))
+	}
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, object.Body); err != nil {
+		a.logger.Error("stream evidence object failed", "evidence_id", evidenceID, "error", err)
 	}
 }
 

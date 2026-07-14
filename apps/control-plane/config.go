@@ -13,6 +13,13 @@ type Config struct {
 	RedisPassword   string
 	BrowserQueue    string
 	APIQueue        string
+	EvidenceDir     string
+	S3Endpoint      string
+	S3Region        string
+	S3Bucket        string
+	S3AccessKeyID   string
+	S3SecretKey     string
+	S3ForcePath     bool
 	CORSOrigins     []string
 	ShutdownTimeout time.Duration
 }
@@ -25,6 +32,13 @@ func LoadConfig() Config {
 		RedisPassword:   os.Getenv("REDIS_PASSWORD"),
 		BrowserQueue:    env("BROWSER_RUN_QUEUE", env("RUN_QUEUE", "qualora:browser-runs")),
 		APIQueue:        env("API_RUN_QUEUE", "qualora:api-runs"),
+		EvidenceDir:     env("EVIDENCE_DIR", "/tmp/qualora-evidence"),
+		S3Endpoint:      env("S3_ENDPOINT", "http://localhost:9000"),
+		S3Region:        env("S3_REGION", "us-east-1"),
+		S3Bucket:        env("S3_BUCKET", "qualora-evidence"),
+		S3AccessKeyID:   env("S3_ACCESS_KEY_ID", "qualora"),
+		S3SecretKey:     env("S3_SECRET_ACCESS_KEY", "qualora-dev-secret"),
+		S3ForcePath:     boolEnv("S3_FORCE_PATH_STYLE", true),
 		CORSOrigins:     csvEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
 		ShutdownTimeout: 10 * time.Second,
 	}
@@ -49,4 +63,12 @@ func csvEnv(key, fallback string) []string {
 		}
 	}
 	return result
+}
+
+func boolEnv(key string, fallback bool) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if value == "" {
+		return fallback
+	}
+	return value == "1" || value == "true" || value == "yes"
 }

@@ -2,12 +2,14 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   API_BASE_URL,
   createProject,
+  evidenceDownloadURL,
   getProject,
   getReport,
   getRun,
   htmlReportURL,
   listProjects,
   listRuns,
+  startBrowserSmokeRun,
   startRun
 } from "./api";
 import type { CreateProjectInput, Evidence, Project, Report, RunJob, TestRun } from "./types";
@@ -52,7 +54,7 @@ export default function App() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!runs.data.some((run) => run.status === "pending" || run.status === "running")) {
+    if (!runs.data.some((run) => isActiveRunStatus(run.status))) {
       return undefined;
     }
     const timer = window.setInterval(() => void refresh(), 2500);
@@ -60,13 +62,23 @@ export default function App() {
   }, [refresh, runs.data]);
 
   const projectByID = useMemo(() => new Map(projects.data.map((project) => [project.id, project])), [projects.data]);
+  const startFullRun = async (projectID: string) => {
+    const run = await startRun(projectID);
+    await refresh();
+    setRoute({ name: "run", id: run.id });
+  };
+  const startBrowserRun = async (projectID: string) => {
+    const run = await startBrowserSmokeRun(projectID);
+    await refresh();
+    setRoute({ name: "run", id: run.id });
+  };
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <a className="brand" href="#/">
           <span>Qualora</span>
-          <small>v0.3.0-alpha</small>
+          <small>v0.4.0-alpha</small>
         </a>
         <nav>
           <a className={route.name === "dashboard" ? "active" : ""} href="#/">
@@ -99,11 +111,11 @@ export default function App() {
         {(projects.error || runs.error) && <Notice tone="danger" message={projects.error || runs.error} />}
 
         {route.name === "dashboard" && (
-          <Dashboard projects={projects} runs={runs} projectByID={projectByID} onStartRun={refreshAfterStart(refresh)} />
+          <Dashboard projects={projects} runs={runs} projectByID={projectByID} onStartRun={startFullRun} />
         )}
         {route.name === "new-project" && <ProjectForm onCreated={(project) => setRoute({ name: "project", id: project.id })} />}
         {route.name === "project" && (
-          <ProjectPage projectID={route.id} cachedProject={projectByID.get(route.id)} onRunStarted={refreshAfterStart(refresh)} />
+          <ProjectPage projectID={route.id} cachedProject={projectByID.get(route.id)} onStartRun={startFullRun} onStartBrowserSmoke={startBrowserRun} />
         )}
         {route.name === "runs" && <RunsPage runs={runs} projectByID={projectByID} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
@@ -235,15 +247,18 @@ function RunTable({ runs, projectByID }: { runs: TestRun[]; projectByID: Map<str
 function ProjectPage({
   projectID,
   cachedProject,
-  onRunStarted
+  onStartRun,
+  onStartBrowserSmoke
 }: {
   projectID: string;
   cachedProject?: Project;
-  onRunStarted: (projectID: string) => Promise<void>;
+  onStartRun: (projectID: string) => Promise<void>;
+  onStartBrowserSmoke: (projectID: string) => Promise<void>;
 }) {
   const [project, setProject] = useState<Project | undefined>(cachedProject);
   const [runs, setRuns] = useState<LoadState<TestRun[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
+  const [starting, setStarting] = useState("");
 
   const refresh = useCallback(async () => {
     setRuns((current) => ({ ...current, loading: true, error: "" }));
@@ -270,6 +285,25 @@ function ProjectPage({
     return <SkeletonRows />;
   }
 
+  async function startProjectRun(kind: "browser" | "full") {
+    if (!project) {
+      return;
+    }
+    setStarting(kind);
+    setError("");
+    try {
+      if (kind === "browser") {
+        await onStartBrowserSmoke(project.id);
+      } else {
+        await onStartRun(project.id);
+      }
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : String(startError));
+    } finally {
+      setStarting("");
+    }
+  }
+
   return (
     <div className="grid">
       <section>
@@ -278,15 +312,16 @@ function ProjectPage({
             <h2>{project.name}</h2>
             <p>{targetSummary(project)}</p>
           </div>
-          <button
-            type="button"
-            onClick={async () => {
-              await onRunStarted(project.id);
-              await refresh();
-            }}
-          >
-            Start Run
-          </button>
+          <div className="button-row">
+            {project.frontend_url && (
+              <button type="button" disabled={starting !== ""} onClick={() => void startProjectRun("browser")}>
+                {starting === "browser" ? "Starting" : "Run browser smoke test"}
+              </button>
+            )}
+            <button type="button" className="secondary" disabled={starting !== ""} onClick={() => void startProjectRun("full")}>
+              {starting === "full" ? "Starting" : "Start full run"}
+            </button>
+          </div>
         </div>
         <div className="detail-grid">
           <Field label="Frontend URL" value={project.frontend_url || "Not configured"} />
@@ -437,7 +472,7 @@ function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cache
   }, [refresh]);
 
   useEffect(() => {
-    if (!run || (run.status !== "pending" && run.status !== "running")) {
+    if (!run || !isActiveRunStatus(run.status)) {
       return undefined;
     }
     const timer = window.setInterval(() => void refresh(), 2500);
@@ -559,6 +594,7 @@ function EvidenceTable({ evidence }: { evidence: Evidence[] }) {
         <thead>
           <tr>
             <th>Type</th>
+            <th>Object</th>
             <th>URI</th>
             <th>Created</th>
             <th>Metadata</th>
@@ -568,6 +604,18 @@ function EvidenceTable({ evidence }: { evidence: Evidence[] }) {
           {evidence.map((item) => (
             <tr key={item.id}>
               <td>{item.type}</td>
+              <td>
+                {item.type === "screenshot" ? (
+                  <div className="evidence-object">
+                    <a className="button secondary-link" href={evidenceDownloadURL(item.id)} target="_blank" rel="noreferrer">
+                      Download
+                    </a>
+                    <img className="evidence-preview" src={evidenceDownloadURL(item.id)} alt={`Screenshot evidence ${shortID(item.id)}`} />
+                  </div>
+                ) : (
+                  <span className="muted">Inline metadata</span>
+                )}
+              </td>
               <td>
                 <code>{item.uri}</code>
               </td>
@@ -745,18 +793,15 @@ function titleForRoute(route: Route): string {
   }
 }
 
-function refreshAfterStart(refresh: () => Promise<void>) {
-  return async (projectID: string) => {
-    await startRun(projectID);
-    await refresh();
-  };
-}
-
 function splitHosts(input: string): string[] {
   return input
     .split(/[,\n]/)
     .map((host) => host.trim())
     .filter(Boolean);
+}
+
+function isActiveRunStatus(status: string): boolean {
+  return status === "queued" || status === "pending" || status === "running";
 }
 
 function targetSummary(project: Project): string {

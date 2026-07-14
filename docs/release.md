@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.3.0-alpha is the third public alpha release. It adds a minimal self-hosted web UI and self-contained HTML reports to the browser/API QA foundation.
+Qualora v0.4.0-alpha is the fourth public alpha release. It adds a browser-only smoke workflow, richer browser evidence metadata, screenshot evidence preview/download, and deterministic local smoke targets.
 
 ## Pre-Release Checklist
 
@@ -13,6 +13,8 @@ docker compose config
 docker compose up -d --build
 make smoke
 curl -s http://localhost:3000/healthz
+curl -s http://localhost:8080/healthz
+git diff --check
 docker compose down -v
 ```
 
@@ -20,24 +22,27 @@ Confirm:
 
 - The API returns `{"status":"ok"}` from `/healthz`.
 - The web UI is reachable at `http://localhost:3000`.
+- The smoke script starts the local `demo-web` and `mock-api` smoke services.
 - The smoke script creates browser and API projects.
 - Browser and API runs reach `completed`.
 - Browser reports include screenshot and browser observation evidence.
+- Screenshot evidence metadata includes filename, key, content type, size, and created timestamp.
+- `GET /api/v1/evidence/{evidence_id}` returns the stored screenshot with an image content type.
 - API reports include `api_observations`, `openapi_summary`, and `api_request` evidence.
 - JSON report URLs work.
 - HTML report URLs work and render a self-contained report.
 - Screenshot evidence uses an `s3://qualora-evidence/...` URI when MinIO is healthy.
-- Documentation does not claim unsupported auth, login automation, active security scanning, destructive API testing, schema fuzzing, or screenshot preview/download through the API.
+- Documentation does not claim unsupported auth, login automation, active security scanning, destructive API testing, schema fuzzing, trace export, or full browser test coverage.
 
 ## Tagging
 
 ```bash
 git status --short
 git add .
-git commit -m "feat: add web UI and HTML reports for v0.3.0-alpha"
-git tag -a v0.3.0-alpha -m "v0.3.0-alpha"
+git commit -m "feat: add browser smoke testing for v0.4.0-alpha"
+git tag -a v0.4.0-alpha -m "v0.4.0-alpha"
 git push origin main
-git push origin v0.3.0-alpha
+git push origin v0.4.0-alpha
 ```
 
 ## GitHub Release
@@ -45,7 +50,7 @@ git push origin v0.3.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.3.0-alpha
+Qualora v0.4.0-alpha
 ```
 
-Use [release-notes/v0.3.0-alpha.md](release-notes/v0.3.0-alpha.md) as the release body.
+Use [release-notes/v0.4.0-alpha.md](release-notes/v0.4.0-alpha.md) as the release body.

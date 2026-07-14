@@ -8,6 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
+| v0.4.0-alpha | Best-effort alpha support |
 | v0.3.0-alpha | Best-effort alpha support |
 | v0.2.0-alpha | Best-effort alpha support |
 | v0.1.0-alpha | Best-effort alpha support |
@@ -29,7 +30,7 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.3.0-alpha API and web UI do not include authentication. Expose them only in trusted local or self-hosted environments, or put them behind an external access-control layer.
+The v0.4.0-alpha API and web UI do not include authentication. Expose them only in trusted local or self-hosted environments, or put them behind an external access-control layer.
 
 See [docs/security-model.md](docs/security-model.md) for the current alpha safety model.
 
@@ -41,6 +42,7 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - No credential, token, cookie, or authorization-header logging.
 - Sensitive values must be redacted from errors, traces, reports, and debug output.
 - Evidence artifacts such as screenshots, traces, logs, and generated reports should be treated as sensitive.
+- Evidence object downloads must only serve Qualora-owned evidence records and must not expose arbitrary S3 keys, filesystem paths, or object-store credentials.
 - Credentials should be stored behind an abstraction that can later support Vault, Kubernetes Secrets, or other secret managers.
 
 ## Out Of Scope For The MVP

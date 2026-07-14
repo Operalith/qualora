@@ -16,13 +16,14 @@ This file records the implementation intent behind the early alpha MVP.
 - MinIO/S3-compatible screenshot storage.
 - Structured report endpoint.
 - Self-contained HTML report endpoint.
+- Evidence object download endpoint for stored artifacts.
 
 ## Current Run Lifecycle
 
 1. User creates a project with the web UI or `POST /api/v1/projects`.
 2. Control plane validates `frontend_url`, `allowed_hosts`, `security_mode`, and `destructive_actions`.
 3. User starts a run with `POST /api/v1/projects/{project_id}/runs`.
-4. Control plane creates a `pending` run and browser/API `run_jobs` based on configured targets.
+4. Control plane creates a `queued` run and browser/API `run_jobs` based on configured targets.
 5. Control plane pushes worker jobs to Redis.
 6. Workers mark jobs `running`.
 7. Workers collect evidence and findings.
@@ -30,6 +31,7 @@ This file records the implementation intent behind the early alpha MVP.
 9. PostgreSQL refreshes the parent run status.
 10. Control plane serves the JSON report with `GET /api/v1/runs/{run_id}/report`.
 11. Control plane serves the HTML report with `GET /api/v1/runs/{run_id}/report.html`.
+12. Control plane serves stored evidence objects with `GET /api/v1/evidence/{evidence_id}`.
 
 ## Current Data Model
 
@@ -49,7 +51,7 @@ These are planned boundaries, not implemented release features:
 - Analyzer worker.
 - Report engine package.
 - Helm chart.
-- Evidence object proxy or signed URL preview.
+- Signed URL support or stronger evidence access controls.
 - Login automation and credential storage.
 
 Keep future work behind explicit docs and roadmap updates so the alpha remains honest about what it can do today.

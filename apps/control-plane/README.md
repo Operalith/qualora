@@ -10,6 +10,7 @@ Responsibilities:
 - Worker job scheduling.
 - Metadata persistence.
 - JSON and HTML report access.
+- Stored evidence object access by evidence ID.
 
 The MVP delegates browser checks and API checks to workers through Redis queues.
 
@@ -28,9 +29,15 @@ The service expects PostgreSQL and Redis. Defaults are suitable for local develo
 - `REDIS_ADDR=localhost:6379`
 - `BROWSER_RUN_QUEUE=qualora:browser-runs`
 - `API_RUN_QUEUE=qualora:api-runs`
+- `S3_ENDPOINT=http://localhost:9000`
+- `S3_BUCKET=qualora-evidence`
+- `S3_ACCESS_KEY_ID=qualora`
+- `S3_SECRET_ACCESS_KEY=qualora-dev-secret`
+- `EVIDENCE_DIR=/tmp/qualora-evidence`
 - `CORS_ALLOWED_ORIGINS=http://localhost:3000`
 
 Current report endpoints:
 
 - `GET /api/v1/runs/{run_id}/report`
 - `GET /api/v1/runs/{run_id}/report.html`
+- `GET /api/v1/evidence/{evidence_id}`

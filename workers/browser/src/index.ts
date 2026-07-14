@@ -12,6 +12,7 @@ import path from "node:path";
 import Redis from "ioredis";
 import { Pool } from "pg";
 import { chromium, type Page } from "playwright";
+import { buildFindings, type BrowserResult, type FindingInput } from "./findings";
 
 type Config = {
   databaseUrl: string;
@@ -39,24 +40,14 @@ type Project = {
   allow_private_targets: boolean;
 };
 
-type FindingInput = {
-  title: string;
-  severity: "critical" | "high" | "medium" | "low" | "info";
-  category: string;
-  confidence: "high" | "medium" | "low";
-  description: string;
-  recommendation: string;
-  evidenceIds: string[];
-};
-
-type BrowserResult = {
-  pageTitle: string;
-  statusCode: number | null;
-  loadError: string;
-  consoleErrors: Array<{ type: string; text: string; location: string }>;
-  failedRequests: Array<{ url: string; method: string; failure: string }>;
-  blockedRequests: Array<{ url: string; reason: string }>;
-  screenshot: Buffer | null;
+type StoredEvidenceObject = {
+  uri: string;
+  filename: string;
+  key: string;
+  contentType: string;
+  sizeBytes: number;
+  createdAt: string;
+  storage: "s3" | "local";
 };
 
 const config = loadConfig();
@@ -133,8 +124,16 @@ async function handleJob(job: BrowserRunJob): Promise<void> {
     const evidenceIds: string[] = [];
 
     if (result.screenshot) {
-      const screenshotURI = await storeScreenshot(job.run_id, result.screenshot);
-      const screenshotEvidenceID = await insertEvidence(job.run_id, "screenshot", screenshotURI, {
+      const screenshotObject = await storeScreenshot(job.run_id, result.screenshot);
+      const screenshotEvidenceID = await insertEvidence(job.run_id, "screenshot", screenshotObject.uri, {
+        filename: screenshotObject.filename,
+        key: screenshotObject.key,
+        content_type: screenshotObject.contentType,
+        size_bytes: screenshotObject.sizeBytes,
+        created_at: screenshotObject.createdAt,
+        storage: screenshotObject.storage,
+        target_url: result.targetURL,
+        final_url: result.finalURL,
         page_title: result.pageTitle,
         status_code: result.statusCode
       });
@@ -142,9 +141,13 @@ async function handleJob(job: BrowserRunJob): Promise<void> {
     }
 
     const observationsEvidenceID = await insertEvidence(job.run_id, "browser_observations", "inline://browser-observations", {
+      target_url: result.targetURL,
+      final_url: result.finalURL,
       page_title: result.pageTitle,
       status_code: result.statusCode,
+      body_text_length: result.bodyTextLength,
       load_error: result.loadError,
+      timed_out: result.timedOut,
       console_errors: result.consoleErrors,
       failed_requests: result.failedRequests,
       blocked_requests: result.blockedRequests
@@ -237,6 +240,7 @@ async function getProject(projectID: string): Promise<Project> {
 }
 
 async function runBrowserCheck(project: Project): Promise<BrowserResult> {
+  const targetURL = sanitizeURL(project.frontend_url);
   const browser = await chromium.launch({
     headless: true,
     args: ["--no-sandbox"]
@@ -297,6 +301,8 @@ async function runBrowserCheck(project: Project): Promise<BrowserResult> {
 
   let pageTitle = "";
   let statusCode: number | null = null;
+  let finalURL = targetURL;
+  let bodyTextLength: number | null = null;
   let loadError = "";
   let screenshot: Buffer | null = null;
 
@@ -308,17 +314,29 @@ async function runBrowserCheck(project: Project): Promise<BrowserResult> {
     statusCode = response ? response.status() : null;
     await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
     pageTitle = sanitizeText(await page.title().catch(() => ""));
+    finalURL = sanitizeURL(page.url());
+    bodyTextLength = await page
+      .evaluate(() => (document.body?.innerText ?? "").trim().length)
+      .catch(() => null);
   } catch (error) {
     loadError = sanitizeText(error instanceof Error ? error.message : String(error));
+    finalURL = sanitizeURL(page.url());
+    bodyTextLength = await page
+      .evaluate(() => (document.body?.innerText ?? "").trim().length)
+      .catch(() => null);
   }
 
   screenshot = await captureScreenshot(page);
   await browser.close();
 
   return {
+    targetURL,
+    finalURL,
     pageTitle,
     statusCode,
+    bodyTextLength,
     loadError,
+    timedOut: /\btimeout\b|timed out/i.test(loadError),
     consoleErrors: consoleErrors.slice(0, 50),
     failedRequests: failedRequests.slice(0, 50),
     blockedRequests: blockedRequests.slice(0, 50),
@@ -332,80 +350,6 @@ async function captureScreenshot(page: Page): Promise<Buffer | null> {
   } catch {
     return null;
   }
-}
-
-function buildFindings(result: BrowserResult, evidenceIds: string[]): FindingInput[] {
-  const findings: FindingInput[] = [];
-
-  if (result.loadError) {
-    findings.push({
-      title: "Page load failed",
-      severity: "high",
-      category: "frontend",
-      confidence: "high",
-      description: `The target page did not complete the initial browser load: ${result.loadError}`,
-      recommendation: "Verify that the frontend URL is reachable from the worker container and that the application serves a valid page.",
-      evidenceIds
-    });
-  } else if (result.statusCode !== null && result.statusCode >= 500) {
-    findings.push({
-      title: "Server error while loading page",
-      severity: "high",
-      category: "frontend",
-      confidence: "high",
-      description: `The target page returned HTTP ${result.statusCode}.`,
-      recommendation: "Inspect the frontend service and upstream dependencies for server-side errors.",
-      evidenceIds
-    });
-  } else if (result.statusCode !== null && result.statusCode >= 400) {
-    findings.push({
-      title: "Client error while loading page",
-      severity: "medium",
-      category: "frontend",
-      confidence: "high",
-      description: `The target page returned HTTP ${result.statusCode}.`,
-      recommendation: "Confirm that the configured frontend URL is correct and publicly reachable within the allowed test scope.",
-      evidenceIds
-    });
-  }
-
-  if (result.consoleErrors.length > 0) {
-    findings.push({
-      title: "Console error detected",
-      severity: "low",
-      category: "frontend",
-      confidence: "medium",
-      description: `The browser observed ${result.consoleErrors.length} console error(s) during page load.`,
-      recommendation: "Review browser console errors and fix uncaught frontend exceptions or failed client-side initialization.",
-      evidenceIds
-    });
-  }
-
-  if (result.failedRequests.length > 0) {
-    findings.push({
-      title: "Failed network request detected",
-      severity: "medium",
-      category: "frontend",
-      confidence: "medium",
-      description: `The browser observed ${result.failedRequests.length} failed network request(s) within the allowed scope.`,
-      recommendation: "Inspect failed requests and ensure required assets, APIs, and dependencies are available during page load.",
-      evidenceIds
-    });
-  }
-
-  if (result.blockedRequests.length > 0) {
-    findings.push({
-      title: "Out-of-scope browser request blocked",
-      severity: "info",
-      category: "scope",
-      confidence: "high",
-      description: `The browser blocked ${result.blockedRequests.length} request(s) outside the project's allowed hosts.`,
-      recommendation: "Add required first-party hosts to allowed_hosts or remove unexpected third-party dependencies from the smoke path.",
-      evidenceIds
-    });
-  }
-
-  return findings;
 }
 
 async function insertEvidence(runID: string, type: string, uri: string, metadata: Record<string, unknown>): Promise<string> {
@@ -448,26 +392,52 @@ async function ensureS3Bucket(): Promise<void> {
   }
 }
 
-async function storeScreenshot(runID: string, screenshot: Buffer): Promise<string> {
-  const key = `runs/${runID}/screenshots/${Date.now()}.png`;
+async function storeScreenshot(runID: string, screenshot: Buffer): Promise<StoredEvidenceObject> {
+  const filename = `${Date.now()}-${randomUUID()}.png`;
+  const key = `runs/${runID}/screenshots/${filename}`;
+  const createdAt = new Date().toISOString();
+  const contentType = "image/png";
 
   try {
     await putScreenshotObject(key, screenshot);
-    return `s3://${config.s3Bucket}/${key}`;
+    return {
+      uri: `s3://${config.s3Bucket}/${key}`,
+      filename,
+      key,
+      contentType,
+      sizeBytes: screenshot.byteLength,
+      createdAt,
+      storage: "s3"
+    };
   } catch (error) {
     try {
       await ensureS3Bucket();
       await putScreenshotObject(key, screenshot);
-      return `s3://${config.s3Bucket}/${key}`;
+      return {
+        uri: `s3://${config.s3Bucket}/${key}`,
+        filename,
+        key,
+        contentType,
+        sizeBytes: screenshot.byteLength,
+        createdAt,
+        storage: "s3"
+      };
     } catch {
       log("s3_put_failed_using_local_fallback", { error: sanitizeText(error instanceof Error ? error.message : String(error)) });
     }
 
-    const localDir = path.join(config.evidenceDir, "runs", runID, "screenshots");
-    await fs.mkdir(localDir, { recursive: true });
-    const localPath = path.join(localDir, `${Date.now()}.png`);
+    const localPath = path.join(config.evidenceDir, key);
+    await fs.mkdir(path.dirname(localPath), { recursive: true });
     await fs.writeFile(localPath, screenshot);
-    return `file://${localPath}`;
+    return {
+      uri: `file://${localPath}`,
+      filename,
+      key,
+      contentType,
+      sizeBytes: screenshot.byteLength,
+      createdAt,
+      storage: "local"
+    };
   }
 }
 
@@ -639,7 +609,7 @@ function loadConfig(): Config {
     s3Region: env("S3_REGION", "us-east-1"),
     s3Bucket: env("S3_BUCKET", "qualora-evidence"),
     s3AccessKeyId: env("S3_ACCESS_KEY_ID", "qualora"),
-    s3SecretAccessKey: env("S3_SECRET_ACCESS_KEY", "qualora-secret"),
+    s3SecretAccessKey: env("S3_SECRET_ACCESS_KEY", "qualora-dev-secret"),
     s3ForcePathStyle: env("S3_FORCE_PATH_STYLE", "true") === "true"
   };
 }

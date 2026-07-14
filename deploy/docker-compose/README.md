@@ -31,5 +31,8 @@ The MVP Compose stack includes:
 The smoke profile also includes:
 
 - `mock-api`: deterministic local API used by `make smoke`.
+- `demo-web`: deterministic local frontend used by browser smoke tests.
+
+The control plane receives the same MinIO/S3 configuration as the browser worker so `GET /api/v1/evidence/{evidence_id}` can stream screenshot evidence without exposing MinIO credentials to the web UI.
 
 Keep this path working before adding Helm or other deployment targets.

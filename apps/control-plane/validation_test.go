@@ -139,6 +139,18 @@ func TestNormalizeProjectRequestRejectsNonHTTPURL(t *testing.T) {
 	}
 }
 
+func TestValidateTargetURLAcceptsHTTPAndHTTPSOnly(t *testing.T) {
+	if _, err := validateTargetURL("http://example.com", []string{"example.com"}, false, publicResolver); err != nil {
+		t.Fatalf("expected HTTP URL to be accepted: %v", err)
+	}
+	if _, err := validateTargetURL("https://example.com", []string{"example.com"}, false, publicResolver); err != nil {
+		t.Fatalf("expected HTTPS URL to be accepted: %v", err)
+	}
+	if _, err := validateTargetURL("file:///tmp/index.html", []string{"example.com"}, false, publicResolver); err == nil {
+		t.Fatal("expected file URL to be rejected")
+	}
+}
+
 func TestNormalizeProjectRequestRejectsAllowedHostWithPath(t *testing.T) {
 	_, err := NormalizeProjectRequestWithResolver(CreateProjectRequest{
 		Name:         "Path Host",

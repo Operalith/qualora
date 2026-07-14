@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.3.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.4.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -41,11 +41,11 @@ Default API behavior:
 - OpenAPI document fetch from `openapi_url`.
 - Safe OpenAPI methods only: `GET`, `HEAD`, and `OPTIONS`.
 - Unsafe methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are skipped.
-- `destructive_actions=true` is not supported by the v0.3.0-alpha API worker.
+- `destructive_actions=true` is not supported by the v0.4.0-alpha API worker.
 
 ## Web UI Exposure
 
-The v0.3.0-alpha web UI has no authentication or authorization. It can create projects, start runs, and display report/evidence metadata through the control-plane API.
+The v0.4.0-alpha web UI has no authentication or authorization. It can create projects, start runs, and display report/evidence metadata through the control-plane API.
 
 Use it only in trusted local or self-hosted environments. Do not expose `qualora-web` or `qualora-api` directly to untrusted networks without adding an external access-control layer.
 
@@ -58,6 +58,7 @@ Current safeguards:
 - API request logs do not include request bodies or query strings.
 - Worker logs redact common token, password, secret, cookie, and authorization patterns.
 - API evidence strips URL userinfo, query strings, and fragments.
+- Evidence object downloads are served only for evidence records already known to Qualora; callers cannot provide arbitrary S3 keys or filesystem paths.
 - Screenshot and report artifacts should be treated as sensitive.
 
 Future credential support must use a dedicated abstraction that can later support Vault, Kubernetes Secrets, or another secret manager.
@@ -80,6 +81,6 @@ Future credential support must use a dedicated abstraction that can later suppor
 - API response metadata can reveal endpoint names and status behavior.
 - MinIO uses local development credentials in Docker Compose.
 - There is no API or web UI authentication in this alpha, so bind the API and UI only in trusted local environments.
-- Screenshot preview/download through the control-plane API is not implemented yet; evidence metadata can still disclose target names, endpoint paths, and artifact URIs.
+- Screenshot preview/download through the control-plane API is available for stored evidence records and can expose sensitive application state to anyone with API access.
 
 See [../SECURITY.md](../SECURITY.md) for vulnerability reporting.

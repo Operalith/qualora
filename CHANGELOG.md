@@ -4,6 +4,38 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.4.0-alpha] - 2026-07-14
+
+### Added
+
+- Browser-only smoke run endpoint at `POST /api/v1/projects/{project_id}/browser-smoke-runs`.
+- Web UI action to run a browser smoke test from project details and navigate to the created run.
+- Stored evidence download endpoint at `GET /api/v1/evidence/{evidence_id}`.
+- Screenshot preview/download in the run report UI.
+- Screenshot evidence metadata for filename, object key, content type, size, storage backend, and created timestamp.
+- Browser observation metadata for target URL, final URL, body text length, and timeout state.
+- Deterministic local `demo-web` Compose smoke target.
+- Browser finding tests for timeout, status, console error, failed request, empty page, and scope signals.
+- Evidence store tests for local evidence download safety.
+
+### Changed
+
+- New runs and run jobs now start as `queued` before workers mark them `running`.
+- Browser smoke findings now classify console errors as medium severity and include concise reproduction steps in finding descriptions.
+- `make smoke` now uses local smoke targets and validates screenshot evidence download.
+- Control-plane Docker/CI now use Go 1.24 to match current dependency requirements.
+
+### Security
+
+- Evidence downloads are served only by evidence ID for records already known to Qualora.
+- MinIO credentials remain server-side; the web UI fetches evidence through the control plane.
+
+### Known Limitations
+
+- No authentication or authorization.
+- Browser smoke remains a basic alpha smoke check, not full browser test coverage.
+- No login automation, authenticated browser flows, Playwright trace export, or active security scanning.
+
 ## [v0.3.0-alpha] - 2026-07-14
 
 ### Added

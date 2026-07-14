@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -115,7 +116,24 @@ WHERE id = $1
 }
 
 func (s *Store) CreateRun(ctx context.Context, project Project) (*TestRun, []RunJob, error) {
-	kinds := jobKindsForProject(project)
+	return s.CreateRunForKinds(ctx, project, jobKindsForProject(project))
+}
+
+func (s *Store) CreateRunForKinds(ctx context.Context, project Project, kinds []string) (*TestRun, []RunJob, error) {
+	for _, kind := range kinds {
+		switch kind {
+		case JobKindBrowser:
+			if project.FrontendURL == "" {
+				return nil, nil, fmt.Errorf("project has no frontend_url for browser job")
+			}
+		case JobKindAPI:
+			if project.APIBaseURL == "" && project.OpenAPIURL == "" {
+				return nil, nil, fmt.Errorf("project has no API target for api job")
+			}
+		default:
+			return nil, nil, fmt.Errorf("unsupported job kind %q", kind)
+		}
+	}
 	if len(kinds) == 0 {
 		return nil, nil, fmt.Errorf("project has no runnable targets")
 	}
@@ -131,7 +149,7 @@ func (s *Store) CreateRun(ctx context.Context, project Project) (*TestRun, []Run
 INSERT INTO test_runs (id, project_id, status)
 VALUES ($1, $2, $3)
 RETURNING id, project_id, status, error_message, page_title, started_at, completed_at, created_at, updated_at
-`, uuid.NewString(), project.ID, StatusPending).Scan(
+`, uuid.NewString(), project.ID, StatusQueued).Scan(
 		&run.ID,
 		&run.ProjectID,
 		&run.Status,
@@ -153,7 +171,7 @@ RETURNING id, project_id, status, error_message, page_title, started_at, complet
 INSERT INTO run_jobs (id, run_id, kind, status)
 VALUES ($1, $2, $3, $4)
 RETURNING id, run_id, kind, status, error_message, started_at, completed_at, created_at, updated_at
-`, uuid.NewString(), run.ID, kind, StatusPending).Scan(
+`, uuid.NewString(), run.ID, kind, StatusQueued).Scan(
 			&job.ID,
 			&job.RunID,
 			&job.Kind,
@@ -186,7 +204,7 @@ func (s *Store) MarkRunFailed(ctx context.Context, runID string, message string)
 	if _, err := tx.Exec(ctx, `
 UPDATE run_jobs
 SET status = $2, error_message = $3, completed_at = COALESCE(completed_at, now()), updated_at = now()
-WHERE run_id = $1 AND status IN ('pending', 'running')
+WHERE run_id = $1 AND status IN ('pending', 'queued', 'running')
 `, runID, StatusFailed, message); err != nil {
 		return fmt.Errorf("mark run jobs failed: %w", err)
 	}
@@ -407,20 +425,9 @@ ORDER BY created_at ASC
 
 	records := make([]Evidence, 0)
 	for rows.Next() {
-		var record Evidence
-		var metadataRaw []byte
-		if err := rows.Scan(
-			&record.ID,
-			&record.RunID,
-			&record.Type,
-			&record.URI,
-			&metadataRaw,
-			&record.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan evidence: %w", err)
-		}
-		if err := json.Unmarshal(metadataRaw, &record.Metadata); err != nil {
-			return nil, fmt.Errorf("unmarshal evidence metadata: %w", err)
+		record, err := scanEvidence(rows)
+		if err != nil {
+			return nil, err
 		}
 		records = append(records, record)
 	}
@@ -428,6 +435,44 @@ ORDER BY created_at ASC
 		return nil, fmt.Errorf("iterate evidence: %w", err)
 	}
 	return records, nil
+}
+
+func (s *Store) GetEvidence(ctx context.Context, id string) (*Evidence, error) {
+	record, err := scanEvidence(s.db.QueryRow(ctx, `
+SELECT id, run_id, type, uri, metadata, created_at
+FROM evidence
+WHERE id = $1
+`, id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &record, nil
+}
+
+type scanRow interface {
+	Scan(dest ...any) error
+}
+
+func scanEvidence(row scanRow) (Evidence, error) {
+	var record Evidence
+	var metadataRaw []byte
+	if err := row.Scan(
+		&record.ID,
+		&record.RunID,
+		&record.Type,
+		&record.URI,
+		&metadataRaw,
+		&record.CreatedAt,
+	); err != nil {
+		return Evidence{}, fmt.Errorf("scan evidence: %w", err)
+	}
+	if err := json.Unmarshal(metadataRaw, &record.Metadata); err != nil {
+		return Evidence{}, fmt.Errorf("unmarshal evidence metadata: %w", err)
+	}
+	return record, nil
 }
 
 func scanProject(row pgx.Row) (Project, error) {

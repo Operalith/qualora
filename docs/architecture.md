@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.3.0-alpha is a small Docker Compose MVP for browser and API QA smoke runs with a minimal web UI and human-friendly HTML reports.
+Qualora v0.4.0-alpha is a small Docker Compose MVP for browser and API QA smoke runs with a minimal web UI, human-friendly HTML reports, and control-plane evidence download for stored artifacts.
 
 ## Runtime Components
 
@@ -12,6 +12,7 @@ qualora-api
         |
         +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence
         +--> Redis: browser and API run queues
+        +--> MinIO/S3 evidence objects by evidence ID
         |
         +--> qualora-worker-browser
         |       +--> Playwright Chromium smoke test
@@ -37,10 +38,12 @@ Current endpoints:
 - `GET /api/v1/projects/{project_id}`
 - `POST /api/v1/projects/{project_id}/runs`
 - `GET /api/v1/projects/{project_id}/runs`
+- `POST /api/v1/projects/{project_id}/browser-smoke-runs`
 - `GET /api/v1/runs`
 - `GET /api/v1/runs/{run_id}`
 - `GET /api/v1/runs/{run_id}/report`
 - `GET /api/v1/runs/{run_id}/report.html`
+- `GET /api/v1/evidence/{evidence_id}`
 
 ### `qualora-web`
 
@@ -51,6 +54,7 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - Structured JSON report data as readable tables.
 - Findings, evidence metadata, browser metadata, API metadata, and job metadata.
 - Links to the self-contained HTML report export.
+- Screenshot previews and downloads through the control-plane evidence endpoint.
 
 It has no authentication in this alpha and should be exposed only in trusted local/self-hosted environments.
 
@@ -61,11 +65,14 @@ The Node.js browser worker consumes Redis browser jobs and runs a Playwright smo
 It currently captures:
 
 - Page title.
+- Final URL.
+- Initial document status code.
+- Body text length.
 - Screenshot.
 - Console errors.
 - Failed network requests.
 - Blocked out-of-scope browser requests.
-- Basic findings for obvious load, console, request, and scope issues.
+- Basic findings for obvious load, timeout, non-success status, console, request, empty page, and scope issues.
 
 ### `qualora-worker-api`
 
@@ -101,7 +108,7 @@ Redis is the MVP queue for browser and API jobs. PostgreSQL remains the source o
 
 ### MinIO
 
-MinIO stores screenshot evidence through the S3-compatible API. API evidence is stored as metadata rows in PostgreSQL. The v0.3 UI displays evidence metadata and URIs, but it does not proxy or preview screenshot objects yet.
+MinIO stores screenshot evidence through the S3-compatible API. API evidence is stored as metadata rows in PostgreSQL. The control plane can stream stored evidence objects by evidence ID so the UI can preview/download screenshots without exposing MinIO credentials.
 
 ### `mock-api`
 
@@ -112,7 +119,7 @@ The `mock-api` Compose service is profile-gated for smoke tests. It is not part 
 1. A client or web UI creates a project with one or more targets: `frontend_url`, `api_base_url`, or `openapi_url`.
 2. The API validates URL scope and target safety.
 3. A client starts a run.
-4. The API creates a `pending` run in PostgreSQL.
+4. The API creates a `queued` run in PostgreSQL.
 5. The API creates `run_jobs` for browser and/or API work.
 6. The API pushes worker jobs to Redis.
 7. Workers mark their jobs `running`.
@@ -120,17 +127,19 @@ The `mock-api` Compose service is profile-gated for smoke tests. It is not part 
 9. Workers mark jobs `completed` or `failed`.
 10. PostgreSQL refreshes the parent run status from job statuses.
 11. The API serves the structured JSON report and the self-contained HTML report.
+12. The API streams screenshot evidence by evidence ID when requested.
 
 ## Intentional Alpha Constraints
 
 - No user accounts or authentication.
 - Web UI is alpha and suitable only for trusted self-hosted/local environments.
-- No evidence object proxy or screenshot preview in the UI yet.
+- Evidence download is limited to stored evidence records and is not a signed URL system.
 - No authenticated API testing.
 - No login automation.
 - No active security scanning.
 - No destructive API testing by default.
 - No full OpenAPI schema validation or fuzzing.
+- No Playwright trace export yet.
 - No Kubernetes or Helm support yet.
 
 The older MVP notes remain in [architecture/mvp.md](architecture/mvp.md) for implementation context, but this document is the release-facing architecture reference.

@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.3.0-alpha` adds a minimal self-hosted web UI and human-friendly HTML reports to the browser/API QA foundation. It remains intentionally small: Docker Compose, a Go control plane API, React web UI, Playwright browser worker, API worker, PostgreSQL metadata, Redis queueing, MinIO evidence storage, JSON reports, and static HTML report export.
+`v0.4.0-alpha` sharpens the browser smoke testing workflow with a browser-only run endpoint, richer browser evidence metadata, screenshot preview/download through the control plane, and deterministic local smoke targets. It remains intentionally small: Docker Compose, a Go control plane API, React web UI, Playwright browser worker, API worker, PostgreSQL metadata, Redis queueing, MinIO evidence storage, JSON reports, and static HTML report export.
 
 ## Current Alpha Capabilities
 
@@ -12,18 +12,20 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Create QA projects through an API.
 - Create QA projects through a minimal web UI.
 - Start runs that can include browser and API jobs.
+- Start a browser-only smoke run for a project with `frontend_url`.
 - View projects, runs, findings, evidence metadata, and reports in the web UI.
 - Execute Playwright Chromium checks against a configured frontend URL.
 - Execute safe API checks against `api_base_url`.
 - Fetch and parse OpenAPI 3.x JSON/YAML from `openapi_url`.
 - Test only safe OpenAPI methods by default: `GET`, `HEAD`, and `OPTIONS`.
 - Enforce project `allowed_hosts` for browser and API requests.
-- Collect page title, screenshot evidence, browser observations, API observations, OpenAPI summaries, and API request evidence.
+- Collect page title, final URL, status code, screenshot evidence, browser observations, API observations, OpenAPI summaries, and API request evidence.
 - Store metadata in PostgreSQL.
 - Queue worker jobs with Redis.
 - Store screenshots in MinIO/S3, with a local filesystem fallback.
 - Generate structured JSON reports.
 - Generate self-contained HTML reports at `GET /api/v1/runs/{run_id}/report.html`.
+- Download stored evidence objects at `GET /api/v1/evidence/{evidence_id}`.
 
 ## Architecture
 
@@ -35,6 +37,7 @@ qualora-api
         |
         +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence
         +--> Redis: browser and API run queues
+        +--> MinIO/S3 evidence download proxy
         |
         +--> qualora-worker-browser
         |       +--> Playwright browser smoke test
@@ -83,7 +86,7 @@ make smoke
 
 The smoke target includes:
 
-- Browser smoke against `https://example.com`.
+- Browser smoke against the local `demo-web` Compose service.
 - API/OpenAPI smoke against a local mock API service started by the Makefile.
 
 Stop the stack:
@@ -154,6 +157,13 @@ RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/ru
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 ```
 
+Start only a browser smoke run:
+
+```bash
+RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/browser-smoke-runs" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+```
+
 Fetch the report:
 
 ```bash
@@ -166,9 +176,15 @@ Open the HTML report:
 open "http://localhost:8080/api/v1/runs/${RUN_ID}/report.html"
 ```
 
+Download screenshot evidence by ID:
+
+```bash
+curl -L "http://localhost:8080/api/v1/evidence/${EVIDENCE_ID}" -o screenshot.png
+```
+
 ## Report Example
 
-An API/OpenAPI run includes API evidence alongside findings:
+A browser smoke run includes screenshot and browser observation evidence:
 
 ```json
 {
@@ -186,31 +202,36 @@ An API/OpenAPI run includes API evidence alongside findings:
   "findings": [],
   "evidence": [
     {
-      "type": "api_observations",
-      "uri": "inline://api-observations",
+      "id": "90d77c2a-7599-4e6f-8d66-d7e8fd0b7c1f",
+      "type": "screenshot",
+      "uri": "s3://qualora-evidence/runs/0037c342-0394-4ef2-a87f-ebf568c3b713/screenshots/1720944000-screen.png",
       "metadata": {
-        "api_base_url": "http://mock-api:8080/",
-        "openapi_url": "http://mock-api:8080/openapi.json",
-        "checked_endpoints": 3,
-        "failed_endpoints": 0,
-        "safe_methods_only": true
+        "filename": "1720944000-screen.png",
+        "content_type": "image/png",
+        "size_bytes": 30421,
+        "target_url": "http://demo-web:8080/",
+        "final_url": "http://demo-web:8080/",
+        "page_title": "Qualora Demo Web",
+        "status_code": 200
       }
     },
     {
-      "type": "openapi_summary",
-      "uri": "inline://openapi-summary",
+      "type": "browser_observations",
+      "uri": "inline://browser-observations",
       "metadata": {
-        "version": "3.0.3",
-        "paths": 3,
-        "safe_operations": 2,
-        "skipped_unsafe_operations": 1
+        "target_url": "http://demo-web:8080/",
+        "final_url": "http://demo-web:8080/",
+        "page_title": "Qualora Demo Web",
+        "status_code": 200,
+        "console_errors": [],
+        "failed_requests": []
       }
     }
   ],
   "metadata": {
     "jobs": [
       {
-        "kind": "api",
+        "kind": "browser",
         "status": "completed"
       }
     ]
@@ -256,13 +277,14 @@ See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.
 
 - No authentication.
 - Web UI is alpha and intentionally minimal.
-- Screenshot preview/download through the API is not implemented yet; the UI shows evidence metadata and URIs.
+- Screenshot preview/download is available only for evidence records known to Qualora.
 - No authenticated API testing.
 - No login automation or credential storage.
 - No active security scanning.
 - No destructive API testing by default.
 - No full OpenAPI schema validation or schema fuzzing.
 - No request body generation.
+- No Playwright trace download/export yet.
 - No Helm/Kubernetes deployment.
 - Workers write results directly to PostgreSQL in this alpha.
 - MinIO uses local development credentials in Docker Compose.
@@ -283,7 +305,7 @@ Near-term work:
 
 - Harden the worker result path so workers submit results through the control plane.
 - Add run retries and clearer failure states.
-- Add artifact download or signed URL support.
+- Add signed URL support or stronger evidence access controls.
 - Expand OpenAPI validation.
 - Add passive security checks.
 

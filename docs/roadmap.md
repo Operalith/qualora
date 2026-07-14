@@ -31,7 +31,7 @@ Delivered:
 
 ## v0.3.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Minimal self-hosted web UI.
 - Project creation, project lists, and project details in the UI.
@@ -41,23 +41,34 @@ Current alpha scope:
 - Web service in Docker Compose on `http://localhost:3000`.
 - CI build/type-check for the web app.
 
-## Phase 4: Run And Worker Hardening
+## v0.4.0-alpha
+
+Current alpha scope:
+
+- Browser-only smoke run endpoint and web UI action.
+- Richer browser observations: target URL, final URL, status code, body text length, timeout state, console errors, failed requests, and blocked requests.
+- Screenshot evidence metadata with filename, object key, content type, size, storage backend, and created timestamp.
+- Screenshot preview/download through the control-plane evidence endpoint.
+- Deterministic local `demo-web` smoke target.
+- Clearer queued/running/completed/failed run status display.
+
+## Phase 5: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
 - Better per-job error reporting in the public API.
-- Artifact download or signed URL support.
+- Signed URL support or stronger evidence access controls.
 - Additional safety tests for DNS and worker request blocking.
 - Better operational logs and container health checks.
 
-## Phase 5: Deeper API Checks
+## Phase 6: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 6: Passive Security Checks
+## Phase 7: Passive Security Checks
 
 - Passive security headers.
 - Cookie flag checks.
@@ -67,7 +78,7 @@ Current alpha scope:
 ## Later
 
 - Login automation with safe credential storage.
-- Evidence object proxy or signed URL preview.
+- Playwright trace capture and download.
 - Project editing and report filtering in the web UI.
 - Helm chart after Docker Compose is stable.
 - OWASP ZAP integration with explicit safe policies.
