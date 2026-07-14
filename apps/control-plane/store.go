@@ -314,14 +314,19 @@ func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	analysis, err := s.GetLatestAIAnalysis(ctx, runID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
 
 	report := &Report{
-		RunID:     run.ID,
-		ProjectID: run.ProjectID,
-		Status:    run.Status,
-		Summary:   summarizeFindings(findings),
-		Findings:  findings,
-		Evidence:  evidence,
+		RunID:      run.ID,
+		ProjectID:  run.ProjectID,
+		Status:     run.Status,
+		Summary:    summarizeFindings(findings),
+		Findings:   findings,
+		Evidence:   evidence,
+		AIAnalysis: analysis,
 		Metadata: map[string]any{
 			"page_title": run.PageTitle,
 			"created_at": run.CreatedAt.Format(time.RFC3339),

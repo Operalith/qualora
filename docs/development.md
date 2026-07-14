@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.4.0-alpha.
+This document covers local development for Qualora v0.5.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web and mock API profile services, creates browser and API projects, starts runs, polls to completion, prints JSON/HTML report URLs, validates HTML report export, and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, mock API, and fake LLM profile services; creates an AI provider, browser project, and API project; starts runs; polls to completion; runs AI analysis; prints JSON/HTML report URLs; validates HTML report export; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -102,7 +102,9 @@ make smoke
 
 The smoke script runs:
 
+- AI provider creation and provider-test against local `fake-llm`.
 - Browser smoke against the local `demo-web` Compose service.
+- AI analysis for the completed browser smoke run.
 - API/OpenAPI smoke against the local `mock-api` Compose service.
 - HTML report export validation for each completed run.
 - Screenshot evidence metadata and download validation for the browser run.
@@ -125,6 +127,29 @@ make smoke
 ```
 
 For private or local targets, create projects manually with `allow_private_targets: true` only when testing systems you control.
+
+## AI Provider Development
+
+The v0.5 AI path uses OpenAI-compatible chat completions only.
+
+Useful local values:
+
+```text
+QUALORA_ENCRYPTION_KEY=qualora-insecure-dev-key-change-me
+QUALORA_FAKE_LLM_URL=http://fake-llm:8080/v1
+FAKE_LLM_HEALTH_URL=http://localhost:18083/health
+```
+
+The default Compose encryption key is intentionally insecure and only for local development. Set a strong `QUALORA_ENCRYPTION_KEY` before storing real provider credentials.
+
+OpenRouter example headers:
+
+```json
+{
+  "HTTP-Referer": "http://localhost:3000",
+  "X-OpenRouter-Title": "Qualora"
+}
+```
 
 ## Clean Up
 

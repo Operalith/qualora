@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.4.0-alpha
-  description: API for creating QA projects, starting browser/API smoke runs, reading reports, and downloading stored evidence objects.
+  version: 0.5.0-alpha
+  description: API for creating QA projects, starting browser/API smoke runs, managing optional OpenAI-compatible AI providers, reading reports, and downloading stored evidence objects.
 servers:
   - url: http://localhost:8080
 paths:
@@ -226,6 +226,7 @@ paths:
                   jobs:
                     - kind: api
                       status: completed
+                ai_analysis: null
         "404":
           $ref: "#/components/responses/Error"
   /api/v1/runs/{run_id}/report.html:
@@ -240,6 +241,148 @@ paths:
             text/html:
               schema:
                 type: string
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/runs/{run_id}/ai-analysis:
+    get:
+      summary: Get latest AI analysis for a run
+      description: Returns null when no AI analysis has been generated. AI is optional and reports work without it.
+      parameters:
+        - $ref: "#/components/parameters/RunID"
+      responses:
+        "200":
+          description: Latest AI analysis wrapper
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ai_analysis]
+                properties:
+                  ai_analysis:
+                    allOf:
+                      - $ref: "#/components/schemas/AIAnalysis"
+                    nullable: true
+    post:
+      summary: Run AI analysis for an existing run
+      description: Synchronously builds a sanitized report input and sends it to the selected or default OpenAI-compatible provider.
+      parameters:
+        - $ref: "#/components/parameters/RunID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIAnalysisRequest"
+      responses:
+        "201":
+          description: AI analysis record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIAnalysis"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/ai/providers:
+    get:
+      summary: List AI providers
+      responses:
+        "200":
+          description: AI provider list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [providers]
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AIProvider"
+    post:
+      summary: Create AI provider
+      description: Stores API keys and extra headers encrypted at rest. Raw secrets are never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIProviderRequest"
+      responses:
+        "201":
+          description: Created AI provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProvider"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/ai/providers/{provider_id}:
+    get:
+      summary: Get AI provider
+      parameters:
+        - $ref: "#/components/parameters/ProviderID"
+      responses:
+        "200":
+          description: AI provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProvider"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      summary: Update AI provider
+      parameters:
+        - $ref: "#/components/parameters/ProviderID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIProviderRequest"
+      responses:
+        "200":
+          description: Updated AI provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProvider"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete AI provider
+      parameters:
+        - $ref: "#/components/parameters/ProviderID"
+      responses:
+        "200":
+          description: Delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: boolean
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/ai/providers/{provider_id}/test:
+    post:
+      summary: Test AI provider connection
+      description: Sends a minimal safe JSON prompt to the provider and returns a sanitized success/failure result.
+      parameters:
+        - $ref: "#/components/parameters/ProviderID"
+      responses:
+        "200":
+          description: Provider test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProviderTestResult"
         "404":
           $ref: "#/components/responses/Error"
   /api/v1/evidence/{evidence_id}:
@@ -285,6 +428,13 @@ components:
       schema:
         type: string
         format: uuid
+    ProviderID:
+      name: provider_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   responses:
     Error:
       description: Error response
@@ -324,7 +474,7 @@ components:
         destructive_actions:
           type: boolean
           default: false
-          description: Must be false in v0.4.0-alpha.
+          description: Destructive actions are still off by default for v0.5.0-alpha.
         allow_private_targets:
           type: boolean
           default: false
@@ -425,6 +575,7 @@ components:
         - findings
         - evidence
         - metadata
+        - ai_analysis
       properties:
         run_id:
           type: string
@@ -448,6 +599,10 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        ai_analysis:
+          allOf:
+            - $ref: "#/components/schemas/AIAnalysis"
+          nullable: true
     ReportSummary:
       type: object
       required: [total_findings, critical, high, medium, low, info]
@@ -527,6 +682,208 @@ components:
           type: object
           additionalProperties: true
         created_at:
+          type: string
+          format: date-time
+    AIProvider:
+      type: object
+      required:
+        - id
+        - name
+        - preset
+        - type
+        - base_url
+        - model
+        - temperature
+        - max_output_tokens
+        - timeout_seconds
+        - send_screenshots
+        - send_html
+        - send_network_bodies
+        - redaction_enabled
+        - is_default
+        - api_key_configured
+        - extra_headers_configured
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        preset:
+          type: string
+          enum: [openai, openrouter, ollama, custom]
+        type:
+          type: string
+          enum: [openai-compatible]
+        base_url:
+          type: string
+          example: https://api.openai.com/v1
+        model:
+          type: string
+          example: gpt-4o-mini
+        temperature:
+          type: number
+        max_output_tokens:
+          type: integer
+        timeout_seconds:
+          type: integer
+        send_screenshots:
+          type: boolean
+          default: false
+        send_html:
+          type: boolean
+          default: false
+        send_network_bodies:
+          type: boolean
+          default: false
+        redaction_enabled:
+          type: boolean
+          default: true
+        is_default:
+          type: boolean
+        api_key_configured:
+          type: boolean
+        extra_headers_configured:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AIProviderRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - type
+        - base_url
+        - model
+      properties:
+        name:
+          type: string
+        preset:
+          type: string
+          enum: [openai, openrouter, ollama, custom]
+          default: custom
+        type:
+          type: string
+          enum: [openai-compatible]
+        base_url:
+          type: string
+        model:
+          type: string
+        api_key:
+          type: string
+          description: Stored encrypted and never returned.
+        extra_headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional sensitive headers, stored encrypted and never returned.
+        temperature:
+          type: number
+          default: 0.2
+        max_output_tokens:
+          type: integer
+          default: 1200
+        timeout_seconds:
+          type: integer
+          default: 30
+        send_screenshots:
+          type: boolean
+          default: false
+        send_html:
+          type: boolean
+          default: false
+        send_network_bodies:
+          type: boolean
+          default: false
+        redaction_enabled:
+          type: boolean
+          default: true
+        is_default:
+          type: boolean
+          default: false
+    AIProviderTestResult:
+      type: object
+      required: [success, provider_name, model, latency_ms]
+      properties:
+        success:
+          type: boolean
+        provider_name:
+          type: string
+        model:
+          type: string
+        latency_ms:
+          type: integer
+        error_message:
+          type: string
+    AIAnalysisRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        provider_id:
+          type: string
+          format: uuid
+          description: Optional. Uses the default provider when omitted.
+    AIAnalysis:
+      type: object
+      required:
+        - id
+        - run_id
+        - model
+        - status
+        - executive_summary
+        - technical_summary
+        - risk_level
+        - analysis_json
+        - prompt_tokens
+        - completion_tokens
+        - total_tokens
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+        provider_id:
+          type: string
+          format: uuid
+        provider_name:
+          type: string
+        model:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        executive_summary:
+          type: string
+        technical_summary:
+          type: string
+        risk_level:
+          type: string
+          enum: [low, medium, high, critical, ""]
+        analysis_json:
+          type: object
+          additionalProperties: true
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        error_message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
           type: string
           format: date-time
     ErrorResponse:

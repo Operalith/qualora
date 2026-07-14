@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.4.0-alpha` sharpens the browser smoke testing workflow with a browser-only run endpoint, richer browser evidence metadata, screenshot preview/download through the control plane, and deterministic local smoke targets. It remains intentionally small: Docker Compose, a Go control plane API, React web UI, Playwright browser worker, API worker, PostgreSQL metadata, Redis queueing, MinIO evidence storage, JSON reports, and static HTML report export.
+`v0.5.0-alpha` adds optional AI provider management and AI report analysis. Qualora remains fully useful without AI: browser/API checks, evidence collection, JSON reports, and HTML reports do not depend on an LLM. The AI layer analyzes existing deterministic run data through an OpenAI-compatible provider configured by the user.
 
 ## Current Alpha Capabilities
 
@@ -26,6 +26,10 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Generate structured JSON reports.
 - Generate self-contained HTML reports at `GET /api/v1/runs/{run_id}/report.html`.
 - Download stored evidence objects at `GET /api/v1/evidence/{evidence_id}`.
+- Configure optional OpenAI-compatible AI providers from the web UI or API.
+- Test AI provider connectivity with a safe prompt.
+- Run AI analysis for completed runs using sanitized report data.
+- Show AI analysis in the web UI, JSON report, and HTML report when available.
 
 ## Architecture
 
@@ -35,9 +39,10 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence
+        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, ai_providers, ai_analyses
         +--> Redis: browser and API run queues
         +--> MinIO/S3 evidence download proxy
+        +--> Optional OpenAI-compatible AI provider
         |
         +--> qualora-worker-browser
         |       +--> Playwright browser smoke test
@@ -88,6 +93,7 @@ The smoke target includes:
 
 - Browser smoke against the local `demo-web` Compose service.
 - API/OpenAPI smoke against a local mock API service started by the Makefile.
+- AI provider smoke against a local fake OpenAI-compatible provider.
 
 Stop the stack:
 
@@ -182,6 +188,61 @@ Download screenshot evidence by ID:
 curl -L "http://localhost:8080/api/v1/evidence/${EVIDENCE_ID}" -o screenshot.png
 ```
 
+Configure a fake/local OpenAI-compatible provider:
+
+```bash
+curl -s http://localhost:8080/api/v1/ai/providers \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Local Fake LLM",
+    "preset": "custom",
+    "type": "openai-compatible",
+    "base_url": "http://fake-llm:8080/v1",
+    "model": "qualora-fake-analyst",
+    "api_key": "fake-key",
+    "temperature": 0.2,
+    "max_output_tokens": 1200,
+    "timeout_seconds": 10,
+    "send_screenshots": false,
+    "send_html": false,
+    "send_network_bodies": false,
+    "redaction_enabled": true,
+    "is_default": true
+  }'
+```
+
+Run AI analysis for an existing completed run:
+
+```bash
+curl -s -X POST "http://localhost:8080/api/v1/runs/${RUN_ID}/ai-analysis" \
+  -H 'Content-Type: application/json' \
+  -d '{}' | python3 -m json.tool
+```
+
+## AI Providers
+
+AI is optional. Configure a provider only when you want model-generated report analysis.
+
+Supported provider type in `v0.5.0-alpha`:
+
+- `openai-compatible`
+
+Preset values:
+
+| Preset | Base URL | Model example | Notes |
+| --- | --- | --- | --- |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` | Requires an API key. |
+| OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini` | Optional headers: `HTTP-Referer`, `X-OpenRouter-Title`. |
+| Ollama | `http://ollama:11434/v1` | `qwen2.5-coder:7b` | API key can usually be blank or a dummy value. Ollama is not started by default. |
+| Custom OpenAI-compatible | user-provided | user-provided | Works with vLLM, LM Studio, LiteLLM, LocalAI, or internal gateways that expose chat completions. |
+
+AI prompt safety defaults:
+
+- Redaction enabled.
+- Screenshots disabled.
+- Full HTML disabled.
+- Network bodies disabled.
+
 ## Report Example
 
 A browser smoke run includes screenshot and browser observation evidence:
@@ -235,9 +296,12 @@ A browser smoke run includes screenshot and browser observation evidence:
         "status": "completed"
       }
     ]
-  }
+  },
+  "ai_analysis": null
 }
 ```
+
+When AI analysis has been generated, `ai_analysis` contains the provider/model metadata, status, summaries, risk level, token counts, and the parsed JSON analysis.
 
 ## Development Commands
 
@@ -266,10 +330,15 @@ The alpha is safe by default:
 - `destructive_actions` must be `false`.
 - `localhost`, `.local`, loopback, link-local, private IP literal targets, common cloud metadata targets, and public hostnames resolving to blocked IP ranges are blocked by default.
 - `allow_private_targets: true` may be used for local/private systems you control.
-- Authenticated API testing, login automation, and credential storage are not implemented in this release.
+- Authenticated API testing and login automation are not implemented in this release.
 - Secrets, credentials, cookies, and authorization headers must not be logged.
 - Screenshots and reports should be treated as sensitive evidence artifacts.
 - The web UI has no authentication yet and is intended for trusted local/self-hosted alpha environments only.
+- AI is disabled until a provider is configured.
+- AI prompts are built from sanitized report data only.
+- Redaction is enabled by default.
+- Screenshots, full HTML, cookies, credentials, authorization headers, and full network bodies are not sent to AI by default.
+- AI provider API keys and extra headers are encrypted at rest using `QUALORA_ENCRYPTION_KEY`; the Compose fallback key is for local demo use only.
 
 See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.md).
 
@@ -277,14 +346,18 @@ See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.
 
 - No authentication.
 - Web UI is alpha and intentionally minimal.
+- AI provider management and AI analysis are alpha and optional.
+- Only OpenAI-compatible chat completion providers are supported.
+- No native Anthropic, Gemini, or provider-specific SDK integrations yet.
 - Screenshot preview/download is available only for evidence records known to Qualora.
 - No authenticated API testing.
-- No login automation or credential storage.
+- No login automation or storage for application test-account credentials.
 - No active security scanning.
 - No destructive API testing by default.
 - No full OpenAPI schema validation or schema fuzzing.
 - No request body generation.
 - No Playwright trace download/export yet.
+- No autonomous AI browser control.
 - No Helm/Kubernetes deployment.
 - Workers write results directly to PostgreSQL in this alpha.
 - MinIO uses local development credentials in Docker Compose.
@@ -306,6 +379,7 @@ Near-term work:
 - Harden the worker result path so workers submit results through the control plane.
 - Add run retries and clearer failure states.
 - Add signed URL support or stronger evidence access controls.
+- Move AI analysis to an async worker path.
 - Expand OpenAPI validation.
 - Add passive security checks.
 

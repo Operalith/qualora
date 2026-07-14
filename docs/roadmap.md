@@ -43,7 +43,7 @@ Delivered:
 
 ## v0.4.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Browser-only smoke run endpoint and web UI action.
 - Richer browser observations: target URL, final URL, status code, body text length, timeout state, console errors, failed requests, and blocked requests.
@@ -52,7 +52,20 @@ Current alpha scope:
 - Deterministic local `demo-web` smoke target.
 - Clearer queued/running/completed/failed run status display.
 
-## Phase 5: Run And Worker Hardening
+## v0.5.0-alpha
+
+Current alpha scope:
+
+- Optional OpenAI-compatible AI provider management.
+- Provider presets for OpenAI, OpenRouter, Ollama, and custom OpenAI-compatible endpoints.
+- Encrypted-at-rest provider API keys and extra headers.
+- Safe provider test endpoint.
+- Synchronous AI analysis for completed runs.
+- Sanitized AI input builder with redaction enabled by default.
+- AI analysis display in the web UI, JSON report, and HTML report.
+- Deterministic local `fake-llm` smoke target.
+
+## Phase 6: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -60,15 +73,16 @@ Current alpha scope:
 - Signed URL support or stronger evidence access controls.
 - Additional safety tests for DNS and worker request blocking.
 - Better operational logs and container health checks.
+- Move AI analysis to an async analyzer worker.
 
-## Phase 6: Deeper API Checks
+## Phase 7: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 7: Passive Security Checks
+## Phase 8: Passive Security Checks
 
 - Passive security headers.
 - Cookie flag checks.
@@ -80,6 +94,7 @@ Current alpha scope:
 - Login automation with safe credential storage.
 - Playwright trace capture and download.
 - Project editing and report filtering in the web UI.
+- Native provider integrations beyond OpenAI-compatible APIs.
 - Helm chart after Docker Compose is stable.
 - OWASP ZAP integration with explicit safe policies.
 

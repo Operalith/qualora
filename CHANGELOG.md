@@ -4,6 +4,44 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.5.0-alpha] - 2026-07-14
+
+### Added
+
+- Optional OpenAI-compatible AI provider management in the control-plane API.
+- AI Providers page in the web UI with presets for OpenAI, OpenRouter, Ollama, and custom OpenAI-compatible providers.
+- Provider test endpoint with sanitized success/failure responses.
+- Encrypted-at-rest storage for AI provider API keys and extra headers using `QUALORA_ENCRYPTION_KEY`.
+- Synchronous AI analysis endpoint for completed runs at `POST /api/v1/runs/{run_id}/ai-analysis`.
+- Latest AI analysis endpoint at `GET /api/v1/runs/{run_id}/ai-analysis`.
+- Safe AI input builder that redacts secrets and strips URL query strings/fragments.
+- AI analysis display in the web run report page.
+- AI analysis inclusion in JSON reports and self-contained HTML reports.
+- Deterministic `fake-llm` OpenAI-compatible smoke service.
+- Smoke coverage for provider creation, provider test, AI analysis, JSON report inclusion, and HTML report inclusion.
+- Unit tests for redaction, safe AI input generation, AI response parsing, provider validation, OpenAI-compatible client behavior, and secret encryption.
+
+### Changed
+
+- `make smoke` now starts `fake-llm` in addition to `demo-web` and `mock-api`.
+- OpenAPI contract now documents AI provider and AI analysis endpoints.
+- Package metadata has been updated to `0.5.0-alpha`.
+
+### Security
+
+- AI is disabled until a provider is configured.
+- Redaction is enabled by default.
+- Screenshots, full HTML, cookies, credentials, authorization headers, and full network bodies are not sent to AI by default.
+- AI provider API keys and extra headers are never returned by the API.
+
+### Known Limitations
+
+- No authentication or authorization.
+- AI provider management is intended only for trusted local/self-hosted alpha environments.
+- Only OpenAI-compatible chat completion APIs are supported.
+- AI analysis runs synchronously in the control plane for this alpha.
+- No autonomous AI browser control, login automation, authenticated API testing, or active security scanning.
+
 ## [v0.4.0-alpha] - 2026-07-14
 
 ### Added

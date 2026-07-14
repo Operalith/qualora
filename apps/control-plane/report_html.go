@@ -17,6 +17,7 @@ type htmlReportData struct {
 var htmlReportTemplate = template.Must(template.New("html-report").Funcs(template.FuncMap{
 	"json":       prettyJSON,
 	"formatTime": formatReportTime,
+	"jsonField":  jsonField,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -138,6 +139,34 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
     <div class="metric"><span>Info</span><strong>{{ .Report.Summary.Info }}</strong></div>
   </div>
 
+  {{ with .Report.AIAnalysis }}
+  <section style="margin-bottom: 16px;">
+    <h2>AI Analysis</h2>
+    <div class="grid two">
+      <div>
+        <p><strong>Status:</strong> <span class="status">{{ .Status }}</span></p>
+        <p><strong>Risk level:</strong> {{ if .RiskLevel }}<span class="severity-{{ .RiskLevel }}">{{ .RiskLevel }}</span>{{ else }}<span class="subtle">Not set</span>{{ end }}</p>
+        <p><strong>Provider:</strong> {{ if .ProviderName }}{{ .ProviderName }}{{ else }}<span class="subtle">Not available</span>{{ end }}</p>
+        <p><strong>Model:</strong> <code>{{ .Model }}</code></p>
+      </div>
+      <div>
+        <p><strong>Prompt tokens:</strong> {{ .PromptTokens }}</p>
+        <p><strong>Completion tokens:</strong> {{ .CompletionTokens }}</p>
+        <p><strong>Total tokens:</strong> {{ .TotalTokens }}</p>
+      </div>
+    </div>
+    {{ if .ErrorMessage }}<p class="severity-high"><strong>Error:</strong> {{ .ErrorMessage }}</p>{{ end }}
+    {{ if .ExecutiveSummary }}<h3>Executive Summary</h3><p>{{ .ExecutiveSummary }}</p>{{ end }}
+    {{ if .TechnicalSummary }}<h3>Technical Summary</h3><p>{{ .TechnicalSummary }}</p>{{ end }}
+    <h3>Recommendations</h3>
+    <pre>{{ jsonField .AnalysisJSON "recommended_actions" }}</pre>
+    <h3>Suggested Next Tests</h3>
+    <pre>{{ jsonField .AnalysisJSON "suggested_next_tests" }}</pre>
+    <h3>Limitations</h3>
+    <pre>{{ jsonField .AnalysisJSON "limitations" }}</pre>
+  </section>
+  {{ end }}
+
   <section>
     <h2>Findings</h2>
     {{ if .Report.Findings }}
@@ -210,6 +239,18 @@ func prettyJSON(value any) string {
 		return "{}"
 	}
 	return string(raw)
+}
+
+func jsonField(value any, key string) string {
+	fields, ok := value.(map[string]any)
+	if !ok {
+		return "[]"
+	}
+	item, ok := fields[key]
+	if !ok || item == nil {
+		return "[]"
+	}
+	return prettyJSON(item)
 }
 
 func formatReportTime(value any) string {

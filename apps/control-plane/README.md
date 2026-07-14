@@ -11,6 +11,8 @@ Responsibilities:
 - Metadata persistence.
 - JSON and HTML report access.
 - Stored evidence object access by evidence ID.
+- Optional AI provider management.
+- Optional AI report analysis.
 
 The MVP delegates browser checks and API checks to workers through Redis queues.
 
@@ -35,9 +37,17 @@ The service expects PostgreSQL and Redis. Defaults are suitable for local develo
 - `S3_SECRET_ACCESS_KEY=qualora-dev-secret`
 - `EVIDENCE_DIR=/tmp/qualora-evidence`
 - `CORS_ALLOWED_ORIGINS=http://localhost:3000`
+- `QUALORA_ENCRYPTION_KEY=qualora-insecure-dev-key-change-me`
 
 Current report endpoints:
 
 - `GET /api/v1/runs/{run_id}/report`
 - `GET /api/v1/runs/{run_id}/report.html`
 - `GET /api/v1/evidence/{evidence_id}`
+- `GET /api/v1/ai/providers`
+- `POST /api/v1/ai/providers`
+- `POST /api/v1/ai/providers/{provider_id}/test`
+- `GET /api/v1/runs/{run_id}/ai-analysis`
+- `POST /api/v1/runs/{run_id}/ai-analysis`
+
+The default encryption key is for local development only. Set a strong `QUALORA_ENCRYPTION_KEY` before storing real AI provider credentials.

@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.4.0-alpha is a small Docker Compose MVP for browser and API QA smoke runs with a minimal web UI, human-friendly HTML reports, and control-plane evidence download for stored artifacts.
+Qualora v0.5.0-alpha is a small Docker Compose MVP for browser and API QA smoke runs with a minimal web UI, human-friendly reports, control-plane evidence download for stored artifacts, and optional AI analysis of completed reports.
 
 ## Runtime Components
 
@@ -10,9 +10,10 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence
+        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, ai_providers, ai_analyses
         +--> Redis: browser and API run queues
         +--> MinIO/S3 evidence objects by evidence ID
+        +--> Optional OpenAI-compatible AI provider
         |
         +--> qualora-worker-browser
         |       +--> Playwright Chromium smoke test
@@ -44,6 +45,14 @@ Current endpoints:
 - `GET /api/v1/runs/{run_id}/report`
 - `GET /api/v1/runs/{run_id}/report.html`
 - `GET /api/v1/evidence/{evidence_id}`
+- `GET /api/v1/ai/providers`
+- `POST /api/v1/ai/providers`
+- `GET /api/v1/ai/providers/{provider_id}`
+- `PUT /api/v1/ai/providers/{provider_id}`
+- `DELETE /api/v1/ai/providers/{provider_id}`
+- `POST /api/v1/ai/providers/{provider_id}/test`
+- `GET /api/v1/runs/{run_id}/ai-analysis`
+- `POST /api/v1/runs/{run_id}/ai-analysis`
 
 ### `qualora-web`
 
@@ -55,6 +64,8 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - Findings, evidence metadata, browser metadata, API metadata, and job metadata.
 - Links to the self-contained HTML report export.
 - Screenshot previews and downloads through the control-plane evidence endpoint.
+- AI provider configuration for OpenAI-compatible endpoints.
+- AI analysis status, summaries, risk level, recommendations, suggested next tests, and limitations.
 
 It has no authentication in this alpha and should be exposed only in trusted local/self-hosted environments.
 
@@ -99,6 +110,8 @@ PostgreSQL stores durable metadata:
 - `run_jobs`
 - `findings`
 - `evidence`
+- `ai_providers`
+- `ai_analyses`
 
 Reports are generated dynamically from run, job, finding, and evidence rows.
 
@@ -114,6 +127,27 @@ MinIO stores screenshot evidence through the S3-compatible API. API evidence is 
 
 The `mock-api` Compose service is profile-gated for smoke tests. It is not part of the production runtime path.
 
+### `fake-llm`
+
+The `fake-llm` Compose service is profile-gated for smoke tests. It implements the OpenAI-compatible `/v1/chat/completions` shape and returns deterministic JSON analysis so tests never call an external LLM provider.
+
+## Optional AI Analysis
+
+AI is an enhancement layer, not a dependency for QA execution. Browser/API workers produce deterministic findings and evidence first. A user can then run AI analysis for an existing run.
+
+Provider records store:
+
+- OpenAI-compatible base URL.
+- Model name.
+- API key encrypted at rest.
+- Optional extra headers encrypted at rest.
+- Safe-send toggles for screenshots, HTML, and network bodies.
+- Redaction setting, enabled by default.
+
+For v0.5, AI analysis runs synchronously in the control plane. The database model is separated so it can move to a dedicated analyzer worker later.
+
+The safe AI input builder includes only sanitized report data such as run status, summary counts, finding titles/summaries, safe evidence metadata, browser/API metadata, and job metadata. It strips or redacts URL queries, cookies, authorization values, tokens, passwords, API keys, session IDs, JWT-looking strings, full response bodies, full HTML, and secret-looking fields. Screenshots, HTML, and network bodies are not sent by default.
+
 ## Run Lifecycle
 
 1. A client or web UI creates a project with one or more targets: `frontend_url`, `api_base_url`, or `openapi_url`.
@@ -128,14 +162,19 @@ The `mock-api` Compose service is profile-gated for smoke tests. It is not part 
 10. PostgreSQL refreshes the parent run status from job statuses.
 11. The API serves the structured JSON report and the self-contained HTML report.
 12. The API streams screenshot evidence by evidence ID when requested.
+13. Optionally, a user runs AI analysis for the completed run.
+14. The API stores the AI analysis and includes it in JSON/HTML reports.
 
 ## Intentional Alpha Constraints
 
 - No user accounts or authentication.
 - Web UI is alpha and suitable only for trusted self-hosted/local environments.
+- AI provider management is alpha and should be used only in trusted local/self-hosted environments.
+- Only OpenAI-compatible chat completion providers are supported.
 - Evidence download is limited to stored evidence records and is not a signed URL system.
 - No authenticated API testing.
 - No login automation.
+- No autonomous AI browser control.
 - No active security scanning.
 - No destructive API testing by default.
 - No full OpenAPI schema validation or fuzzing.

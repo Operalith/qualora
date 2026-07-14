@@ -20,6 +20,7 @@ type Config struct {
 	S3AccessKeyID   string
 	S3SecretKey     string
 	S3ForcePath     bool
+	EncryptionKey   string
 	CORSOrigins     []string
 	ShutdownTimeout time.Duration
 }
@@ -39,6 +40,7 @@ func LoadConfig() Config {
 		S3AccessKeyID:   env("S3_ACCESS_KEY_ID", "qualora"),
 		S3SecretKey:     env("S3_SECRET_ACCESS_KEY", "qualora-dev-secret"),
 		S3ForcePath:     boolEnv("S3_FORCE_PATH_STYLE", true),
+		EncryptionKey:   env("QUALORA_ENCRYPTION_KEY", "qualora-insecure-dev-key-change-me"),
 		CORSOrigins:     csvEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
 		ShutdownTimeout: 10 * time.Second,
 	}

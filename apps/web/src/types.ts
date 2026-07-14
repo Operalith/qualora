@@ -69,6 +69,72 @@ export type Evidence = {
   created_at?: string;
 };
 
+export type AIProvider = {
+  id: string;
+  name: string;
+  preset: string;
+  type: "openai-compatible";
+  base_url: string;
+  model: string;
+  temperature: number;
+  max_output_tokens: number;
+  timeout_seconds: number;
+  send_screenshots: boolean;
+  send_html: boolean;
+  send_network_bodies: boolean;
+  redaction_enabled: boolean;
+  is_default: boolean;
+  api_key_configured: boolean;
+  extra_headers_configured: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AIProviderInput = {
+  name: string;
+  preset: string;
+  type: "openai-compatible";
+  base_url: string;
+  model: string;
+  api_key?: string;
+  extra_headers?: Record<string, string>;
+  temperature: number;
+  max_output_tokens: number;
+  timeout_seconds: number;
+  send_screenshots: boolean;
+  send_html: boolean;
+  send_network_bodies: boolean;
+  redaction_enabled: boolean;
+  is_default: boolean;
+};
+
+export type AIProviderTestResult = {
+  success: boolean;
+  provider_name: string;
+  model: string;
+  latency_ms: number;
+  error_message?: string;
+};
+
+export type AIAnalysis = {
+  id: string;
+  run_id: string;
+  provider_id?: string;
+  provider_name?: string;
+  model: string;
+  status: "queued" | "running" | "completed" | "failed";
+  executive_summary: string;
+  technical_summary: string;
+  risk_level: "low" | "medium" | "high" | "critical" | "";
+  analysis_json: Record<string, unknown>;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ReportSummary = {
   total_findings: number;
   critical: number;
@@ -92,4 +158,5 @@ export type Report = {
     error_message?: string;
     [key: string]: unknown;
   };
+  ai_analysis: AIAnalysis | null;
 };

@@ -32,7 +32,10 @@ The smoke profile also includes:
 
 - `mock-api`: deterministic local API used by `make smoke`.
 - `demo-web`: deterministic local frontend used by browser smoke tests.
+- `fake-llm`: deterministic OpenAI-compatible provider used by AI smoke tests.
 
 The control plane receives the same MinIO/S3 configuration as the browser worker so `GET /api/v1/evidence/{evidence_id}` can stream screenshot evidence without exposing MinIO credentials to the web UI.
+
+Set `QUALORA_ENCRYPTION_KEY` before storing real AI provider credentials. The default Compose value is intentionally insecure and only suitable for local demos.
 
 Keep this path working before adding Helm or other deployment targets.

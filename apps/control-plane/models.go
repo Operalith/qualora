@@ -18,6 +18,10 @@ const (
 	JobKindAPI     = "api"
 )
 
+const (
+	AIProviderOpenAICompatible = "openai-compatible"
+)
+
 type CreateProjectRequest struct {
 	Name                string   `json:"name"`
 	FrontendURL         string   `json:"frontend_url"`
@@ -90,13 +94,14 @@ type Evidence struct {
 }
 
 type Report struct {
-	RunID     string         `json:"run_id"`
-	ProjectID string         `json:"project_id"`
-	Status    string         `json:"status"`
-	Summary   ReportSummary  `json:"summary"`
-	Findings  []Finding      `json:"findings"`
-	Evidence  []Evidence     `json:"evidence"`
-	Metadata  map[string]any `json:"metadata"`
+	RunID      string         `json:"run_id"`
+	ProjectID  string         `json:"project_id"`
+	Status     string         `json:"status"`
+	Summary    ReportSummary  `json:"summary"`
+	Findings   []Finding      `json:"findings"`
+	Evidence   []Evidence     `json:"evidence"`
+	Metadata   map[string]any `json:"metadata"`
+	AIAnalysis *AIAnalysis    `json:"ai_analysis"`
 }
 
 type ReportSummary struct {
@@ -106,4 +111,76 @@ type ReportSummary struct {
 	Medium        int `json:"medium"`
 	Low           int `json:"low"`
 	Info          int `json:"info"`
+}
+
+type AIProvider struct {
+	ID                     string    `json:"id"`
+	Name                   string    `json:"name"`
+	Preset                 string    `json:"preset"`
+	Type                   string    `json:"type"`
+	BaseURL                string    `json:"base_url"`
+	Model                  string    `json:"model"`
+	APIKeyEncrypted        string    `json:"-"`
+	ExtraHeadersEncrypted  string    `json:"-"`
+	Temperature            float64   `json:"temperature"`
+	MaxOutputTokens        int       `json:"max_output_tokens"`
+	TimeoutSeconds         int       `json:"timeout_seconds"`
+	SendScreenshots        bool      `json:"send_screenshots"`
+	SendHTML               bool      `json:"send_html"`
+	SendNetworkBodies      bool      `json:"send_network_bodies"`
+	RedactionEnabled       bool      `json:"redaction_enabled"`
+	IsDefault              bool      `json:"is_default"`
+	APIKeyConfigured       bool      `json:"api_key_configured"`
+	ExtraHeadersConfigured bool      `json:"extra_headers_configured"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
+}
+
+type AIProviderRequest struct {
+	Name              string            `json:"name"`
+	Preset            string            `json:"preset"`
+	Type              string            `json:"type"`
+	BaseURL           string            `json:"base_url"`
+	Model             string            `json:"model"`
+	APIKey            string            `json:"api_key"`
+	ExtraHeaders      map[string]string `json:"extra_headers"`
+	Temperature       float64           `json:"temperature"`
+	MaxOutputTokens   int               `json:"max_output_tokens"`
+	TimeoutSeconds    int               `json:"timeout_seconds"`
+	SendScreenshots   *bool             `json:"send_screenshots"`
+	SendHTML          *bool             `json:"send_html"`
+	SendNetworkBodies *bool             `json:"send_network_bodies"`
+	RedactionEnabled  *bool             `json:"redaction_enabled"`
+	IsDefault         bool              `json:"is_default"`
+}
+
+type AIProviderTestResult struct {
+	Success      bool   `json:"success"`
+	ProviderName string `json:"provider_name"`
+	Model        string `json:"model"`
+	LatencyMS    int64  `json:"latency_ms"`
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+type AIAnalysisRequest struct {
+	ProviderID string `json:"provider_id"`
+}
+
+type AIAnalysis struct {
+	ID               string         `json:"id"`
+	RunID            string         `json:"run_id"`
+	ProviderID       string         `json:"provider_id,omitempty"`
+	ProviderName     string         `json:"provider_name,omitempty"`
+	Model            string         `json:"model"`
+	Status           string         `json:"status"`
+	ExecutiveSummary string         `json:"executive_summary"`
+	TechnicalSummary string         `json:"technical_summary"`
+	RiskLevel        string         `json:"risk_level"`
+	AnalysisJSON     map[string]any `json:"analysis_json"`
+	PromptTokens     int            `json:"prompt_tokens"`
+	CompletionTokens int            `json:"completion_tokens"`
+	TotalTokens      int            `json:"total_tokens"`
+	ErrorMessage     string         `json:"error_message,omitempty"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
 }

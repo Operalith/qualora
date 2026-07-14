@@ -70,3 +70,6 @@ jobs:
 
       - name: Docker image build
         run: docker compose build qualora-api qualora-web qualora-worker-browser qualora-worker-api
+
+      - name: Smoke support image build
+        run: docker compose --profile smoke build fake-llm mock-api demo-web

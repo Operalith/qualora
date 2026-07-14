@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime"
@@ -17,12 +18,14 @@ type App struct {
 	store         *Store
 	queue         *Queue
 	evidenceStore *EvidenceStore
+	secretBox     *SecretBox
+	aiClient      *OpenAICompatibleClient
 	logger        *slog.Logger
 	corsOrigins   []string
 }
 
-func NewApp(store *Store, queue *Queue, evidenceStore *EvidenceStore, logger *slog.Logger, corsOrigins []string) *App {
-	return &App{store: store, queue: queue, evidenceStore: evidenceStore, logger: logger, corsOrigins: corsOrigins}
+func NewApp(store *Store, queue *Queue, evidenceStore *EvidenceStore, secretBox *SecretBox, aiClient *OpenAICompatibleClient, logger *slog.Logger, corsOrigins []string) *App {
+	return &App{store: store, queue: queue, evidenceStore: evidenceStore, secretBox: secretBox, aiClient: aiClient, logger: logger, corsOrigins: corsOrigins}
 }
 
 func (a *App) Routes() http.Handler {
@@ -33,6 +36,8 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/runs", a.handleRuns)
 	mux.HandleFunc("/api/v1/runs/", a.handleRunSubroutes)
 	mux.HandleFunc("/api/v1/evidence/", a.handleEvidenceSubroutes)
+	mux.HandleFunc("/api/v1/ai/providers", a.handleAIProviders)
+	mux.HandleFunc("/api/v1/ai/providers/", a.handleAIProviderSubroutes)
 	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, mux)))
 }
 
@@ -261,6 +266,17 @@ func (a *App) handleRunSubroutes(w http.ResponseWriter, r *http.Request) {
 		a.getHTMLReport(w, r, parts[0])
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "ai-analysis" {
+		switch r.Method {
+		case http.MethodGet:
+			a.getAIAnalysis(w, r, parts[0])
+		case http.MethodPost:
+			a.createAIAnalysis(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
 	writeError(w, http.StatusNotFound, "not_found", "route not found")
 }
 
@@ -369,6 +385,323 @@ func (a *App) getEvidenceObject(w http.ResponseWriter, r *http.Request, evidence
 	}
 }
 
+func (a *App) handleAIProviders(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		providers, err := a.store.ListAIProviders(r.Context())
+		if err != nil {
+			a.logger.Error("list AI providers failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "list_ai_providers_failed", "AI providers could not be listed")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"providers": providers})
+	case http.MethodPost:
+		a.createAIProvider(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+	}
+}
+
+func (a *App) handleAIProviderSubroutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/ai/providers/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 1 && parts[0] != "" {
+		switch r.Method {
+		case http.MethodGet:
+			a.getAIProvider(w, r, parts[0])
+		case http.MethodPut:
+			a.updateAIProvider(w, r, parts[0])
+		case http.MethodDelete:
+			a.deleteAIProvider(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "test" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.testAIProvider(w, r, parts[0])
+		return
+	}
+	writeError(w, http.StatusNotFound, "not_found", "route not found")
+}
+
+func (a *App) createAIProvider(w http.ResponseWriter, r *http.Request) {
+	input, err := decodeAIProviderRequest(w, r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_ai_provider", err.Error())
+		return
+	}
+	provider, err := a.providerFromInput(input, "", "")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_ai_provider", err.Error())
+		return
+	}
+	created, err := a.store.CreateAIProvider(r.Context(), provider)
+	if err != nil {
+		a.logger.Error("create AI provider failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create_ai_provider_failed", "AI provider could not be created")
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (a *App) getAIProvider(w http.ResponseWriter, r *http.Request, providerID string) {
+	provider, err := a.store.GetAIProvider(r.Context(), providerID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "ai_provider_not_found", "AI provider was not found")
+			return
+		}
+		a.logger.Error("get AI provider failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_ai_provider_failed", "AI provider could not be loaded")
+		return
+	}
+	writeJSON(w, http.StatusOK, provider)
+}
+
+func (a *App) updateAIProvider(w http.ResponseWriter, r *http.Request, providerID string) {
+	current, err := a.store.GetAIProvider(r.Context(), providerID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "ai_provider_not_found", "AI provider was not found")
+			return
+		}
+		a.logger.Error("get AI provider for update failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_ai_provider_failed", "AI provider could not be loaded")
+		return
+	}
+	input, err := decodeAIProviderRequest(w, r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_ai_provider", err.Error())
+		return
+	}
+	provider, err := a.providerFromInput(input, current.APIKeyEncrypted, current.ExtraHeadersEncrypted)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_ai_provider", err.Error())
+		return
+	}
+	updated, err := a.store.UpdateAIProvider(r.Context(), providerID, provider)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "ai_provider_not_found", "AI provider was not found")
+			return
+		}
+		a.logger.Error("update AI provider failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "update_ai_provider_failed", "AI provider could not be updated")
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (a *App) deleteAIProvider(w http.ResponseWriter, r *http.Request, providerID string) {
+	if err := a.store.DeleteAIProvider(r.Context(), providerID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "ai_provider_not_found", "AI provider was not found")
+			return
+		}
+		a.logger.Error("delete AI provider failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "delete_ai_provider_failed", "AI provider could not be deleted")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
+func (a *App) testAIProvider(w http.ResponseWriter, r *http.Request, providerID string) {
+	provider, err := a.store.GetAIProvider(r.Context(), providerID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "ai_provider_not_found", "AI provider was not found")
+			return
+		}
+		a.logger.Error("get AI provider for test failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_ai_provider_failed", "AI provider could not be loaded")
+		return
+	}
+	clientRequest, err := a.clientRequestForProvider(*provider, []AIChatMessage{
+		{Role: "system", Content: "Return strict JSON only."},
+		{Role: "user", Content: `Return {"ok":true,"message":"Qualora provider test"} as JSON.`},
+	})
+	if err != nil {
+		writeJSON(w, http.StatusOK, AIProviderTestResult{Success: false, ProviderName: provider.Name, Model: provider.Model, ErrorMessage: RedactSecrets(err.Error())})
+		return
+	}
+	started := time.Now()
+	_, err = a.aiClient.ChatCompletion(r.Context(), clientRequest)
+	result := AIProviderTestResult{
+		Success:      err == nil,
+		ProviderName: provider.Name,
+		Model:        provider.Model,
+		LatencyMS:    time.Since(started).Milliseconds(),
+	}
+	if err != nil {
+		result.ErrorMessage = RedactSecrets(err.Error())
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (a *App) getAIAnalysis(w http.ResponseWriter, r *http.Request, runID string) {
+	analysis, err := a.store.GetLatestAIAnalysis(r.Context(), runID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeJSON(w, http.StatusOK, map[string]any{"ai_analysis": nil})
+			return
+		}
+		a.logger.Error("get AI analysis failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_ai_analysis_failed", "AI analysis could not be loaded")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ai_analysis": analysis})
+}
+
+func (a *App) createAIAnalysis(w http.ResponseWriter, r *http.Request, runID string) {
+	var input AIAnalysisRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	if r.Body != nil {
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid AI analysis JSON")
+			return
+		}
+	}
+
+	report, err := a.store.GetReport(r.Context(), runID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "run_not_found", "run was not found")
+			return
+		}
+		a.logger.Error("get report for AI analysis failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_report_failed", "report could not be loaded")
+		return
+	}
+
+	provider, err := a.providerForAnalysis(r.Context(), input.ProviderID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusBadRequest, "ai_provider_required", "configure an AI provider before running AI analysis")
+			return
+		}
+		a.logger.Error("load AI provider for analysis failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "get_ai_provider_failed", "AI provider could not be loaded")
+		return
+	}
+
+	analysis, err := a.store.CreateAIAnalysis(r.Context(), runID, provider.ID, provider.Model)
+	if err != nil {
+		a.logger.Error("create AI analysis failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create_ai_analysis_failed", "AI analysis could not be created")
+		return
+	}
+
+	userPrompt, err := BuildAIUserPrompt(report)
+	if err != nil {
+		analysis, _ = a.store.FailAIAnalysis(r.Context(), analysis.ID, RedactSecrets(err.Error()))
+		writeJSON(w, http.StatusCreated, analysis)
+		return
+	}
+	clientRequest, err := a.clientRequestForProvider(*provider, []AIChatMessage{
+		{Role: "system", Content: AIAnalysisSystemPrompt()},
+		{Role: "user", Content: userPrompt},
+	})
+	if err != nil {
+		analysis, _ = a.store.FailAIAnalysis(r.Context(), analysis.ID, RedactSecrets(err.Error()))
+		writeJSON(w, http.StatusCreated, analysis)
+		return
+	}
+
+	clientResponse, err := a.aiClient.ChatCompletion(r.Context(), clientRequest)
+	if err != nil {
+		analysis, _ = a.store.FailAIAnalysis(r.Context(), analysis.ID, RedactSecrets(err.Error()))
+		writeJSON(w, http.StatusCreated, analysis)
+		return
+	}
+	payload, analysisJSON, err := ParseAIAnalysisPayload(clientResponse.Content)
+	if err != nil {
+		analysis, _ = a.store.FailAIAnalysis(r.Context(), analysis.ID, RedactSecrets(err.Error()))
+		writeJSON(w, http.StatusCreated, analysis)
+		return
+	}
+	completed, err := a.store.CompleteAIAnalysis(r.Context(), analysis.ID, payload, analysisJSON, *clientResponse)
+	if err != nil {
+		a.logger.Error("complete AI analysis failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "complete_ai_analysis_failed", "AI analysis could not be saved")
+		return
+	}
+	writeJSON(w, http.StatusCreated, completed)
+}
+
+func decodeAIProviderRequest(w http.ResponseWriter, r *http.Request) (AIProviderRequest, error) {
+	var input AIProviderRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		return input, fmt.Errorf("request body must be valid AI provider JSON")
+	}
+	return normalizeProviderRequest(input)
+}
+
+func (a *App) providerFromInput(input AIProviderRequest, existingEncryptedAPIKey string, existingEncryptedExtraHeaders string) (AIProvider, error) {
+	encryptedAPIKey := existingEncryptedAPIKey
+	if input.APIKey != "" {
+		value, err := a.secretBox.Encrypt(input.APIKey)
+		if err != nil {
+			return AIProvider{}, err
+		}
+		encryptedAPIKey = value
+	}
+	encryptedHeaders := existingEncryptedExtraHeaders
+	if input.ExtraHeaders != nil {
+		rawHeaders, err := encodeExtraHeaders(input.ExtraHeaders)
+		if err != nil {
+			return AIProvider{}, err
+		}
+		value, err := a.secretBox.Encrypt(rawHeaders)
+		if err != nil {
+			return AIProvider{}, err
+		}
+		encryptedHeaders = value
+	}
+	return aiProviderFromRequest(input, encryptedAPIKey, encryptedHeaders), nil
+}
+
+func (a *App) providerForAnalysis(ctx context.Context, providerID string) (*AIProvider, error) {
+	if providerID != "" {
+		return a.store.GetAIProvider(ctx, providerID)
+	}
+	return a.store.GetDefaultAIProvider(ctx)
+}
+
+func (a *App) clientRequestForProvider(provider AIProvider, messages []AIChatMessage) (AIClientRequest, error) {
+	apiKey, err := a.secretBox.Decrypt(provider.APIKeyEncrypted)
+	if err != nil {
+		return AIClientRequest{}, err
+	}
+	headersRaw, err := a.secretBox.Decrypt(provider.ExtraHeadersEncrypted)
+	if err != nil {
+		return AIClientRequest{}, err
+	}
+	headers, err := decodeExtraHeaders(headersRaw)
+	if err != nil {
+		return AIClientRequest{}, err
+	}
+	return AIClientRequest{
+		BaseURL:         provider.BaseURL,
+		Model:           provider.Model,
+		APIKey:          apiKey,
+		ExtraHeaders:    headers,
+		Temperature:     provider.Temperature,
+		MaxOutputTokens: provider.MaxOutputTokens,
+		TimeoutSeconds:  provider.TimeoutSeconds,
+		Messages:        messages,
+	}, nil
+}
+
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
@@ -408,7 +741,7 @@ func withCORS(allowedOrigins []string, next http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Add("Vary", "Origin")
 			}
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
 			w.Header().Set("Access-Control-Max-Age", "600")
 		}

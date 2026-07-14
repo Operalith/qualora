@@ -1,6 +1,6 @@
 # Qualora Web
 
-Minimal React/Vite web UI for Qualora v0.4.0-alpha.
+Minimal React/Vite web UI for Qualora v0.5.0-alpha.
 
 The UI supports:
 
@@ -12,6 +12,9 @@ The UI supports:
 - Viewing run reports, findings, evidence metadata, browser metadata, API metadata, and worker job metadata.
 - Opening the self-contained HTML report served by the control plane.
 - Previewing and downloading screenshot evidence through the control-plane evidence endpoint.
+- Configuring optional OpenAI-compatible AI providers.
+- Testing AI provider connectivity.
+- Running and viewing AI analysis for completed runs.
 
 ## Local Development
 
@@ -40,5 +43,6 @@ QUALORA_API_BASE_URL=http://localhost:8080 docker compose up -d --build qualora-
 
 - No authentication or authorization.
 - Intended for trusted local/self-hosted alpha environments only.
+- AI provider credentials should only be configured in trusted environments.
 - Evidence preview/download is limited to evidence records known to Qualora.
 - No advanced filtering, pagination, or project editing yet.

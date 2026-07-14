@@ -10,11 +10,12 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.4.0-alpha` Docker Compose MVP working.
+- Keep the `v0.5.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Minimal web UI support for local project/run/report workflows.
 - Browser-only smoke run support and screenshot evidence preview/download.
+- Optional OpenAI-compatible AI provider management and AI report analysis.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
 - Redis for queues and short-lived run state.
@@ -43,6 +44,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Do not add Kubernetes-only concepts before the Docker Compose path works.
 - Keep the web UI focused on alpha workflows; do not add complex design systems, auth, teams, billing, or SaaS assumptions without an explicit request.
 - Do not introduce Temporal, OWASP ZAP, login automation, or active security scanning in the MVP without an explicit request.
+- Do not introduce autonomous AI browser control or native non-OpenAI-compatible provider SDKs without an explicit request.
 - API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
 - Keep worker contracts narrow and serializable.
 - Prefer OpenAPI-first internal API design where practical.
@@ -60,6 +62,9 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Treat screenshots, traces, and reports as sensitive artifacts.
 - Evidence download endpoints must only serve database-backed Qualora evidence records and must never expose arbitrary S3 keys, local paths, or object-store credentials.
 - Store credentials through a dedicated abstraction so local MVP storage can later move to Vault or Kubernetes Secrets.
+- AI provider API keys and extra headers must be encrypted at rest and never returned raw by API responses.
+- AI input must be built from sanitized report data only. Do not send screenshots, full HTML, cookies, credentials, authorization headers, or full network bodies to AI by default.
+- Redaction must remain enabled by default for AI analysis.
 
 ## Contribution Style
 

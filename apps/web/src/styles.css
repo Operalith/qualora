@@ -285,6 +285,7 @@ label {
 }
 
 input,
+select,
 textarea {
   background: #ffffff;
   border: 1px solid var(--line-strong);
@@ -298,6 +299,10 @@ textarea {
 textarea {
   min-height: 88px;
   resize: vertical;
+}
+
+select {
+  min-height: 36px;
 }
 
 .check-row {
@@ -321,6 +326,64 @@ textarea {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.button-row.compact {
+  gap: 6px;
+}
+
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+button.danger:hover {
+  background: #fff1f0;
+}
+
+.form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.form-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.toggle-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.provider-form {
+  max-width: 920px;
+}
+
+.pill {
+  background: #eef8f7;
+  border-radius: 999px;
+  color: var(--brand);
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 800;
+  margin-left: 8px;
+  padding: 2px 7px;
+  text-transform: uppercase;
+}
+
+.result-ok {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.result-failed {
+  color: var(--danger);
+  font-weight: 800;
 }
 
 .detail-grid {
@@ -494,6 +557,27 @@ textarea {
   gap: 12px;
 }
 
+.analysis-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.analysis-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.plain-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.plain-list li + li {
+  margin-top: 5px;
+}
+
 .evidence-object {
   align-items: flex-start;
   display: grid;
@@ -533,7 +617,11 @@ textarea {
 
   .detail-grid,
   .detail-grid.compact,
-  .summary-grid {
+  .summary-grid,
+  .form-grid.two,
+  .form-grid.three,
+  .toggle-grid,
+  .analysis-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -553,7 +641,11 @@ textarea {
 
   .detail-grid,
   .detail-grid.compact,
-  .summary-grid {
+  .summary-grid,
+  .form-grid.two,
+  .form-grid.three,
+  .toggle-grid,
+  .analysis-grid {
     grid-template-columns: 1fr;
   }
 

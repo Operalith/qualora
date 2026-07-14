@@ -23,6 +23,8 @@ API_SMOKE_OPENAPI_URL = os.environ.get(
 )
 API_SMOKE_ALLOWED_HOST = os.environ.get("QUALORA_API_SMOKE_ALLOWED_HOST", "mock-api")
 MOCK_API_HEALTH_URL = os.environ.get("MOCK_API_HEALTH_URL", "http://localhost:18081/health")
+FAKE_LLM_BASE_URL = os.environ.get("QUALORA_FAKE_LLM_URL", "http://fake-llm:8080/v1")
+FAKE_LLM_HEALTH_URL = os.environ.get("FAKE_LLM_HEALTH_URL", "http://localhost:18083/health")
 TIMEOUT_SECONDS = int(os.environ.get("QUALORA_SMOKE_TIMEOUT_SECONDS", "120"))
 
 
@@ -86,6 +88,65 @@ def create_project(payload):
     return project
 
 
+def create_ai_provider():
+    provider = request(
+        "POST",
+        "/api/v1/ai/providers",
+        {
+            "name": "Qualora Fake LLM",
+            "preset": "custom",
+            "type": "openai-compatible",
+            "base_url": FAKE_LLM_BASE_URL,
+            "model": "qualora-fake-analyst",
+            "api_key": "fake-key",
+            "extra_headers": {},
+            "temperature": 0.2,
+            "max_output_tokens": 1200,
+            "timeout_seconds": 10,
+            "send_screenshots": False,
+            "send_html": False,
+            "send_network_bodies": False,
+            "redaction_enabled": True,
+            "is_default": True,
+        },
+    )
+    print(f"created AI provider: {provider['id']} ({provider['name']})")
+    if provider.get("api_key_encrypted") or provider.get("api_key"):
+        raise RuntimeError("AI provider response exposed an API key")
+    if not provider.get("api_key_configured"):
+        raise RuntimeError("AI provider did not report configured API key")
+    return provider
+
+
+def test_ai_provider(provider):
+    result = request("POST", f"/api/v1/ai/providers/{provider['id']}/test")
+    print(f"AI provider test: {json.dumps(result, indent=2)}")
+    if not result.get("success"):
+        raise RuntimeError(f"AI provider test failed: {result}")
+
+
+def run_ai_analysis(report, provider):
+    run_id = report["run_id"]
+    analysis = request("POST", f"/api/v1/runs/{run_id}/ai-analysis", {"provider_id": provider["id"]})
+    print(f"AI analysis: {json.dumps(analysis, indent=2)}")
+    if analysis.get("status") != "completed":
+        raise RuntimeError(f"AI analysis did not complete: {analysis}")
+    if analysis.get("risk_level") != "medium":
+        raise RuntimeError(f"AI analysis risk level was unexpected: {analysis}")
+
+    updated_report = request("GET", f"/api/v1/runs/{run_id}/report")
+    ai_analysis = updated_report.get("ai_analysis")
+    if not ai_analysis or ai_analysis.get("status") != "completed":
+        raise RuntimeError("JSON report did not include completed AI analysis")
+    print(f"AI JSON report: {API_URL}/api/v1/runs/{run_id}/report")
+    print(f"AI HTML report: {API_URL}/api/v1/runs/{run_id}/report.html")
+
+    html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    if "AI Analysis" not in html or "fake provider" not in html:
+        raise RuntimeError("HTML report did not include the fake AI analysis")
+    return updated_report
+
+
 def run_project(project, run_path=None):
     path = run_path or f"/api/v1/projects/{project['id']}/runs"
     run = request("POST", path)
@@ -142,6 +203,11 @@ def assert_browser_report(report):
 def main():
     print(f"Web UI: {WEB_URL}")
 
+    print("== AI provider smoke ==")
+    wait_for_url(FAKE_LLM_HEALTH_URL)
+    provider = create_ai_provider()
+    test_ai_provider(provider)
+
     print("== Browser smoke ==")
     wait_for_url(DEMO_WEB_HEALTH_URL)
     browser_project = create_project(
@@ -158,6 +224,7 @@ def main():
     )
     browser_report = run_project(browser_project, f"/api/v1/projects/{browser_project['id']}/browser-smoke-runs")
     assert_browser_report(browser_report)
+    run_ai_analysis(browser_report, provider)
 
     print("== API smoke ==")
     wait_for_url(MOCK_API_HEALTH_URL)

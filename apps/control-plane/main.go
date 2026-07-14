@@ -35,7 +35,13 @@ func main() {
 	queue := NewQueue(cfg)
 	defer queue.Close()
 
-	app := NewApp(NewStore(db), queue, NewEvidenceStore(cfg), logger, cfg.CORSOrigins)
+	secretBox, err := NewSecretBox(cfg.EncryptionKey)
+	if err != nil {
+		logger.Error("secret box initialization failed", "error", err)
+		os.Exit(1)
+	}
+
+	app := NewApp(NewStore(db), queue, NewEvidenceStore(cfg), secretBox, NewOpenAICompatibleClient(), logger, cfg.CORSOrigins)
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           app.Routes(),
