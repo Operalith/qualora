@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.9.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with a minimal web UI, human-friendly reports, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
+Qualora v0.10.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with a minimal web UI, human-friendly reports, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,7 +10,7 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, credential_profiles, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: projects, credential_profiles, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
@@ -21,6 +21,7 @@ qualora-api
         |       +--> Playwright Chromium smoke test
         |       +--> Deterministic selector-based login checks
         |       +--> Authenticated browser smoke test
+        |       +--> Explicit role-aware authorization checks
         |       +--> Approved safe test plan execution
         |       +--> MinIO/S3 screenshot evidence
         |
@@ -55,6 +56,16 @@ Current endpoints:
 - `PUT /api/v1/credential-profiles/{credential_profile_id}`
 - `DELETE /api/v1/credential-profiles/{credential_profile_id}`
 - `POST /api/v1/credential-profiles/{credential_profile_id}/test-login`
+- `GET /api/v1/projects/{project_id}/authorization-checks`
+- `POST /api/v1/projects/{project_id}/authorization-checks`
+- `GET /api/v1/authorization-checks/{authorization_check_id}`
+- `PUT /api/v1/authorization-checks/{authorization_check_id}`
+- `DELETE /api/v1/authorization-checks/{authorization_check_id}`
+- `GET /api/v1/projects/{project_id}/authorization-check-runs`
+- `POST /api/v1/projects/{project_id}/authorization-check-runs`
+- `GET /api/v1/authorization-check-runs/{authorization_check_run_id}`
+- `GET /api/v1/authorization-check-runs/{authorization_check_run_id}/report`
+- `GET /api/v1/authorization-check-runs/{authorization_check_run_id}/report.html`
 - `POST /api/v1/projects/{project_id}/ai-test-plans`
 - `GET /api/v1/projects/{project_id}/test-plans`
 - `POST /api/v1/projects/{project_id}/api-specs`
@@ -106,6 +117,7 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - API smoke result tables in run reports.
 - Credential profile creation, listing, editing, deletion, default selection, login testing, and authenticated browser smoke actions.
 - Login summary and login observation metadata in run reports.
+- Authorization check creation, listing, enable/disable, deletion, run history, JSON report display, HTML report links, findings, and evidence display.
 
 It has no authentication in this alpha and should be exposed only in trusted local/self-hosted environments.
 
@@ -113,7 +125,9 @@ It has no authentication in this alpha and should be exposed only in trusted loc
 
 The Node.js browser worker consumes Redis browser jobs and runs a Playwright smoke check against `frontend_url`.
 
-For credential-profile runs, the worker decrypts the project-scoped username/password with `QUALORA_ENCRYPTION_KEY`, opens only the configured login URL, fills only the configured username/password selectors, clicks only the configured submit selector, and evaluates configured success/failure criteria. Authenticated smoke then visits one configured same-origin target path. It does not use AI, does not submit arbitrary forms, and does not expose cookies, storage, auth headers, tokens, usernames, or passwords in evidence.
+For credential-profile runs, the worker decrypts the project-scoped username/password with `QUALORA_ENCRYPTION_KEY`, opens only the configured login URL, fills only the configured username/password selectors, clicks only the configured submit selector, and evaluates configured success/failure criteria. Authenticated smoke then visits one configured same-origin target path.
+
+For role-aware authorization runs, the worker logs in with the configured actor credential profile, navigates only to the configured same-origin authorization target, classifies the outcome as allowed, denied, or unknown, and records screenshot/observation evidence plus deterministic findings when the observed outcome does not match the expected outcome. It does not use AI, does not crawl, does not submit arbitrary forms, and does not expose cookies, storage, auth headers, tokens, usernames, or passwords in evidence.
 
 The same worker also consumes safe test plan execution jobs. It executes only persisted mapped actions from the supported DSL:
 

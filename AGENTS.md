@@ -10,7 +10,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.9.0-alpha` Docker Compose MVP working.
+- Keep the `v0.10.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
@@ -21,6 +21,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Approved safe test plan execution for a small deterministic browser DSL.
 - Project-scoped encrypted credential profiles and deterministic selector-based login checks.
 - Authenticated browser smoke runs for one configured same-origin target path.
+- Explicit role-aware authorization checks for configured browser URL targets.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
 - Redis for queues and short-lived run state.
@@ -52,10 +53,12 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Do not introduce autonomous AI browser control or native non-OpenAI-compatible provider SDKs without an explicit request.
 - Do not execute AI-generated test plan steps automatically or as free-form model instructions.
 - Do not use AI for login automation or authenticated browser control.
+- Authorization checks must remain deterministic, explicitly user-configured, same-origin, allowlist-enforced, read-only, and limited to configured browser URL targets.
+- Do not add crawling, fuzzing, payload execution, arbitrary form submission, destructive actions, or autonomous AI browser control to authorization checks.
 - Safe test plan execution must remain explicit, previewable, same-origin, allowlist-enforced, non-destructive, and limited to the supported persisted DSL.
 - API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
 - Imported OpenAPI API smoke runs must stay read-only: skip mutating methods, authenticated operations, required request bodies, unresolved parameters, sensitive paths/parameters, and external redirects.
-- Do not store API request bodies or response bodies in v0.8.
+- Do not store API request bodies or response bodies in the current alpha API smoke path.
 - Keep worker contracts narrow and serializable.
 - Prefer OpenAPI-first internal API design where practical.
 - Keep report schemas structured enough for future UI/API consumers.
@@ -78,6 +81,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - AI test planning must use sanitized project/run/report metadata only. Do not send screenshots, full HTML, cookies, credentials, authorization headers, raw traces, or full network bodies to AI by default.
 - Safe test plan execution must skip authenticated, destructive, mutating, submit/upload/admin, exploit, SQLi, XSS, SSRF, brute-force, out-of-scope, and unsupported actions with clear reasons.
 - Safe API smoke must skip unsafe OpenAPI operations with clear reasons and must not send auth headers, cookies, tokens, request bodies, or secrets.
+- Authorization runs must never send credentials, cookies, local/session storage, auth headers, or tokens to AI or include them in evidence/reports.
 
 ## Contribution Style
 

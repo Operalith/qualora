@@ -31,6 +31,19 @@ func normalizeCredentialProfileRequest(input CredentialProfileRequest, project P
 		return input, fmt.Errorf("type must be username_password")
 	}
 
+	input.RoleName = strings.TrimSpace(input.RoleName)
+	if len(input.RoleName) > 80 {
+		return input, fmt.Errorf("role_name must be 80 characters or fewer")
+	}
+	input.RoleDescription = strings.TrimSpace(input.RoleDescription)
+	if len(input.RoleDescription) > 500 {
+		return input, fmt.Errorf("role_description must be 500 characters or fewer")
+	}
+	input.SubjectLabel = strings.TrimSpace(input.SubjectLabel)
+	if len(input.SubjectLabel) > 120 {
+		return input, fmt.Errorf("subject_label must be 120 characters or fewer")
+	}
+
 	input.Username = strings.TrimSpace(input.Username)
 	if create && input.Username == "" {
 		return input, fmt.Errorf("username is required")
@@ -99,6 +112,9 @@ func credentialProfileFromRequest(input CredentialProfileRequest, encryptedUsern
 	return CredentialProfile{
 		Name:                input.Name,
 		Type:                input.Type,
+		RoleName:            input.RoleName,
+		RoleDescription:     input.RoleDescription,
+		SubjectLabel:        input.SubjectLabel,
 		UsernameEncrypted:   encryptedUsername,
 		PasswordEncrypted:   encryptedPassword,
 		UsernameDisplayHint: usernameHint,
@@ -130,7 +146,8 @@ func usernameDisplayHint(username string) string {
 
 func (s *Store) ListCredentialProfiles(ctx context.Context, projectID string) ([]CredentialProfile, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT id, project_id, name, type, username_encrypted, password_encrypted, username_display_hint,
+SELECT id, project_id, name, type, role_name, role_description, subject_label,
+	username_encrypted, password_encrypted, username_display_hint,
 	login_url, username_selector, password_selector, submit_selector, success_url_contains,
 	success_text_contains, failure_text_contains, post_login_wait_ms, is_default, created_at, updated_at
 FROM credential_profiles
@@ -158,7 +175,8 @@ ORDER BY is_default DESC, created_at DESC
 
 func (s *Store) GetCredentialProfile(ctx context.Context, id string) (*CredentialProfile, error) {
 	profile, err := scanCredentialProfile(s.db.QueryRow(ctx, `
-SELECT id, project_id, name, type, username_encrypted, password_encrypted, username_display_hint,
+SELECT id, project_id, name, type, role_name, role_description, subject_label,
+	username_encrypted, password_encrypted, username_display_hint,
 	login_url, username_selector, password_selector, submit_selector, success_url_contains,
 	success_text_contains, failure_text_contains, post_login_wait_ms, is_default, created_at, updated_at
 FROM credential_profiles
@@ -175,7 +193,8 @@ WHERE id = $1
 
 func (s *Store) GetDefaultCredentialProfile(ctx context.Context, projectID string) (*CredentialProfile, error) {
 	profile, err := scanCredentialProfile(s.db.QueryRow(ctx, `
-SELECT id, project_id, name, type, username_encrypted, password_encrypted, username_display_hint,
+SELECT id, project_id, name, type, role_name, role_description, subject_label,
+	username_encrypted, password_encrypted, username_display_hint,
 	login_url, username_selector, password_selector, submit_selector, success_url_contains,
 	success_text_contains, failure_text_contains, post_login_wait_ms, is_default, created_at, updated_at
 FROM credential_profiles
@@ -214,14 +233,17 @@ func (s *Store) CreateCredentialProfile(ctx context.Context, projectID string, p
 
 	created, err := scanCredentialProfile(tx.QueryRow(ctx, `
 INSERT INTO credential_profiles (
-	id, project_id, name, type, username_encrypted, password_encrypted, username_display_hint,
+	id, project_id, name, type, role_name, role_description, subject_label,
+	username_encrypted, password_encrypted, username_display_hint,
 	login_url, username_selector, password_selector, submit_selector, success_url_contains,
 	success_text_contains, failure_text_contains, post_login_wait_ms, is_default
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-RETURNING id, project_id, name, type, username_encrypted, password_encrypted, username_display_hint,
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+RETURNING id, project_id, name, type, role_name, role_description, subject_label,
+	username_encrypted, password_encrypted, username_display_hint,
 	login_url, username_selector, password_selector, submit_selector, success_url_contains,
 	success_text_contains, failure_text_contains, post_login_wait_ms, is_default, created_at, updated_at
-`, uuid.NewString(), projectID, profile.Name, profile.Type, profile.UsernameEncrypted, profile.PasswordEncrypted, profile.UsernameDisplayHint,
+`, uuid.NewString(), projectID, profile.Name, profile.Type, profile.RoleName, profile.RoleDescription, profile.SubjectLabel,
+		profile.UsernameEncrypted, profile.PasswordEncrypted, profile.UsernameDisplayHint,
 		profile.LoginURL, profile.UsernameSelector, profile.PasswordSelector, profile.SubmitSelector, profile.SuccessURLContains,
 		profile.SuccessTextContains, profile.FailureTextContains, profile.PostLoginWaitMS, profile.IsDefault))
 	if err != nil {
@@ -250,24 +272,29 @@ func (s *Store) UpdateCredentialProfile(ctx context.Context, id string, profile 
 UPDATE credential_profiles
 SET name = $2,
 	type = $3,
-	username_encrypted = $4,
-	password_encrypted = $5,
-	username_display_hint = $6,
-	login_url = $7,
-	username_selector = $8,
-	password_selector = $9,
-	submit_selector = $10,
-	success_url_contains = $11,
-	success_text_contains = $12,
-	failure_text_contains = $13,
-	post_login_wait_ms = $14,
-	is_default = $15,
+	role_name = $4,
+	role_description = $5,
+	subject_label = $6,
+	username_encrypted = $7,
+	password_encrypted = $8,
+	username_display_hint = $9,
+	login_url = $10,
+	username_selector = $11,
+	password_selector = $12,
+	submit_selector = $13,
+	success_url_contains = $14,
+	success_text_contains = $15,
+	failure_text_contains = $16,
+	post_login_wait_ms = $17,
+	is_default = $18,
 	updated_at = now()
 WHERE id = $1
-RETURNING id, project_id, name, type, username_encrypted, password_encrypted, username_display_hint,
+RETURNING id, project_id, name, type, role_name, role_description, subject_label,
+	username_encrypted, password_encrypted, username_display_hint,
 	login_url, username_selector, password_selector, submit_selector, success_url_contains,
 	success_text_contains, failure_text_contains, post_login_wait_ms, is_default, created_at, updated_at
-`, id, profile.Name, profile.Type, profile.UsernameEncrypted, profile.PasswordEncrypted, profile.UsernameDisplayHint,
+`, id, profile.Name, profile.Type, profile.RoleName, profile.RoleDescription, profile.SubjectLabel,
+		profile.UsernameEncrypted, profile.PasswordEncrypted, profile.UsernameDisplayHint,
 		profile.LoginURL, profile.UsernameSelector, profile.PasswordSelector, profile.SubmitSelector, profile.SuccessURLContains,
 		profile.SuccessTextContains, profile.FailureTextContains, profile.PostLoginWaitMS, profile.IsDefault))
 	if err != nil {
@@ -300,6 +327,9 @@ func scanCredentialProfile(row scanRow) (CredentialProfile, error) {
 		&profile.ProjectID,
 		&profile.Name,
 		&profile.Type,
+		&profile.RoleName,
+		&profile.RoleDescription,
+		&profile.SubjectLabel,
 		&profile.UsernameEncrypted,
 		&profile.PasswordEncrypted,
 		&profile.UsernameDisplayHint,
@@ -330,6 +360,7 @@ func summarizeLoginEvidence(run *TestRun, evidence []Evidence) *LoginSummary {
 		summary := &LoginSummary{
 			CredentialProfileID:    run.CredentialProfileID,
 			CredentialProfileName:  metadataStringValue(record.Metadata, "credential_profile_name"),
+			RoleName:               metadataStringValue(record.Metadata, "role_name"),
 			LoginStatus:            metadataStringValue(record.Metadata, "login_status"),
 			LoginURL:               metadataStringValue(record.Metadata, "login_url"),
 			LoginFinalURL:          metadataStringValue(record.Metadata, "final_url"),

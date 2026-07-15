@@ -8,6 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
+| v0.10.0-alpha | Best-effort alpha support |
 | v0.9.0-alpha | Best-effort alpha support |
 | v0.8.0-alpha | Best-effort alpha support |
 | v0.7.0-alpha | Best-effort alpha support |
@@ -35,7 +36,7 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.9.0-alpha API and web UI do not include Qualora user authentication. Expose them only in trusted local or self-hosted environments, or put them behind an external access-control layer.
+The v0.10.0-alpha API and web UI do not include Qualora user authentication. Expose them only in trusted local or self-hosted environments, or put them behind an external access-control layer.
 
 See [docs/security-model.md](docs/security-model.md) for the current alpha safety model.
 
@@ -55,6 +56,8 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - Credential profile username/password values must be encrypted at rest and never returned raw by API responses.
 - Deterministic login checks must only use configured selectors on the configured login form.
 - Authenticated browser smoke must not expose cookies, session storage, local storage, authorization headers, tokens, or raw credentials.
+- Role-aware authorization checks must be explicit, deterministic, read-only, same-origin or allowed-host enforced, and limited to one configured target navigation after selector-based login.
+- Authorization reports and AI input must not include passwords, raw usernames, cookies, session storage, local storage, authorization headers, tokens, screenshots, raw HTML, or browser storage contents by default.
 - OpenAPI import must not execute API operations.
 - Safe API smoke execution must remain read-only by default.
 - Mutating, authenticated, request-body, unresolved-parameter, and sensitive API operations must be skipped unless a future explicit design changes this policy.
@@ -71,5 +74,6 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - Arbitrary form submission or autonomous login automation.
 - OWASP ZAP active scans.
 - Autonomous AI browser control.
+- Autonomous authorization attack generation or execution.
 
 OWASP ZAP integration may be added later with explicit policy controls and safe defaults.

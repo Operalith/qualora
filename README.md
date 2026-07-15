@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.9.0-alpha` adds project-scoped credential profiles, deterministic selector-based login checks, and authenticated browser smoke testing. Qualora remains deterministic and useful without AI: browser checks, login checks, authenticated smoke checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
+`v0.10.0-alpha` adds explicit role-aware authorization checks on top of credential profiles. Qualora remains deterministic and useful without AI: browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
 
 ## Current Alpha Capabilities
 
@@ -14,8 +14,12 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Start runs that can include browser and API jobs.
 - Start a browser-only smoke run for a project with `frontend_url`.
 - Store project-scoped credential profiles encrypted at rest for deterministic test-account login.
+- Add optional role metadata to credential profiles, such as `admin`, `readonly`, or customer roles.
 - Test a credential profile login flow with configured selectors and success/failure criteria.
 - Start an authenticated browser smoke run that logs in and visits one configured same-origin target path.
+- Define explicit role-aware authorization checks for browser URL targets.
+- Run deterministic authorization checks that log in with an actor credential profile, navigate only the configured target, and compare expected `allowed` or `denied` outcomes.
+- View authorization run JSON/HTML reports, findings, screenshots, and `authorization_observations` evidence.
 - View projects, runs, findings, evidence metadata, and reports in the web UI.
 - Execute Playwright Chromium checks against a configured frontend URL.
 - Execute safe API checks against `api_base_url`.
@@ -53,7 +57,7 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, credential_profiles, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: projects, credential_profiles, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
@@ -62,6 +66,7 @@ qualora-api
         |       +--> Playwright browser smoke test
         |       +--> Deterministic selector-based login checks
         |       +--> Authenticated browser smoke test
+        |       +--> Explicit role-aware authorization checks
         |       +--> Approved safe test plan execution steps
         |       +--> MinIO/S3 screenshot evidence
         |
@@ -113,6 +118,7 @@ The smoke target includes:
 
 - Browser smoke against the local `demo-web` Compose service.
 - Credential profile creation, deterministic login check, and authenticated browser smoke against `demo-web`.
+- Role credential profile creation plus explicit authorization checks against demo `/admin` and customer invoice routes.
 - OpenAPI import and safe API smoke against a local `demo-api` service started by the Makefile.
 - AI provider smoke against a local fake OpenAI-compatible provider.
 - Safe test plan execution smoke against the local `demo-web` service.
@@ -270,6 +276,32 @@ AUTH_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_I
   }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 ```
 
+Create and run an explicit role-aware authorization check:
+
+```bash
+AUTHZ_CHECK_ID=$(curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/authorization-checks" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Readonly denied admin route",
+    "type": "browser_url",
+    "actor_credential_profile_id": "'"${READONLY_PROFILE_ID}"'",
+    "expected_outcome": "denied",
+    "target_url": "/admin",
+    "denied_text_contains": "Access denied",
+    "enabled": true
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+AUTHZ_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/authorization-check-runs" \
+  -H 'Content-Type: application/json' \
+  -d '{"check_ids":["'"${AUTHZ_CHECK_ID}"'"],"max_checks":10}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -s "http://localhost:8080/api/v1/authorization-check-runs/${AUTHZ_RUN_ID}/report" | python3 -m json.tool
+open "http://localhost:8080/api/v1/authorization-check-runs/${AUTHZ_RUN_ID}/report.html"
+```
+
+Authorization checks are explicit and conservative. They log in with the configured actor credential profile, navigate only the configured same-origin/allowed-host target, and do not crawl, fuzz, submit arbitrary forms, execute payloads, or use autonomous AI browser control.
+
 Fetch the report:
 
 ```bash
@@ -374,7 +406,7 @@ open "http://localhost:8080/api/v1/test-plan-executions/${EXECUTION_ID}/report.h
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.9.0-alpha`:
+Supported provider type in `v0.10.0-alpha`:
 
 - `openai-compatible`
 
@@ -394,7 +426,7 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.9.0-alpha`, a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks are a separate deterministic browser-worker path and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.10.0-alpha`, a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks and role-aware authorization checks are separate deterministic browser-worker paths and are not AI-controlled.
 
 ## Report Example
 

@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.9.0-alpha.
+This document covers local development for Qualora v0.10.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; creates an AI provider, browser project, API project, and credential profile; imports the demo OpenAPI spec; starts browser, login check, authenticated browser smoke, and safe API smoke runs; polls to completion; runs AI analysis; generates AI test plans; previews and executes a safe browser test plan; prints JSON/HTML report, API spec, credential profile, test-plan, and execution URLs; validates HTML report export; validates API result rows; validates skipped unsafe API operations; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; starts browser, login check, authenticated browser smoke, authorization, and safe API smoke runs; polls to completion; runs AI analysis; generates AI test plans; previews and executes a safe browser test plan; prints JSON/HTML report, API spec, credential profile, authorization, test-plan, and execution URLs; validates HTML report export; validates API result rows; validates skipped unsafe API operations; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -106,6 +106,7 @@ The smoke script runs:
 - Credential profile creation against local `demo-web` login selectors.
 - Deterministic login check against local `demo-web`.
 - Authenticated browser smoke against local `demo-web` `/dashboard`.
+- Role credential profile creation and explicit authorization checks against local `demo-web` `/admin` and customer invoice routes.
 - Password and raw username redaction checks for credential, report, and AI paths.
 - Browser smoke against the local `demo-web` Compose service.
 - AI analysis for the completed browser smoke run.
@@ -139,7 +140,7 @@ For private or local targets, create projects manually with `allow_private_targe
 
 ## AI Provider Development
 
-The v0.9 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.10 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -174,7 +175,7 @@ The login check path is deterministic:
 
 Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
 
-The v0.9 API executor:
+The v0.10 API executor:
 
 - Supports OpenAPI 3.x JSON/YAML.
 - Executes only `GET`, `HEAD`, and `OPTIONS`.

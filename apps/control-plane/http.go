@@ -42,6 +42,8 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/test-plan-executions/", a.handleTestPlanExecutionSubroutes)
 	mux.HandleFunc("/api/v1/api-specs/", a.handleAPISpecSubroutes)
 	mux.HandleFunc("/api/v1/credential-profiles/", a.handleCredentialProfileSubroutes)
+	mux.HandleFunc("/api/v1/authorization-checks/", a.handleAuthorizationCheckSubroutes)
+	mux.HandleFunc("/api/v1/authorization-check-runs/", a.handleAuthorizationCheckRunSubroutes)
 	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, mux)))
 }
 
@@ -180,6 +182,28 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 			a.createCredentialProfile(w, r, parts[0])
 		case http.MethodGet:
 			a.listCredentialProfiles(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "authorization-checks" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createAuthorizationCheck(w, r, parts[0])
+		case http.MethodGet:
+			a.listAuthorizationChecks(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "authorization-check-runs" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createAuthorizationCheckRun(w, r, parts[0])
+		case http.MethodGet:
+			a.listAuthorizationCheckRuns(w, r, parts[0])
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
 		}

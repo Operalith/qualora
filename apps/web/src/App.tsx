@@ -1,16 +1,20 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   API_BASE_URL,
+  authorizationCheckHTMLReportURL,
+  createAuthorizationCheck,
   createCredentialProfile,
   createAIProvider,
   createProject,
   deleteAIProvider,
+  deleteAuthorizationCheck,
   deleteAPISpec,
   deleteCredentialProfile,
   deleteTestPlan,
   evidenceDownloadURL,
   executeTestPlan,
   generateAITestPlan,
+  getAuthorizationCheckReport,
   getAPISpec,
   getProject,
   getReport,
@@ -20,6 +24,8 @@ import {
   htmlReportURL,
   importAPISpec,
   listAIProviders,
+  listAuthorizationCheckRuns,
+  listAuthorizationChecks,
   listAPISpecs,
   listCredentialProfiles,
   listProjects,
@@ -28,6 +34,7 @@ import {
   listTestPlans,
   previewTestPlanExecution,
   runAIAnalysis,
+  startAuthorizationCheckRun,
   startAPISmokeRun,
   startAuthenticatedBrowserSmokeRun,
   startBrowserSmokeRun,
@@ -36,6 +43,7 @@ import {
   testPlanExportURL,
   testPlanExecutionHTMLReportURL,
   testAIProvider,
+  updateAuthorizationCheck,
   updateCredentialProfile,
   updateAIProvider
 } from "./api";
@@ -50,6 +58,10 @@ import type {
   AIProviderInput,
   AIProviderTestResult,
   AITestPlanInput,
+  AuthorizationCheck,
+  AuthorizationCheckInput,
+  AuthorizationCheckReport,
+  AuthorizationCheckRun,
   CreateProjectInput,
   CredentialProfile,
   CredentialProfileInput,
@@ -77,6 +89,7 @@ type Route =
   | { name: "test-plans" }
   | { name: "test-plan"; id: string }
   | { name: "test-plan-execution"; id: string }
+  | { name: "authorization-check-run"; id: string }
   | { name: "run"; id: string };
 
 type LoadState<T> = {
@@ -136,7 +149,7 @@ export default function App() {
       <aside className="sidebar">
         <a className="brand" href="#/">
           <span>Qualora</span>
-          <small>v0.9.0-alpha</small>
+          <small>v0.10.0-alpha</small>
         </a>
         <nav>
           <a className={route.name === "dashboard" ? "active" : ""} href="#/">
@@ -204,6 +217,7 @@ export default function App() {
           />
         )}
         {route.name === "test-plan-execution" && <TestPlanExecutionPage executionID={route.id} />}
+        {route.name === "authorization-check-run" && <AuthorizationCheckRunPage runID={route.id} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
       </main>
     </div>
@@ -731,6 +745,8 @@ function ProjectPage({
   const [testPlans, setTestPlans] = useState<LoadState<TestPlan[]>>({ data: [], loading: true, error: "" });
   const [apiSpecs, setAPISpecs] = useState<LoadState<APISpec[]>>({ data: [], loading: true, error: "" });
   const [credentialProfiles, setCredentialProfiles] = useState<LoadState<CredentialProfile[]>>({ data: [], loading: true, error: "" });
+  const [authorizationChecks, setAuthorizationChecks] = useState<LoadState<AuthorizationCheck[]>>({ data: [], loading: true, error: "" });
+  const [authorizationRuns, setAuthorizationRuns] = useState<LoadState<AuthorizationCheckRun[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
   const [starting, setStarting] = useState("");
 
@@ -739,15 +755,19 @@ function ProjectPage({
     setTestPlans((current) => ({ ...current, loading: true, error: "" }));
     setAPISpecs((current) => ({ ...current, loading: true, error: "" }));
     setCredentialProfiles((current) => ({ ...current, loading: true, error: "" }));
+    setAuthorizationChecks((current) => ({ ...current, loading: true, error: "" }));
+    setAuthorizationRuns((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
-      const [nextProject, nextRuns, nextProviders, nextTestPlans, nextAPISpecs, nextCredentialProfiles] = await Promise.all([
+      const [nextProject, nextRuns, nextProviders, nextTestPlans, nextAPISpecs, nextCredentialProfiles, nextAuthorizationChecks, nextAuthorizationRuns] = await Promise.all([
         cachedProject ? Promise.resolve(cachedProject) : getProject(projectID),
         listRuns(projectID),
         listAIProviders(),
         listTestPlans(projectID),
         listAPISpecs(projectID),
-        listCredentialProfiles(projectID)
+        listCredentialProfiles(projectID),
+        listAuthorizationChecks(projectID),
+        listAuthorizationCheckRuns(projectID)
       ]);
       setProject(nextProject);
       setRuns({ data: nextRuns, loading: false, error: "" });
@@ -755,6 +775,8 @@ function ProjectPage({
       setTestPlans({ data: nextTestPlans, loading: false, error: "" });
       setAPISpecs({ data: nextAPISpecs, loading: false, error: "" });
       setCredentialProfiles({ data: nextCredentialProfiles, loading: false, error: "" });
+      setAuthorizationChecks({ data: nextAuthorizationChecks, loading: false, error: "" });
+      setAuthorizationRuns({ data: nextAuthorizationRuns, loading: false, error: "" });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
@@ -762,6 +784,8 @@ function ProjectPage({
       setTestPlans((current) => ({ ...current, loading: false, error: message }));
       setAPISpecs((current) => ({ ...current, loading: false, error: message }));
       setCredentialProfiles((current) => ({ ...current, loading: false, error: message }));
+      setAuthorizationChecks((current) => ({ ...current, loading: false, error: message }));
+      setAuthorizationRuns((current) => ({ ...current, loading: false, error: message }));
     }
   }, [cachedProject, projectID]);
 
@@ -816,6 +840,23 @@ function ProjectPage({
     }
   }
 
+  async function startAuthorizationRun() {
+    if (!project) {
+      return;
+    }
+    setStarting("authorization");
+    setError("");
+    try {
+      const run = await startAuthorizationCheckRun(project.id, { max_checks: 10 });
+      await refresh();
+      window.location.hash = `#/authorization-check-runs/${run.id}`;
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : String(startError));
+    } finally {
+      setStarting("");
+    }
+  }
+
   return (
     <div className="grid">
       <section>
@@ -847,6 +888,48 @@ function ProjectPage({
           <Field label="Allowed Hosts" value={project.allowed_hosts.join(", ")} />
           <Field label="Private Targets" value={project.allow_private_targets ? "Allowed" : "Blocked by default"} />
           <Field label="Created" value={formatDate(project.created_at)} />
+        </div>
+      </section>
+
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>Authorization Checks</h2>
+            <p>Explicit, read-only role-aware browser URL checks using configured test credentials.</p>
+          </div>
+          <div className="button-row">
+            <button
+              type="button"
+              className="secondary"
+              disabled={starting !== "" || authorizationChecks.data.length === 0}
+              onClick={() => void startAuthorizationRun()}
+            >
+              {starting === "authorization" ? "Starting" : "Run authorization checks"}
+            </button>
+            <button type="button" className="secondary" onClick={() => void refresh()}>
+              Refresh
+            </button>
+          </div>
+        </div>
+        <Notice
+          tone="info"
+          message="Authorization checks are explicit, read-only, and use configured test credentials. No destructive actions are performed."
+        />
+        <AuthorizationCheckForm project={project} profiles={credentialProfiles.data} onSaved={() => void refresh()} />
+        <div className="section-split">
+          {authorizationChecks.error && <Notice tone="danger" message={authorizationChecks.error} />}
+          {authorizationChecks.loading ? (
+            <SkeletonRows />
+          ) : (
+            <AuthorizationCheckTable
+              checks={authorizationChecks.data}
+              profiles={credentialProfiles.data}
+              onChanged={() => void refresh()}
+            />
+          )}
+          <h3>Authorization Runs</h3>
+          {authorizationRuns.error && <Notice tone="danger" message={authorizationRuns.error} />}
+          {authorizationRuns.loading ? <SkeletonRows /> : <AuthorizationRunTable runs={authorizationRuns.data} />}
         </div>
       </section>
 
@@ -955,6 +1038,9 @@ function CredentialProfileForm({ project, onSaved }: { project: Project; onSaved
   const [form, setForm] = useState<CredentialProfileInput>({
     name: "Demo Login",
     type: "username_password",
+    role_name: "",
+    role_description: "",
+    subject_label: "",
     username: "",
     password: "",
     login_url: project.frontend_url ? new URL("/login", project.frontend_url).toString() : "",
@@ -980,6 +1066,9 @@ function CredentialProfileForm({ project, onSaved }: { project: Project; onSaved
       const saved = await createCredentialProfile(project.id, {
         ...form,
         name: form.name.trim(),
+        role_name: form.role_name?.trim(),
+        role_description: form.role_description?.trim(),
+        subject_label: form.subject_label?.trim(),
         username: form.username?.trim(),
         login_url: form.login_url.trim(),
         username_selector: form.username_selector.trim(),
@@ -1014,6 +1103,14 @@ function CredentialProfileForm({ project, onSaved }: { project: Project; onSaved
           <input value={form.login_url} onChange={(event) => setForm({ ...form, login_url: event.target.value })} required />
         </label>
         <label>
+          Role name
+          <input value={form.role_name || ""} placeholder="admin, readonly, customer-a" onChange={(event) => setForm({ ...form, role_name: event.target.value })} />
+        </label>
+        <label>
+          Subject label
+          <input value={form.subject_label || ""} placeholder="Demo Admin" onChange={(event) => setForm({ ...form, subject_label: event.target.value })} />
+        </label>
+        <label>
           Username
           <input value={form.username || ""} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
         </label>
@@ -1045,6 +1142,10 @@ function CredentialProfileForm({ project, onSaved }: { project: Project; onSaved
         </label>
       </div>
       <div className="form-grid three">
+        <label>
+          Role description
+          <input value={form.role_description || ""} onChange={(event) => setForm({ ...form, role_description: event.target.value })} />
+        </label>
         <label>
           Success URL contains
           <input value={form.success_url_contains} onChange={(event) => setForm({ ...form, success_url_contains: event.target.value })} />
@@ -1128,6 +1229,7 @@ function CredentialProfileTable({
         <thead>
           <tr>
             <th>Name</th>
+            <th>Role</th>
             <th>Type</th>
             <th>Configured</th>
             <th>Login URL</th>
@@ -1142,6 +1244,10 @@ function CredentialProfileTable({
               <td>
                 <strong>{profile.name}</strong>
                 {profile.username_display_hint && <div className="muted">{profile.username_display_hint}</div>}
+              </td>
+              <td>
+                {profile.role_name || "Not set"}
+                {profile.subject_label && <div className="muted">{profile.subject_label}</div>}
               </td>
               <td>{profile.type}</td>
               <td>
@@ -1185,6 +1291,9 @@ function profileInputFromProfile(profile: CredentialProfile, overrides: Partial<
   return {
     name: profile.name,
     type: "username_password",
+    role_name: profile.role_name || "",
+    role_description: profile.role_description || "",
+    subject_label: profile.subject_label || "",
     login_url: profile.login_url,
     username_selector: profile.username_selector,
     password_selector: profile.password_selector,
@@ -1241,6 +1350,315 @@ function promptProfileEdit(profile: CredentialProfile): CredentialProfileInput |
     success_text_contains: successText,
     failure_text_contains: failureText
   });
+}
+
+function AuthorizationCheckForm({
+  project,
+  profiles,
+  onSaved
+}: {
+  project: Project;
+  profiles: CredentialProfile[];
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<AuthorizationCheckInput>({
+    name: "Admin route is denied for readonly",
+    description: "",
+    type: "browser_url",
+    resource_label: "Admin area",
+    owner_credential_profile_id: "",
+    actor_credential_profile_id: profiles[0]?.id || "",
+    expected_outcome: "denied",
+    target_url: project.frontend_url ? new URL("/admin", project.frontend_url).toString() : "/admin",
+    success_text_contains: "",
+    denied_text_contains: "Access denied",
+    enabled: true
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!form.actor_credential_profile_id && profiles[0]?.id) {
+      setForm((current) => ({ ...current, actor_credential_profile_id: profiles[0].id }));
+    }
+  }, [form.actor_credential_profile_id, profiles]);
+
+  if (profiles.length === 0) {
+    return <Notice tone="info" message="Create credential profiles before adding role-aware authorization checks." />;
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      const saved = await createAuthorizationCheck(project.id, {
+        ...form,
+        name: form.name.trim(),
+        description: form.description?.trim(),
+        resource_label: form.resource_label?.trim(),
+        owner_credential_profile_id: form.owner_credential_profile_id || undefined,
+        target_url: form.target_url.trim(),
+        success_text_contains: form.success_text_contains?.trim(),
+        denied_text_contains: form.denied_text_contains?.trim(),
+        enabled: form.enabled !== false
+      });
+      setMessage(`Saved authorization check ${saved.name}.`);
+      setForm({ ...form, name: "", description: "", resource_label: "", enabled: true });
+      onSaved();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="project-form authorization-form" onSubmit={(event) => void submit(event)}>
+      {error && <Notice tone="danger" message={error} />}
+      {message && <Notice tone="info" message={message} />}
+      <div className="form-grid two">
+        <label>
+          Name
+          <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+        </label>
+        <label>
+          Actor credential profile
+          <select
+            value={form.actor_credential_profile_id}
+            onChange={(event) => setForm({ ...form, actor_credential_profile_id: event.target.value })}
+            required
+          >
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {credentialProfileLabel(profile)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Expected outcome
+          <select
+            value={form.expected_outcome}
+            onChange={(event) => setForm({ ...form, expected_outcome: event.target.value as AuthorizationCheckInput["expected_outcome"] })}
+          >
+            <option value="allowed">Allowed</option>
+            <option value="denied">Denied</option>
+          </select>
+        </label>
+        <label>
+          Target URL or path
+          <input value={form.target_url} onChange={(event) => setForm({ ...form, target_url: event.target.value })} required />
+        </label>
+        <label>
+          Resource label
+          <input value={form.resource_label || ""} onChange={(event) => setForm({ ...form, resource_label: event.target.value })} />
+        </label>
+        <label>
+          Owner credential profile
+          <select
+            value={form.owner_credential_profile_id || ""}
+            onChange={(event) => setForm({ ...form, owner_credential_profile_id: event.target.value })}
+          >
+            <option value="">Not set</option>
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {credentialProfileLabel(profile)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Success text contains
+          <input value={form.success_text_contains || ""} onChange={(event) => setForm({ ...form, success_text_contains: event.target.value })} />
+        </label>
+        <label>
+          Denied text contains
+          <input value={form.denied_text_contains || ""} onChange={(event) => setForm({ ...form, denied_text_contains: event.target.value })} />
+        </label>
+      </div>
+      <label>
+        Description
+        <textarea value={form.description || ""} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+      </label>
+      <label className="checkbox-row">
+        <input type="checkbox" checked={form.enabled !== false} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
+        Enabled
+      </label>
+      <p className="muted">Use dedicated test accounts and test data. Do not use real user credentials.</p>
+      <div className="form-actions">
+        <button type="submit" disabled={saving || profiles.length === 0}>
+          {saving ? "Saving" : "Add Authorization Check"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function AuthorizationCheckTable({
+  checks,
+  profiles,
+  onChanged
+}: {
+  checks: AuthorizationCheck[];
+  profiles: CredentialProfile[];
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const profileByID = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
+
+  if (checks.length === 0) {
+    return <EmptyState title="No authorization checks" body="Add an explicit browser URL check to verify allowed or denied role access." />;
+  }
+
+  async function toggleCheck(check: AuthorizationCheck) {
+    setBusy(`toggle:${check.id}`);
+    setError("");
+    try {
+      await updateAuthorizationCheck(check.id, authorizationInputFromCheck(check, { enabled: !check.enabled }));
+      onChanged();
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : String(toggleError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function removeCheck(check: AuthorizationCheck) {
+    if (!window.confirm(`Delete authorization check ${check.name}?`)) {
+      return;
+    }
+    setBusy(`delete:${check.id}`);
+    setError("");
+    try {
+      await deleteAuthorizationCheck(check.id);
+      onChanged();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div>
+      {error && <Notice tone="danger" message={error} />}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Actor</th>
+              <th>Expected</th>
+              <th>Target</th>
+              <th>Enabled</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {checks.map((check) => {
+              const actor = profileByID.get(check.actor_credential_profile_id);
+              return (
+                <tr key={check.id}>
+                  <td>
+                    <strong>{check.name}</strong>
+                    {check.resource_label && <div className="muted">{check.resource_label}</div>}
+                  </td>
+                  <td>{check.type}</td>
+                  <td>{actor ? credentialProfileLabel(actor) : check.actor_credential_profile_id}</td>
+                  <td>{check.expected_outcome}</td>
+                  <td>
+                    <code>{check.target_url || check.path}</code>
+                  </td>
+                  <td>{check.enabled ? "Yes" : "No"}</td>
+                  <td className="actions">
+                    <div className="button-row compact">
+                      <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void toggleCheck(check)}>
+                        {check.enabled ? "Disable" : "Enable"}
+                      </button>
+                      <button type="button" className="secondary danger" disabled={busy !== ""} onClick={() => void removeCheck(check)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AuthorizationRunTable({ runs }: { runs: AuthorizationCheckRun[] }) {
+  if (runs.length === 0) {
+    return <EmptyState title="No authorization runs" body="Run authorization checks to create a report." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Run</th>
+            <th>Checks</th>
+            <th>Created</th>
+            <th>Completed</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td>
+                <StatusBadge status={run.status} />
+              </td>
+              <td>
+                <a href={`#/authorization-check-runs/${run.id}`}>{shortID(run.id)}</a>
+                {run.error_message && <p className="muted">{run.error_message}</p>}
+              </td>
+              <td>
+                {run.passed_checks} passed · {run.failed_checks} failed · {run.skipped_checks} skipped
+              </td>
+              <td>{formatDate(run.created_at)}</td>
+              <td>{run.completed_at ? formatDate(run.completed_at) : "Not completed"}</td>
+              <td className="actions">
+                <a className="button secondary-link" href={authorizationCheckHTMLReportURL(run.id)} target="_blank" rel="noreferrer">
+                  HTML
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function authorizationInputFromCheck(check: AuthorizationCheck, overrides: Partial<AuthorizationCheckInput> = {}): AuthorizationCheckInput {
+  return {
+    name: check.name,
+    description: check.description || "",
+    type: "browser_url",
+    resource_label: check.resource_label || "",
+    owner_credential_profile_id: check.owner_credential_profile_id || undefined,
+    actor_credential_profile_id: check.actor_credential_profile_id,
+    expected_outcome: check.expected_outcome,
+    target_url: check.target_url || check.path || "",
+    success_text_contains: check.success_text_contains || "",
+    denied_text_contains: check.denied_text_contains || "",
+    enabled: check.enabled,
+    ...overrides
+  };
+}
+
+function credentialProfileLabel(profile: CredentialProfile): string {
+  return [profile.name, profile.role_name ? `role ${profile.role_name}` : "", profile.username_display_hint || ""].filter(Boolean).join(" · ");
 }
 
 function APISpecImportForm({ project, onImported }: { project: Project; onImported: () => void }) {
@@ -2445,6 +2863,194 @@ function ProjectForm({ onCreated }: { onCreated: (project: Project) => void }) {
   );
 }
 
+function AuthorizationCheckRunPage({ runID }: { runID: string }) {
+  const [report, setReport] = useState<AuthorizationCheckReport | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const nextReport = await getAuthorizationCheckReport(runID);
+      setReport(nextReport);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [runID]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!report || !isActiveRunStatus(report.run.status)) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => window.clearInterval(timer);
+  }, [refresh, report]);
+
+  if (error) {
+    return <Notice tone="danger" message={error} />;
+  }
+  if (loading && !report) {
+    return <SkeletonRows />;
+  }
+  if (!report) {
+    return <Notice tone="danger" message="Authorization report could not be loaded." />;
+  }
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>{report.project.name}</h2>
+            <p>
+              <StatusBadge status={report.run.status} /> <span className="muted">Authorization run {report.run.id}</span>
+            </p>
+          </div>
+          <div className="button-row">
+            <a className="button secondary-link" href={`#/projects/${report.project.id}`}>
+              Project
+            </a>
+            <a className="button" href={authorizationCheckHTMLReportURL(report.run.id)} target="_blank" rel="noreferrer">
+              HTML Report
+            </a>
+          </div>
+        </div>
+        {report.run.error_message && <Notice tone="danger" message={report.run.error_message} />}
+        <div className="summary-grid">
+          <Metric label="Checks" value={report.run.total_checks} />
+          <Metric label="Passed" value={report.run.passed_checks} />
+          <Metric label="Failed" value={report.run.failed_checks} tone="high" />
+          <Metric label="Skipped" value={report.run.skipped_checks} tone="medium" />
+          <Metric label="Findings" value={report.summary.total_findings} tone="critical" />
+          <Metric label="Evidence" value={report.evidence.length} tone="info" />
+        </div>
+        <div className="detail-grid compact">
+          <Field label="Created" value={formatDate(report.run.created_at)} />
+          <Field label="Started" value={report.run.started_at ? formatDate(report.run.started_at) : "Not started"} />
+          <Field label="Completed" value={report.run.completed_at ? formatDate(report.run.completed_at) : "Not completed"} />
+          <Field label="Generated" value={formatDate(report.generated_at)} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Safety Scope</h2>
+        <Notice
+          tone="info"
+          message="Authorization checks are explicit, deterministic, read-only browser URL checks. Qualora does not crawl, fuzz, submit arbitrary forms, execute payloads, or expose credentials."
+        />
+      </section>
+
+      <section>
+        <h2>Check Results</h2>
+        <AuthorizationResultTable report={report} />
+      </section>
+
+      <section>
+        <h2>Findings</h2>
+        <AuthorizationFindingsTable findings={report.findings} />
+      </section>
+
+      <section>
+        <h2>Evidence</h2>
+        <EvidenceTable evidence={report.evidence} />
+      </section>
+
+      <section>
+        <h2>Metadata</h2>
+        <pre>{JSON.stringify(report.metadata, null, 2)}</pre>
+      </section>
+    </div>
+  );
+}
+
+function AuthorizationResultTable({ report }: { report: AuthorizationCheckReport }) {
+  if (report.results.length === 0) {
+    return <EmptyState title="No results" body="The authorization worker has not recorded results yet." />;
+  }
+  const checksByID = new Map(report.checks.map((check) => [check.id, check]));
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Check</th>
+            <th>Actor Role</th>
+            <th>Expected</th>
+            <th>Actual</th>
+            <th>Target</th>
+            <th>HTTP</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.results.map((result) => {
+            const check = checksByID.get(result.check_id);
+            return (
+              <tr key={result.id}>
+                <td>
+                  <StatusBadge status={result.status} />
+                </td>
+                <td>{check?.name || shortID(result.check_id)}</td>
+                <td>{result.actor_role_name || "Not set"}</td>
+                <td>{result.expected_outcome}</td>
+                <td>{result.actual_outcome}</td>
+                <td>
+                  <code>{result.target_url || check?.target_url || ""}</code>
+                  {result.final_url && <p className="muted">Final: {result.final_url}</p>}
+                </td>
+                <td>{result.http_status ?? "n/a"}</td>
+                <td>{result.skip_reason || result.error_message || ""}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AuthorizationFindingsTable({ findings }: { findings: AuthorizationCheckReport["findings"] }) {
+  if (findings.length === 0) {
+    return <EmptyState title="No findings" body="This authorization run did not record findings." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Title</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th>Recommendation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {findings.map((finding) => (
+            <tr key={finding.id}>
+              <td>
+                <span className={`severity ${finding.severity}`}>{finding.severity}</span>
+              </td>
+              <td>{finding.title}</td>
+              <td>{finding.category}</td>
+              <td>{finding.description}</td>
+              <td>{finding.recommendation}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cachedRun?: TestRun; projectByID: Map<string, Project> }) {
   const [run, setRun] = useState<TestRun | undefined>(cachedRun);
   const [report, setReport] = useState<Report | undefined>();
@@ -3032,6 +3638,9 @@ function parseHash(hash: string): Route {
   if (parts[0] === "test-plan-executions" && parts[1]) {
     return { name: "test-plan-execution", id: parts[1] };
   }
+  if (parts[0] === "authorization-check-runs" && parts[1]) {
+    return { name: "authorization-check-run", id: parts[1] };
+  }
   return { name: "dashboard" };
 }
 
@@ -3055,6 +3664,8 @@ function hashForRoute(route: Route): string {
       return `/test-plans/${route.id}`;
     case "test-plan-execution":
       return `/test-plan-executions/${route.id}`;
+    case "authorization-check-run":
+      return `/authorization-check-runs/${route.id}`;
     case "run":
       return `/runs/${route.id}`;
   }
@@ -3080,6 +3691,8 @@ function titleForRoute(route: Route): string {
       return "Test Plan";
     case "test-plan-execution":
       return "Plan Execution";
+    case "authorization-check-run":
+      return "Authorization Report";
     case "run":
       return "Run Report";
   }

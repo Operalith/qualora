@@ -392,8 +392,9 @@ func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 		}
 		if profile != nil {
 			report.Metadata["credential_profile"] = map[string]any{
-				"id":   profile.ID,
-				"name": profile.Name,
+				"id":        profile.ID,
+				"name":      profile.Name,
+				"role_name": profile.RoleName,
 			}
 		}
 	}
@@ -448,7 +449,8 @@ ORDER BY created_at ASC
 
 func (s *Store) ListFindings(ctx context.Context, runID string) ([]Finding, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT id, run_id::text, test_plan_execution_id::text, scenario_execution_id::text, step_execution_id::text,
+SELECT id, run_id::text, test_plan_execution_id::text, authorization_check_run_id::text,
+	scenario_execution_id::text, step_execution_id::text,
 	title, severity, category, confidence, description, recommendation, evidence_ids, created_at
 FROM findings
 WHERE run_id = $1
@@ -475,7 +477,8 @@ ORDER BY created_at ASC
 
 func (s *Store) ListEvidence(ctx context.Context, runID string) ([]Evidence, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT id, run_id::text, test_plan_execution_id::text, type, uri, metadata, created_at
+SELECT id, run_id::text, test_plan_execution_id::text, authorization_check_run_id::text,
+	type, uri, metadata, created_at
 FROM evidence
 WHERE run_id = $1
 ORDER BY created_at ASC
@@ -501,7 +504,8 @@ ORDER BY created_at ASC
 
 func (s *Store) GetEvidence(ctx context.Context, id string) (*Evidence, error) {
 	record, err := scanEvidence(s.db.QueryRow(ctx, `
-SELECT id, run_id::text, test_plan_execution_id::text, type, uri, metadata, created_at
+SELECT id, run_id::text, test_plan_execution_id::text, authorization_check_run_id::text,
+	type, uri, metadata, created_at
 FROM evidence
 WHERE id = $1
 `, id))
@@ -560,11 +564,13 @@ func scanEvidence(row scanRow) (Evidence, error) {
 	var record Evidence
 	var runID sql.NullString
 	var executionID sql.NullString
+	var authorizationRunID sql.NullString
 	var metadataRaw []byte
 	if err := row.Scan(
 		&record.ID,
 		&runID,
 		&executionID,
+		&authorizationRunID,
 		&record.Type,
 		&record.URI,
 		&metadataRaw,
@@ -581,6 +587,9 @@ func scanEvidence(row scanRow) (Evidence, error) {
 	if executionID.Valid {
 		record.TestPlanExecutionID = executionID.String
 	}
+	if authorizationRunID.Valid {
+		record.AuthorizationRunID = authorizationRunID.String
+	}
 	return record, nil
 }
 
@@ -588,6 +597,7 @@ func scanFinding(row scanRow) (Finding, error) {
 	var finding Finding
 	var runID sql.NullString
 	var executionID sql.NullString
+	var authorizationRunID sql.NullString
 	var scenarioExecutionID sql.NullString
 	var stepExecutionID sql.NullString
 	var evidenceIDsRaw []byte
@@ -595,6 +605,7 @@ func scanFinding(row scanRow) (Finding, error) {
 		&finding.ID,
 		&runID,
 		&executionID,
+		&authorizationRunID,
 		&scenarioExecutionID,
 		&stepExecutionID,
 		&finding.Title,
@@ -616,6 +627,9 @@ func scanFinding(row scanRow) (Finding, error) {
 	}
 	if executionID.Valid {
 		finding.TestPlanExecutionID = executionID.String
+	}
+	if authorizationRunID.Valid {
+		finding.AuthorizationRunID = authorizationRunID.String
 	}
 	if scenarioExecutionID.Valid {
 		finding.ScenarioExecutionID = scenarioExecutionID.String

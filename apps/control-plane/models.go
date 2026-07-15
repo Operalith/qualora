@@ -90,6 +90,7 @@ type Finding struct {
 	ID                  string    `json:"id"`
 	RunID               string    `json:"run_id,omitempty"`
 	TestPlanExecutionID string    `json:"test_plan_execution_id,omitempty"`
+	AuthorizationRunID  string    `json:"authorization_check_run_id,omitempty"`
 	ScenarioExecutionID string    `json:"scenario_execution_id,omitempty"`
 	StepExecutionID     string    `json:"step_execution_id,omitempty"`
 	Title               string    `json:"title"`
@@ -106,6 +107,7 @@ type Evidence struct {
 	ID                  string         `json:"id"`
 	RunID               string         `json:"run_id,omitempty"`
 	TestPlanExecutionID string         `json:"test_plan_execution_id,omitempty"`
+	AuthorizationRunID  string         `json:"authorization_check_run_id,omitempty"`
 	Type                string         `json:"type"`
 	URI                 string         `json:"uri"`
 	Metadata            map[string]any `json:"metadata"`
@@ -184,6 +186,9 @@ type CredentialProfile struct {
 	ProjectID           string    `json:"project_id"`
 	Name                string    `json:"name"`
 	Type                string    `json:"type"`
+	RoleName            string    `json:"role_name,omitempty"`
+	RoleDescription     string    `json:"role_description,omitempty"`
+	SubjectLabel        string    `json:"subject_label,omitempty"`
 	UsernameEncrypted   string    `json:"-"`
 	PasswordEncrypted   string    `json:"-"`
 	UsernameConfigured  bool      `json:"username_configured"`
@@ -205,6 +210,9 @@ type CredentialProfile struct {
 type CredentialProfileRequest struct {
 	Name                string `json:"name"`
 	Type                string `json:"type"`
+	RoleName            string `json:"role_name"`
+	RoleDescription     string `json:"role_description"`
+	SubjectLabel        string `json:"subject_label"`
 	Username            string `json:"username"`
 	Password            string `json:"password"`
 	LoginURL            string `json:"login_url"`
@@ -228,6 +236,7 @@ type AuthenticatedBrowserSmokeRequest struct {
 type LoginSummary struct {
 	CredentialProfileID    string `json:"credential_profile_id,omitempty"`
 	CredentialProfileName  string `json:"credential_profile_name,omitempty"`
+	RoleName               string `json:"role_name,omitempty"`
 	LoginStatus            string `json:"login_status,omitempty"`
 	LoginURL               string `json:"login_url,omitempty"`
 	LoginFinalURL          string `json:"login_final_url,omitempty"`
@@ -235,6 +244,123 @@ type LoginSummary struct {
 	LoginDurationMS        int    `json:"login_duration_ms,omitempty"`
 	AuthenticatedTargetURL string `json:"authenticated_target_url,omitempty"`
 	FailureReason          string `json:"failure_reason,omitempty"`
+}
+
+const (
+	AuthorizationCheckTypeBrowserURL = "browser_url"
+	AuthorizationCheckTypeAPIGet     = "api_get"
+
+	AuthorizationExpectedAllowed = "allowed"
+	AuthorizationExpectedDenied  = "denied"
+
+	AuthorizationActualAllowed = "allowed"
+	AuthorizationActualDenied  = "denied"
+	AuthorizationActualUnknown = "unknown"
+)
+
+type AuthorizationCheck struct {
+	ID                       string    `json:"id"`
+	ProjectID                string    `json:"project_id"`
+	Name                     string    `json:"name"`
+	Description              string    `json:"description,omitempty"`
+	Type                     string    `json:"type"`
+	ResourceLabel            string    `json:"resource_label,omitempty"`
+	OwnerCredentialProfileID string    `json:"owner_credential_profile_id,omitempty"`
+	ActorCredentialProfileID string    `json:"actor_credential_profile_id"`
+	ExpectedOutcome          string    `json:"expected_outcome"`
+	TargetURL                string    `json:"target_url,omitempty"`
+	APISpecID                string    `json:"api_spec_id,omitempty"`
+	APIOperationID           string    `json:"api_operation_id,omitempty"`
+	Method                   string    `json:"method,omitempty"`
+	Path                     string    `json:"path,omitempty"`
+	ExpectedStatuses         []int     `json:"expected_statuses,omitempty"`
+	SuccessTextContains      string    `json:"success_text_contains,omitempty"`
+	DeniedStatuses           []int     `json:"denied_statuses,omitempty"`
+	DeniedTextContains       string    `json:"denied_text_contains,omitempty"`
+	Enabled                  bool      `json:"enabled"`
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
+}
+
+type AuthorizationCheckRequest struct {
+	Name                     string `json:"name"`
+	Description              string `json:"description"`
+	Type                     string `json:"type"`
+	ResourceLabel            string `json:"resource_label"`
+	OwnerCredentialProfileID string `json:"owner_credential_profile_id"`
+	ActorCredentialProfileID string `json:"actor_credential_profile_id"`
+	ExpectedOutcome          string `json:"expected_outcome"`
+	TargetURL                string `json:"target_url"`
+	APISpecID                string `json:"api_spec_id"`
+	APIOperationID           string `json:"api_operation_id"`
+	Method                   string `json:"method"`
+	Path                     string `json:"path"`
+	ExpectedStatuses         []int  `json:"expected_statuses"`
+	SuccessTextContains      string `json:"success_text_contains"`
+	DeniedStatuses           []int  `json:"denied_statuses"`
+	DeniedTextContains       string `json:"denied_text_contains"`
+	Enabled                  *bool  `json:"enabled"`
+}
+
+type AuthorizationCheckRunRequest struct {
+	CheckIDs  []string `json:"check_ids"`
+	MaxChecks int      `json:"max_checks"`
+}
+
+type AuthorizationCheckRun struct {
+	ID            string     `json:"id"`
+	ProjectID     string     `json:"project_id"`
+	Status        string     `json:"status"`
+	CheckIDs      []string   `json:"check_ids,omitempty"`
+	MaxChecks     int        `json:"max_checks"`
+	TotalChecks   int        `json:"total_checks"`
+	PassedChecks  int        `json:"passed_checks"`
+	FailedChecks  int        `json:"failed_checks"`
+	SkippedChecks int        `json:"skipped_checks"`
+	ErrorMessage  string     `json:"error_message,omitempty"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type AuthorizationCheckResult struct {
+	ID                       string    `json:"id"`
+	RunID                    string    `json:"run_id"`
+	CheckID                  string    `json:"check_id"`
+	Status                   string    `json:"status"`
+	ExpectedOutcome          string    `json:"expected_outcome"`
+	ActualOutcome            string    `json:"actual_outcome"`
+	ActorCredentialProfileID string    `json:"actor_credential_profile_id"`
+	ActorRoleName            string    `json:"actor_role_name,omitempty"`
+	TargetURL                string    `json:"target_url,omitempty"`
+	FinalURL                 string    `json:"final_url,omitempty"`
+	HTTPStatus               *int      `json:"http_status,omitempty"`
+	PageTitle                string    `json:"page_title,omitempty"`
+	DurationMS               *int      `json:"duration_ms,omitempty"`
+	EvidenceID               string    `json:"evidence_id,omitempty"`
+	FindingID                string    `json:"finding_id,omitempty"`
+	SkipReason               string    `json:"skip_reason,omitempty"`
+	ErrorMessage             string    `json:"error_message,omitempty"`
+	CreatedAt                time.Time `json:"created_at"`
+}
+
+type AuthorizationCheckDetail struct {
+	Run     AuthorizationCheckRun      `json:"run"`
+	Checks  []AuthorizationCheck       `json:"checks,omitempty"`
+	Results []AuthorizationCheckResult `json:"results"`
+}
+
+type AuthorizationCheckReport struct {
+	Run         AuthorizationCheckRun      `json:"run"`
+	Project     Project                    `json:"project"`
+	Checks      []AuthorizationCheck       `json:"checks"`
+	Results     []AuthorizationCheckResult `json:"results"`
+	Summary     ReportSummary              `json:"summary"`
+	Findings    []Finding                  `json:"findings"`
+	Evidence    []Evidence                 `json:"evidence"`
+	Metadata    map[string]any             `json:"metadata"`
+	GeneratedAt time.Time                  `json:"generated_at"`
 }
 
 type AIProviderTestResult struct {

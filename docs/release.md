@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.9.0-alpha is the ninth public alpha release. It adds project-scoped encrypted credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, web UI credential workflows, login/authenticated report metadata, and deterministic demo login smoke coverage while keeping AI optional and test execution conservative.
+Qualora v0.10.0-alpha is the tenth public alpha release. It adds role metadata on credential profiles, explicit browser URL authorization checks, authorization run JSON/HTML reports, web UI authorization workflows, and deterministic demo role coverage while keeping AI optional and test execution conservative.
 
 ## Pre-Release Checklist
 
@@ -25,9 +25,14 @@ Confirm:
 - The smoke script starts the local `demo-web`, `demo-api`, and `fake-llm` smoke services.
 - The smoke script creates browser and API projects.
 - The smoke script creates a demo credential profile.
+- The smoke script creates demo role credential profiles.
 - Credential profile API responses do not include the raw demo username or password.
 - The login check run reaches `completed` against `demo-web`.
 - The authenticated browser smoke run reaches `completed` against `demo-web` `/dashboard`.
+- Authorization checks are created for admin, readonly, customer-a, and customer-b demo roles.
+- The authorization check run reaches `completed`.
+- Authorization JSON and HTML reports work and do not contain demo passwords.
+- Authorization reports include `authorization_observations` and screenshot evidence.
 - Login and authenticated smoke JSON reports include `login_summary` and `login_observations`.
 - Login and authenticated smoke HTML reports include the login summary.
 - Login and authenticated smoke reports do not contain the demo password.
@@ -63,10 +68,10 @@ Confirm:
 ```bash
 git status --short
 git add .
-git commit -m "feat: add credential profiles and authenticated smoke testing for v0.9.0-alpha"
-git tag -a v0.9.0-alpha -m "v0.9.0-alpha"
+git commit -m "feat: add role-aware authorization checks for v0.10.0-alpha"
+git tag -a v0.10.0-alpha -m "v0.10.0-alpha"
 git push origin main
-git push origin v0.9.0-alpha
+git push origin v0.10.0-alpha
 ```
 
 ## GitHub Release
@@ -74,7 +79,7 @@ git push origin v0.9.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.9.0-alpha
+Qualora v0.10.0-alpha
 ```
 
-Use [release-notes/v0.9.0-alpha.md](release-notes/v0.9.0-alpha.md) as the release body.
+Use [release-notes/v0.10.0-alpha.md](release-notes/v0.10.0-alpha.md) as the release body.

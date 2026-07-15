@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.9.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.10.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -33,7 +33,7 @@ The browser worker routes Playwright requests through the host policy:
 
 ## API Request Enforcement
 
-The API worker and v0.9 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
+The API worker and v0.10 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
 
 Default API behavior:
 
@@ -42,7 +42,7 @@ Default API behavior:
 - Safe OpenAPI methods only: `GET`, `HEAD`, and `OPTIONS`.
 - Unsafe methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are skipped.
 - Imported OpenAPI specs are parsed and classified before any API requests are executed.
-- Auth-required operations are skipped in v0.9.
+- Auth-required operations are skipped in v0.10.
 - Operations with required request bodies are skipped.
 - Path parameters are skipped unless a safe `example`, `default`, or `enum` value exists.
 - Required query parameters are sent only when a safe sample exists and the parameter name is not secret-like.
@@ -93,9 +93,40 @@ Login automation is intentionally narrow:
 
 Login evidence stores screenshots when configured plus metadata such as login status, safe URLs, page title, duration, console errors, failed requests, and blocked requests. It must not expose passwords, raw usernames, cookies, session storage, local storage, authorization headers, tokens, or browser storage contents.
 
+## Role-Aware Authorization Checks
+
+Authorization checks in v0.10 are explicit, deterministic, and conservative. They are intended for dedicated test accounts and test data only.
+
+Credential profiles can include role metadata such as `admin`, `readonly`, `customer-a`, or `customer-b`. The role metadata is descriptive and project-scoped; it does not grant access inside Qualora.
+
+Authorization execution rules:
+
+- A user must explicitly create each authorization check.
+- Browser authorization checks log in with the configured actor credential profile.
+- The worker navigates only to the configured `target_url` or path.
+- Targets must stay on the project `frontend_url` origin and pass `allowed_hosts` validation.
+- The worker compares the observed outcome with the configured expected outcome, `allowed` or `denied`.
+- Denied outcomes are detected through HTTP `401`, `403`, `404`, or configured denied text.
+- Allowed outcomes are detected through successful page load and optional success text.
+- Ambiguous outcomes are recorded as unknown findings.
+- Screenshots and `authorization_observations` metadata are recorded as evidence.
+
+Authorization checks do not:
+
+- Crawl the application.
+- Submit arbitrary forms.
+- Execute payloads.
+- Fuzz inputs.
+- Use POST/PUT/PATCH/DELETE.
+- Perform active exploitation.
+- Use autonomous AI browser control.
+- Send credentials, cookies, storage, auth headers, or tokens to AI.
+
+Authenticated API authorization testing is not fully supported in v0.10. API-style authorization checks are skipped unless a future safe design adds explicit authenticated API support.
+
 ## Web UI Exposure
 
-The v0.9.0-alpha web UI has no authentication or authorization. It can create projects, manage credential profiles, test deterministic logins, start browser/API/authenticated smoke runs, import API specs, start safe API smoke runs, configure AI providers, run AI analysis, generate AI-assisted test plans, preview/start safe test plan executions, and display report/evidence metadata through the control-plane API.
+The v0.10.0-alpha web UI has no authentication or authorization. It can create projects, manage credential profiles, create/run authorization checks, test deterministic logins, start browser/API/authenticated smoke runs, import API specs, start safe API smoke runs, configure AI providers, run AI analysis, generate AI-assisted test plans, preview/start safe test plan executions, and display report/evidence metadata through the control-plane API.
 
 Use it only in trusted local or self-hosted environments. Do not expose `qualora-web` or `qualora-api` directly to untrusted networks without adding an external access-control layer.
 
@@ -106,6 +137,7 @@ Current safeguards:
 - API request logs do not include request bodies or query strings.
 - Worker logs redact common token, password, secret, cookie, and authorization patterns.
 - Credential profile username/password values are encrypted at rest and never returned raw.
+- Authorization check evidence stores role/profile labels and outcomes, not passwords, raw usernames, cookies, local/session storage, authorization headers, or tokens.
 - API evidence strips URL userinfo, query strings, and fragments.
 - API smoke result rows store method, path, resolved URL, status, HTTP status, duration, content type, response size, errors, and skip reasons, but not request bodies or response bodies.
 - Evidence object downloads are served only for evidence records already known to Qualora; callers cannot provide arbitrary S3 keys or filesystem paths.
@@ -120,7 +152,7 @@ The Docker Compose default `QUALORA_ENCRYPTION_KEY` is an insecure development f
 
 AI is disabled until a provider is configured. Qualora works without AI.
 
-The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API/login metadata, API smoke result summaries, and job metadata.
+The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API/login/authorization metadata, API smoke result summaries, and job metadata.
 
 The AI input builder does not send by default:
 
@@ -140,8 +172,7 @@ The AI input builder does not send by default:
 
 Redaction is enabled by default and masks common bearer/basic auth values, API keys, passwords, access/refresh tokens, session IDs, cookies, and JWT-looking values. AI output is parsed as strict JSON and redacted before storage.
 
-AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.9 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps.
-AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.9 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps.
+AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.10 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution in v0.10 is deterministic and user-configured, not AI-generated.
 
 ## Non-Goals For This Alpha
 

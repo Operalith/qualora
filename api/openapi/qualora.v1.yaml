@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.9.0-alpha
-  description: API for creating QA projects, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading reports, and downloading stored evidence objects.
+  version: 0.10.0-alpha
+  description: API for creating QA projects, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading reports, and downloading stored evidence objects.
 servers:
   - url: http://localhost:8080
 paths:
@@ -260,6 +260,179 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
         "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/authorization-checks:
+    get:
+      summary: List authorization checks for a project
+      description: Returns explicit role-aware authorization checks. Checks are user-configured and conservative; Qualora does not generate or execute arbitrary authorization attacks.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Authorization check list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorization_checks]
+                properties:
+                  authorization_checks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuthorizationCheck"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create an authorization check
+      description: Creates an explicit read-only browser URL authorization check. Browser targets must stay on the project frontend origin and allowed hosts.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorizationCheckRequest"
+      responses:
+        "201":
+          description: Created authorization check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationCheck"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/authorization-checks/{authorization_check_id}:
+    get:
+      summary: Get an authorization check
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationCheckID"
+      responses:
+        "200":
+          description: Authorization check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationCheck"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      summary: Update an authorization check
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationCheckID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorizationCheckRequest"
+      responses:
+        "200":
+          description: Updated authorization check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationCheck"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete an authorization check
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationCheckID"
+      responses:
+        "204":
+          description: Authorization check deleted
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/authorization-check-runs:
+    get:
+      summary: List authorization check runs for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Authorization run list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorization_check_runs]
+                properties:
+                  authorization_check_runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuthorizationCheckRun"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Start an authorization check run
+      description: Queues explicit browser URL authorization checks. Login is deterministic and selector-based; no crawling, payload attacks, destructive actions, or autonomous AI browser control are performed.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorizationCheckRunRequest"
+      responses:
+        "201":
+          description: Created authorization check run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationCheckRun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/authorization-check-runs/{authorization_check_run_id}:
+    get:
+      summary: Get an authorization check run
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationCheckRunID"
+      responses:
+        "200":
+          description: Authorization run detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationCheckDetail"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/authorization-check-runs/{authorization_check_run_id}/report:
+    get:
+      summary: Get a structured authorization report
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationCheckRunID"
+      responses:
+        "200":
+          description: Authorization report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationCheckReport"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/authorization-check-runs/{authorization_check_run_id}/report.html:
+    get:
+      summary: Get a self-contained HTML authorization report
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationCheckRunID"
+      responses:
+        "200":
+          description: HTML authorization report
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
           $ref: "#/components/responses/Error"
   /api/v1/projects/{project_id}/ai-test-plans:
     post:
@@ -877,6 +1050,20 @@ components:
       schema:
         type: string
         format: uuid
+    AuthorizationCheckID:
+      name: authorization_check_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AuthorizationCheckRunID:
+      name: authorization_check_run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     EvidenceID:
       name: evidence_id
       in: path
@@ -1073,6 +1260,13 @@ components:
           type: string
           enum: [username_password]
           default: username_password
+        role_name:
+          type: string
+          description: Optional project-scoped role label used by role-aware authorization checks.
+        role_description:
+          type: string
+        subject_label:
+          type: string
         username:
           type: string
           description: Stored encrypted and never returned. Required on create; omit on update to keep the existing username secret.
@@ -1136,6 +1330,12 @@ components:
         type:
           type: string
           enum: [username_password]
+        role_name:
+          type: string
+        role_description:
+          type: string
+        subject_label:
+          type: string
         username_configured:
           type: boolean
         password_configured:
@@ -1187,6 +1387,265 @@ components:
           minimum: 5
           maximum: 120
           default: 30
+    AuthorizationCheckRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - actor_credential_profile_id
+        - expected_outcome
+        - target_url
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [browser_url, api_get]
+          default: browser_url
+        resource_label:
+          type: string
+        owner_credential_profile_id:
+          type: string
+          format: uuid
+          nullable: true
+        actor_credential_profile_id:
+          type: string
+          format: uuid
+        expected_outcome:
+          type: string
+          enum: [allowed, denied]
+        target_url:
+          type: string
+          description: Browser URL/path target. For browser_url checks it must stay on the project frontend origin and allowed hosts.
+        success_text_contains:
+          type: string
+        denied_text_contains:
+          type: string
+        enabled:
+          type: boolean
+          default: true
+    AuthorizationCheck:
+      allOf:
+        - $ref: "#/components/schemas/AuthorizationCheckRequest"
+        - type: object
+          required:
+            - id
+            - project_id
+            - type
+            - enabled
+            - created_at
+            - updated_at
+          properties:
+            id:
+              type: string
+              format: uuid
+            project_id:
+              type: string
+              format: uuid
+            api_spec_id:
+              type: string
+              format: uuid
+              nullable: true
+            api_operation_id:
+              type: string
+              format: uuid
+              nullable: true
+            method:
+              type: string
+            path:
+              type: string
+            expected_statuses:
+              type: array
+              items:
+                type: integer
+            denied_statuses:
+              type: array
+              items:
+                type: integer
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+    AuthorizationCheckRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        check_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        max_checks:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+    AuthorizationCheckRun:
+      type: object
+      required:
+        - id
+        - project_id
+        - status
+        - max_checks
+        - total_checks
+        - passed_checks
+        - failed_checks
+        - skipped_checks
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, completed, failed, error]
+        check_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        max_checks:
+          type: integer
+        total_checks:
+          type: integer
+        passed_checks:
+          type: integer
+        failed_checks:
+          type: integer
+        skipped_checks:
+          type: integer
+        error_message:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AuthorizationCheckResult:
+      type: object
+      required:
+        - id
+        - run_id
+        - check_id
+        - status
+        - expected_outcome
+        - actual_outcome
+        - actor_credential_profile_id
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+        check_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [passed, failed, skipped, error]
+        expected_outcome:
+          type: string
+          enum: [allowed, denied]
+        actual_outcome:
+          type: string
+          enum: [allowed, denied, unknown]
+        actor_credential_profile_id:
+          type: string
+          format: uuid
+        actor_role_name:
+          type: string
+        target_url:
+          type: string
+        final_url:
+          type: string
+        http_status:
+          type: integer
+          nullable: true
+        page_title:
+          type: string
+        duration_ms:
+          type: integer
+          nullable: true
+        evidence_id:
+          type: string
+          format: uuid
+          nullable: true
+        finding_id:
+          type: string
+          format: uuid
+          nullable: true
+        skip_reason:
+          type: string
+        error_message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    AuthorizationCheckDetail:
+      type: object
+      required: [run, results]
+      properties:
+        run:
+          $ref: "#/components/schemas/AuthorizationCheckRun"
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthorizationCheck"
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthorizationCheckResult"
+    AuthorizationCheckReport:
+      type: object
+      required: [run, project, checks, results, summary, findings, evidence, metadata, generated_at]
+      properties:
+        run:
+          $ref: "#/components/schemas/AuthorizationCheckRun"
+        project:
+          $ref: "#/components/schemas/Project"
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthorizationCheck"
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthorizationCheckResult"
+        summary:
+          $ref: "#/components/schemas/ReportSummary"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+        metadata:
+          type: object
+          additionalProperties: true
+        generated_at:
+          type: string
+          format: date-time
     APISpecImportRequest:
       type: object
       additionalProperties: false
@@ -1487,6 +1946,8 @@ components:
           format: uuid
         credential_profile_name:
           type: string
+        role_name:
+          type: string
         login_status:
           type: string
           enum: [passed, failed, ""]
@@ -1541,6 +2002,10 @@ components:
           type: string
           format: uuid
           nullable: true
+        authorization_check_run_id:
+          type: string
+          format: uuid
+          nullable: true
         title:
           type: string
         severity:
@@ -1577,9 +2042,18 @@ components:
         run_id:
           type: string
           format: uuid
+          nullable: true
+        test_plan_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        authorization_check_run_id:
+          type: string
+          format: uuid
+          nullable: true
         type:
           type: string
-          enum: [screenshot, browser_observations, login_observations, api_observations, openapi_summary, api_request]
+          enum: [screenshot, browser_observations, login_observations, authorization_observations, api_observations, openapi_summary, api_request]
         uri:
           type: string
         metadata:

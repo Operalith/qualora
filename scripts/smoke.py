@@ -17,6 +17,12 @@ BROWSER_ALLOWED_HOST = os.environ.get(
 )
 DEMO_USERNAME = os.environ.get("QUALORA_DEMO_USERNAME", "demo@example.com")
 DEMO_PASSWORD = os.environ.get("QUALORA_DEMO_PASSWORD", "demo-password")
+ROLE_CREDENTIALS = [
+    ("Qualora Demo Admin", "admin@example.com", "admin-password", "admin", "Demo Admin"),
+    ("Qualora Demo Readonly", "readonly@example.com", "readonly-password", "readonly", "Demo Readonly"),
+    ("Qualora Demo Customer A", "customer-a@example.com", "customer-a-password", "customer-a", "Customer A"),
+    ("Qualora Demo Customer B", "customer-b@example.com", "customer-b-password", "customer-b", "Customer B"),
+]
 DEMO_WEB_HEALTH_URL = os.environ.get("DEMO_WEB_HEALTH_URL", "http://localhost:18082/health")
 API_SMOKE_URL = os.environ.get("QUALORA_API_SMOKE_URL", "http://demo-api:8080")
 API_SMOKE_OPENAPI_URL = os.environ.get(
@@ -92,7 +98,10 @@ def create_project(payload):
 
 def assert_no_demo_secret(value, label):
     text = value if isinstance(value, str) else json.dumps(value, sort_keys=True)
-    for secret in (DEMO_USERNAME, DEMO_PASSWORD):
+    secrets = [DEMO_USERNAME, DEMO_PASSWORD]
+    for _, username, password, _, _ in ROLE_CREDENTIALS:
+        secrets.extend([username, password])
+    for secret in secrets:
         if secret and secret in text:
             raise RuntimeError(f"{label} exposed demo credential secret")
 
@@ -134,6 +143,37 @@ def create_credential_profile(project):
     assert_no_demo_secret(fetched, "credential profile detail")
     if fetched.get("id") != profile["id"]:
         raise RuntimeError("credential profile detail did not match created profile")
+    return profile
+
+
+def create_role_credential_profile(project, name, username, password, role_name, subject_label, is_default=False):
+    login_url = f"{BROWSER_TARGET_URL.rstrip('/')}/login"
+    profile = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/credential-profiles",
+        {
+            "name": name,
+            "type": "username_password",
+            "role_name": role_name,
+            "role_description": f"Deterministic demo role {role_name}",
+            "subject_label": subject_label,
+            "username": username,
+            "password": password,
+            "login_url": login_url,
+            "username_selector": "#username",
+            "password_selector": "#password",
+            "submit_selector": "#login-submit",
+            "success_url_contains": "/dashboard",
+            "success_text_contains": "Authenticated area",
+            "failure_text_contains": "Invalid credentials",
+            "post_login_wait_ms": 100,
+            "is_default": is_default,
+        },
+    )
+    print(f"created role credential profile: {profile['id']} ({profile['name']} role={profile.get('role_name')})")
+    assert_no_demo_secret(profile, "role credential profile response")
+    if profile.get("role_name") != role_name:
+        raise RuntimeError(f"credential profile did not preserve role_name: {profile}")
     return profile
 
 
@@ -493,7 +533,7 @@ def assert_browser_report(report):
         raise RuntimeError("downloaded screenshot did not look like a PNG")
 
 
-def assert_login_report(report, expected_type, expect_authenticated_target):
+def assert_login_report(report, expected_type, expect_authenticated_target, expected_profile_name="Qualora Demo Login"):
     assert_no_demo_secret(report, f"{expected_type} JSON report")
     if report.get("run_type") != expected_type:
         raise RuntimeError(f"login report had unexpected run type: {report.get('run_type')}")
@@ -504,7 +544,7 @@ def assert_login_report(report, expected_type, expect_authenticated_target):
         raise RuntimeError(f"login summary did not report passed login: {summary}")
     if "dashboard" not in (summary.get("login_final_url") or ""):
         raise RuntimeError(f"login final URL did not reach dashboard: {summary}")
-    if summary.get("credential_profile_name") != "Qualora Demo Login":
+    if summary.get("credential_profile_name") != expected_profile_name:
         raise RuntimeError(f"login summary did not include the safe profile name: {summary}")
 
     evidence = report.get("evidence", [])
@@ -527,15 +567,15 @@ def assert_login_report(report, expected_type, expect_authenticated_target):
         assert_browser_report(report)
 
 
-def test_credential_profile_login(profile):
+def test_credential_profile_login(profile, expected_profile_name="Qualora Demo Login"):
     run = request("POST", f"/api/v1/credential-profiles/{profile['id']}/test-login", {})
     run_id = run["id"]
     print(f"started login check run: {run_id}")
     report = wait_for_run_report(run_id, "login check")
-    assert_login_report(report, "login_check", False)
+    assert_login_report(report, "login_check", False, expected_profile_name)
     html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
     assert_no_demo_secret(html, "login HTML report")
-    if "Login Summary" not in html or "Qualora Demo Login" not in html:
+    if "Login Summary" not in html or expected_profile_name not in html:
         raise RuntimeError("login HTML report did not include login summary")
     print(f"login check JSON report: {API_URL}/api/v1/runs/{run_id}/report")
     print(f"login check HTML report: {API_URL}/api/v1/runs/{run_id}/report.html")
@@ -568,6 +608,84 @@ def run_authenticated_browser_smoke(project, profile):
     return report
 
 
+def create_authorization_check(project, profile, name, target_path, expected_outcome, success_text="", denied_text="Access denied"):
+    check = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/authorization-checks",
+        {
+            "name": name,
+            "description": "Deterministic demo authorization check",
+            "type": "browser_url",
+            "resource_label": target_path,
+            "actor_credential_profile_id": profile["id"],
+            "expected_outcome": expected_outcome,
+            "target_url": target_path,
+            "success_text_contains": success_text,
+            "denied_text_contains": denied_text,
+            "enabled": True,
+        },
+    )
+    print(f"created authorization check: {check['id']} ({check['name']})")
+    assert_no_demo_secret(check, "authorization check response")
+    if check.get("expected_outcome") != expected_outcome:
+        raise RuntimeError(f"authorization check expected outcome was not preserved: {check}")
+    return check
+
+
+def run_authorization_checks(project, checks):
+    run = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/authorization-check-runs",
+        {"check_ids": [check["id"] for check in checks], "max_checks": 10},
+    )
+    run_id = run["id"]
+    print(f"started authorization check run: {run_id}")
+
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        detail = request("GET", f"/api/v1/authorization-check-runs/{run_id}")
+        status = detail["run"]["status"]
+        print(f"authorization check status: {status}")
+        if status in ("completed", "failed", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"authorization check run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    report = request("GET", f"/api/v1/authorization-check-runs/{run_id}/report")
+    print(f"authorization check report: {json.dumps(report, indent=2)}")
+    assert_no_demo_secret(report, "authorization JSON report")
+    if report["run"]["status"] != "completed":
+        raise RuntimeError(f"authorization run did not complete: {report}")
+    if int(report["run"].get("passed_checks") or 0) != len(checks):
+        raise RuntimeError(f"authorization run did not pass all expected checks: {report['run']}")
+    if report["run"].get("failed_checks") or report["run"].get("skipped_checks"):
+        raise RuntimeError(f"authorization run had failed/skipped checks: {report['run']}")
+    results = report.get("results") or []
+    if len(results) != len(checks):
+        raise RuntimeError(f"authorization report did not include all results: {results}")
+    if not all(item.get("status") == "passed" for item in results):
+        raise RuntimeError(f"authorization results were not all passed: {results}")
+    evidence = report.get("evidence") or []
+    types = {item.get("type") for item in evidence}
+    if "screenshot" not in types or "authorization_observations" not in types:
+        raise RuntimeError(f"authorization report missed expected evidence types: {types}")
+    screenshot = next(item for item in evidence if item.get("type") == "screenshot")
+    headers, body = fetch_binary(f"/api/v1/evidence/{screenshot['id']}")
+    if "image/png" not in headers.get("content-type", "") or not body.startswith(b"\x89PNG"):
+        raise RuntimeError("authorization screenshot evidence was not downloadable PNG data")
+
+    html = fetch_text(f"/api/v1/authorization-check-runs/{run_id}/report.html")
+    assert_no_demo_secret(html, "authorization HTML report")
+    if "Qualora role-aware authorization report" not in html or "Check Results" not in html:
+        raise RuntimeError("authorization HTML report did not include expected content")
+
+    print(f"authorization JSON report: {API_URL}/api/v1/authorization-check-runs/{run_id}/report")
+    print(f"authorization HTML report: {API_URL}/api/v1/authorization-check-runs/{run_id}/report.html")
+    print(f"Web authorization report: {WEB_URL}/#/authorization-check-runs/{run_id}")
+    return report
+
+
 def main():
     print(f"Web UI: {WEB_URL}")
 
@@ -596,6 +714,46 @@ def main():
     authenticated_report = run_authenticated_browser_smoke(browser_project, credential_profile)
     authenticated_report = run_ai_analysis(authenticated_report, provider)
     generate_ai_test_plan(browser_project, authenticated_report, provider)
+
+    role_profiles = {
+        role_name: create_role_credential_profile(browser_project, name, username, password, role_name, subject_label)
+        for name, username, password, role_name, subject_label in ROLE_CREDENTIALS
+    }
+    test_credential_profile_login(role_profiles["admin"], "Qualora Demo Admin")
+    test_credential_profile_login(role_profiles["readonly"], "Qualora Demo Readonly")
+    authorization_checks = [
+        create_authorization_check(
+            browser_project,
+            role_profiles["admin"],
+            "Admin can access admin route",
+            "/admin",
+            "allowed",
+            success_text="Admin console",
+        ),
+        create_authorization_check(
+            browser_project,
+            role_profiles["readonly"],
+            "Readonly is denied admin route",
+            "/admin",
+            "denied",
+        ),
+        create_authorization_check(
+            browser_project,
+            role_profiles["customer-a"],
+            "Customer A can access own invoice",
+            "/customers/a/invoice",
+            "allowed",
+            success_text="Invoice for Customer A",
+        ),
+        create_authorization_check(
+            browser_project,
+            role_profiles["customer-b"],
+            "Customer B is denied Customer A invoice",
+            "/customers/a/invoice",
+            "denied",
+        ),
+    ]
+    run_authorization_checks(browser_project, authorization_checks)
 
     browser_report = run_project(browser_project, f"/api/v1/projects/{browser_project['id']}/browser-smoke-runs")
     assert_browser_report(browser_report)

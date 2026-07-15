@@ -57,6 +57,7 @@ export type Finding = {
   id: string;
   run_id?: string;
   test_plan_execution_id?: string;
+  authorization_check_run_id?: string;
   scenario_execution_id?: string;
   step_execution_id?: string;
   title: string;
@@ -73,6 +74,7 @@ export type Evidence = {
   id: string;
   run_id?: string;
   test_plan_execution_id?: string;
+  authorization_check_run_id?: string;
   type: string;
   uri: string;
   metadata: Record<string, unknown>;
@@ -131,6 +133,9 @@ export type CredentialProfile = {
   project_id: string;
   name: string;
   type: "username_password";
+  role_name?: string;
+  role_description?: string;
+  subject_label?: string;
   username_configured: boolean;
   password_configured: boolean;
   username_display_hint?: string;
@@ -150,6 +155,9 @@ export type CredentialProfile = {
 export type CredentialProfileInput = {
   name: string;
   type: "username_password";
+  role_name?: string;
+  role_description?: string;
+  subject_label?: string;
   username?: string;
   password?: string;
   login_url: string;
@@ -161,6 +169,105 @@ export type CredentialProfileInput = {
   failure_text_contains: string;
   post_login_wait_ms: number;
   is_default: boolean;
+};
+
+export type AuthorizationCheck = {
+  id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  type: "browser_url" | "api_get";
+  resource_label?: string;
+  owner_credential_profile_id?: string;
+  actor_credential_profile_id: string;
+  expected_outcome: "allowed" | "denied";
+  target_url?: string;
+  api_spec_id?: string;
+  api_operation_id?: string;
+  method?: string;
+  path?: string;
+  expected_statuses?: number[];
+  success_text_contains?: string;
+  denied_statuses?: number[];
+  denied_text_contains?: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AuthorizationCheckInput = {
+  name: string;
+  description?: string;
+  type: "browser_url";
+  resource_label?: string;
+  owner_credential_profile_id?: string;
+  actor_credential_profile_id: string;
+  expected_outcome: "allowed" | "denied";
+  target_url: string;
+  success_text_contains?: string;
+  denied_text_contains?: string;
+  enabled?: boolean;
+};
+
+export type AuthorizationCheckRun = {
+  id: string;
+  project_id: string;
+  status: "queued" | "running" | "completed" | "failed" | "error" | string;
+  check_ids?: string[];
+  max_checks: number;
+  total_checks: number;
+  passed_checks: number;
+  failed_checks: number;
+  skipped_checks: number;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AuthorizationCheckRunInput = {
+  check_ids?: string[];
+  max_checks?: number;
+};
+
+export type AuthorizationCheckResult = {
+  id: string;
+  run_id: string;
+  check_id: string;
+  status: "passed" | "failed" | "skipped" | "error" | string;
+  expected_outcome: "allowed" | "denied";
+  actual_outcome: "allowed" | "denied" | "unknown";
+  actor_credential_profile_id: string;
+  actor_role_name?: string;
+  target_url?: string;
+  final_url?: string;
+  http_status?: number;
+  page_title?: string;
+  duration_ms?: number;
+  evidence_id?: string;
+  finding_id?: string;
+  skip_reason?: string;
+  error_message?: string;
+  created_at: string;
+};
+
+export type AuthorizationCheckDetail = {
+  run: AuthorizationCheckRun;
+  checks?: AuthorizationCheck[];
+  results: AuthorizationCheckResult[];
+};
+
+export type AuthorizationCheckReport = {
+  run: AuthorizationCheckRun;
+  project: Project;
+  checks: AuthorizationCheck[];
+  results: AuthorizationCheckResult[];
+  summary: ReportSummary;
+  findings: Finding[];
+  evidence: Evidence[];
+  metadata: Record<string, unknown>;
+  generated_at: string;
 };
 
 export type AuthenticatedBrowserSmokeInput = {

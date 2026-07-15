@@ -107,7 +107,7 @@ Delivered:
 
 ## v0.9.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Project-scoped encrypted credential profiles.
 - Credential profile CRUD API and web UI workflow.
@@ -120,7 +120,22 @@ Current alpha scope:
 - Safe AI input support for authenticated browser runs without credentials, cookies, storage, auth headers, or tokens.
 - Smoke validation for credential creation, login checks, authenticated smoke reports, password redaction, existing browser smoke, API smoke, AI analysis, AI test planning, and safe test plan execution.
 
-## Phase 10: Run And Worker Hardening
+## v0.10.0-alpha
+
+Current alpha scope:
+
+- Credential profile role metadata for explicit test-account roles.
+- Authorization check CRUD API for `browser_url` checks.
+- Authorization check run API with JSON and self-contained HTML reports.
+- Browser worker execution for deterministic login plus one configured same-origin authorization target.
+- Expected `allowed` and `denied` outcome comparison.
+- Findings for authorization bypass, unexpected denial, login failure, unknown outcome, timeout, blocked target, console errors, and network failures.
+- Screenshot and `authorization_observations` evidence.
+- Web UI section for authorization checks and authorization run reports.
+- Demo-web admin, readonly, and customer role routes.
+- Smoke validation for role credential creation, login checks, authorization checks, reports, screenshot evidence, and password redaction.
+
+## Phase 11: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -132,14 +147,14 @@ Current alpha scope:
 - Move AI analysis to an async analyzer worker.
 - Move AI-assisted test planning to an async analyzer worker.
 
-## Phase 11: Deeper API Checks
+## Phase 12: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 12: Passive Security Checks
+## Phase 13: Passive Security Checks
 
 - Passive security headers.
 - Cookie flag checks.

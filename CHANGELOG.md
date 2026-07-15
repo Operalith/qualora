@@ -4,6 +4,41 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.10.0-alpha] - 2026-07-15
+
+### Added
+
+- Role metadata on project-scoped credential profiles.
+- Authorization check CRUD API for explicit `browser_url` checks.
+- Authorization check run API and browser-worker queue payload.
+- Deterministic role-aware browser authorization checks using configured credential profiles.
+- JSON and self-contained HTML authorization reports.
+- `authorization_observations` evidence and authorization screenshot evidence.
+- Web UI authorization check form, list, run action, run history, and report page.
+- Demo-web admin, readonly, customer-a, and customer-b role accounts and protected routes.
+- Smoke coverage for role credential profiles, login checks, authorization checks, reports, evidence download, and password redaction.
+- Tests for authorization target validation, run request normalization, authorization finding logic, and safe AI input redaction.
+
+### Changed
+
+- Credential profile API/UI responses include optional role metadata but still never return raw credentials.
+- Browser worker can now execute authorization check runs in addition to browser smoke, login, authenticated smoke, and safe test plan jobs.
+- Package metadata has been updated to `0.10.0-alpha`.
+
+### Security
+
+- Authorization checks are explicit, read-only, same-origin, and allowed-host enforced.
+- Authorization execution uses deterministic selector-based login and one configured target navigation.
+- No crawling, fuzzing, payload attacks, arbitrary form submission, destructive actions, or autonomous AI browser control are performed.
+- Credentials, cookies, storage, auth headers, and tokens are not sent to AI or included in authorization reports.
+
+### Known Limitations
+
+- No Qualora user authentication or authorization.
+- Browser URL authorization checks are supported first.
+- Authenticated API authorization testing is not fully supported yet.
+- No active security scanning, payload-based exploitation, destructive testing, or arbitrary crawling.
+
 ## [v0.9.0-alpha] - 2026-07-15
 
 ### Added

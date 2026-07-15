@@ -9,6 +9,12 @@ import type {
   AIProviderInput,
   AIProviderTestResult,
   AITestPlanInput,
+  AuthorizationCheck,
+  AuthorizationCheckDetail,
+  AuthorizationCheckInput,
+  AuthorizationCheckReport,
+  AuthorizationCheckRun,
+  AuthorizationCheckRunInput,
   AuthenticatedBrowserSmokeInput,
   CreateProjectInput,
   CredentialProfile,
@@ -50,6 +56,10 @@ export function testPlanExportURL(testPlanID: string): string {
 
 export function testPlanExecutionHTMLReportURL(executionID: string): string {
   return `${API_BASE_URL}/api/v1/test-plan-executions/${executionID}/report.html`;
+}
+
+export function authorizationCheckHTMLReportURL(runID: string): string {
+  return `${API_BASE_URL}/api/v1/authorization-check-runs/${runID}/report.html`;
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -126,6 +136,51 @@ export async function testCredentialProfileLogin(profileID: string): Promise<Tes
   return request<TestRun>(`/api/v1/credential-profiles/${profileID}/test-login`, {
     method: "POST"
   });
+}
+
+export async function listAuthorizationChecks(projectID: string): Promise<AuthorizationCheck[]> {
+  const response = await request<{ authorization_checks: AuthorizationCheck[] }>(`/api/v1/projects/${projectID}/authorization-checks`);
+  return response.authorization_checks;
+}
+
+export async function createAuthorizationCheck(projectID: string, input: AuthorizationCheckInput): Promise<AuthorizationCheck> {
+  return request<AuthorizationCheck>(`/api/v1/projects/${projectID}/authorization-checks`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function updateAuthorizationCheck(checkID: string, input: AuthorizationCheckInput): Promise<AuthorizationCheck> {
+  return request<AuthorizationCheck>(`/api/v1/authorization-checks/${checkID}`, {
+    method: "PUT",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function deleteAuthorizationCheck(checkID: string): Promise<void> {
+  await request<void>(`/api/v1/authorization-checks/${checkID}`, {
+    method: "DELETE"
+  });
+}
+
+export async function listAuthorizationCheckRuns(projectID: string): Promise<AuthorizationCheckRun[]> {
+  const response = await request<{ authorization_check_runs: AuthorizationCheckRun[] }>(`/api/v1/projects/${projectID}/authorization-check-runs`);
+  return response.authorization_check_runs;
+}
+
+export async function startAuthorizationCheckRun(projectID: string, input: AuthorizationCheckRunInput = {}): Promise<AuthorizationCheckRun> {
+  return request<AuthorizationCheckRun>(`/api/v1/projects/${projectID}/authorization-check-runs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getAuthorizationCheckRun(runID: string): Promise<AuthorizationCheckDetail> {
+  return request<AuthorizationCheckDetail>(`/api/v1/authorization-check-runs/${runID}`);
+}
+
+export async function getAuthorizationCheckReport(runID: string): Promise<AuthorizationCheckReport> {
+  return request<AuthorizationCheckReport>(`/api/v1/authorization-check-runs/${runID}/report`);
 }
 
 export async function importAPISpec(projectID: string, input: APISpecImportInput): Promise<APISpecDetail> {

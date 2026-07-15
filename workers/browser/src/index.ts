@@ -12,6 +12,14 @@ import path from "node:path";
 import Redis from "ioredis";
 import { Pool } from "pg";
 import { chromium, type Page } from "playwright";
+import {
+  buildAuthorizationFindings,
+  classifyAuthorizationOutcome,
+  compareAuthorizationOutcome,
+  type AuthorizationActualOutcome,
+  type AuthorizationExpectedOutcome,
+  type AuthorizationResultStatus
+} from "./authorization";
 import { buildFindings, type BrowserResult, type FindingInput } from "./findings";
 
 type Config = {
@@ -39,6 +47,13 @@ type TestPlanExecutionJob = {
   execution_id: string;
 };
 
+type AuthorizationCheckRunJob = {
+  authorization_check_run_id: string;
+  project_id: string;
+};
+
+type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob>;
+
 type Project = {
   id: string;
   frontend_url: string;
@@ -60,6 +75,9 @@ type CredentialProfile = {
   id: string;
   project_id: string;
   name: string;
+  role_name: string;
+  role_description: string;
+  subject_label: string;
   type: "username_password";
   username_encrypted: string;
   password_encrypted: string;
@@ -98,6 +116,51 @@ type TestPlanExecutionContext = {
   project: Project;
 };
 
+type AuthorizationCheckRunContext = {
+  id: string;
+  project: Project;
+  check_ids: string[];
+  max_checks: number;
+};
+
+type AuthorizationCheck = {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string;
+  type: "browser_url" | "api_get";
+  resource_label: string;
+  owner_credential_profile_id: string;
+  actor_credential_profile_id: string;
+  expected_outcome: AuthorizationExpectedOutcome;
+  target_url: string;
+  method: string;
+  path: string;
+  expected_statuses: number[];
+  success_text_contains: string;
+  denied_statuses: number[];
+  denied_text_contains: string;
+  enabled: boolean;
+};
+
+type AuthorizationExecutionResult = {
+  runID: string;
+  check: AuthorizationCheck;
+  profile: CredentialProfile | null;
+  status: AuthorizationResultStatus;
+  expectedOutcome: AuthorizationExpectedOutcome;
+  actualOutcome: AuthorizationActualOutcome;
+  targetURL: string;
+  finalURL: string;
+  httpStatus: number | null;
+  pageTitle: string;
+  durationMS: number;
+  evidenceID: string | null;
+  findingID: string | null;
+  skipReason: string;
+  errorMessage: string;
+};
+
 type ExecutionScenario = {
   id: string;
   name: string;
@@ -123,6 +186,7 @@ type BrowserSignals = {
 type EvidenceOwner = {
   runID?: string;
   executionID?: string;
+  authorizationRunID?: string;
 };
 
 type FindingOwner = EvidenceOwner & {
@@ -190,14 +254,27 @@ async function main(): Promise<void> {
       }
       await handleTestPlanExecutionJob(job);
     } else {
-      let job: BrowserRunJob;
+      let job: BrowserQueueJob;
       try {
-        job = JSON.parse(payload) as BrowserRunJob;
+        job = JSON.parse(payload) as BrowserQueueJob;
       } catch {
         log("invalid_job_payload", {});
         continue;
       }
-      await handleJob(job);
+      if (job.authorization_check_run_id) {
+        await handleAuthorizationCheckRunJob({
+          authorization_check_run_id: job.authorization_check_run_id,
+          project_id: job.project_id ?? ""
+        });
+      } else if (job.run_id) {
+        await handleJob({
+          job_id: job.job_id ?? "",
+          run_id: job.run_id,
+          project_id: job.project_id ?? ""
+        });
+      } else {
+        log("invalid_job_payload", {});
+      }
     }
   }
 
@@ -316,6 +393,570 @@ async function handleAuthenticatedBrowserSmokeJob(job: BrowserRunJob, run: RunCo
   });
 }
 
+async function handleAuthorizationCheckRunJob(job: AuthorizationCheckRunJob): Promise<void> {
+  log("authorization_check_run_started", {
+    authorization_check_run_id: job.authorization_check_run_id,
+    project_id: job.project_id
+  });
+
+  try {
+    if (!job.authorization_check_run_id || !job.project_id) {
+      throw new Error("authorization check run job is missing required IDs");
+    }
+    const run = await getAuthorizationCheckRunContext(job.authorization_check_run_id, job.project_id);
+    const scopeCheck = await validateTargetURL(
+      run.project.frontend_url,
+      run.project.allowed_hosts,
+      run.project.allow_private_targets
+    );
+    if (!scopeCheck.ok) {
+      throw new Error(scopeCheck.reason);
+    }
+    await markAuthorizationCheckRunRunning(run.id);
+    const checks = await getAuthorizationChecksForRun(run);
+
+    let passed = 0;
+    let failed = 0;
+    let skipped = 0;
+    for (const check of checks) {
+      const result = await executeAuthorizationCheck(run, check);
+      await insertAuthorizationCheckResult(result);
+      if (result.status === "passed") {
+        passed += 1;
+      } else if (result.status === "skipped") {
+        skipped += 1;
+      } else {
+        failed += 1;
+      }
+    }
+
+    await finishAuthorizationCheckRun(run.id, "completed", "", checks.length, passed, failed, skipped);
+    log("authorization_check_run_completed", {
+      authorization_check_run_id: run.id,
+      total_checks: checks.length,
+      passed,
+      failed,
+      skipped
+    });
+  } catch (error) {
+    const message = sanitizeText(error instanceof Error ? error.message : String(error));
+    if (job.authorization_check_run_id) {
+      await finishAuthorizationCheckRun(job.authorization_check_run_id, "failed", message, 0, 0, 0, 0).catch(() => undefined);
+    }
+    log("authorization_check_run_failed", {
+      authorization_check_run_id: job.authorization_check_run_id,
+      error: message
+    });
+  }
+}
+
+async function getAuthorizationCheckRunContext(runID: string, projectID: string): Promise<AuthorizationCheckRunContext> {
+  const result = await pool.query(
+    `SELECT r.id, r.check_ids_json, r.max_checks,
+            p.id AS project_id, p.frontend_url, p.allowed_hosts, p.allow_private_targets
+     FROM authorization_check_runs r
+     JOIN projects p ON p.id = r.project_id
+     WHERE r.id = $1 AND p.id = $2`,
+    [runID, projectID]
+  );
+  if (result.rowCount !== 1) {
+    throw new Error("authorization check run was not found");
+  }
+  const row = result.rows[0] as {
+    id: string;
+    check_ids_json: string[] | string;
+    max_checks: number;
+    project_id: string;
+    frontend_url: string;
+    allowed_hosts: string[] | string;
+    allow_private_targets: boolean;
+  };
+  return {
+    id: row.id,
+    check_ids: Array.isArray(row.check_ids_json) ? row.check_ids_json : JSON.parse(row.check_ids_json || "[]"),
+    max_checks: Number(row.max_checks || 10),
+    project: {
+      id: row.project_id,
+      frontend_url: row.frontend_url,
+      allowed_hosts: Array.isArray(row.allowed_hosts) ? row.allowed_hosts : JSON.parse(row.allowed_hosts),
+      allow_private_targets: row.allow_private_targets
+    }
+  };
+}
+
+async function getAuthorizationChecksForRun(run: AuthorizationCheckRunContext): Promise<AuthorizationCheck[]> {
+  const result = await pool.query(
+    `SELECT id, project_id, name, description, type, resource_label,
+            owner_credential_profile_id::text, actor_credential_profile_id::text,
+            expected_outcome, target_url, method, path, expected_statuses_json,
+            success_text_contains, denied_statuses_json, denied_text_contains, enabled
+     FROM authorization_checks
+     WHERE project_id = $1 AND enabled = true
+     ORDER BY created_at ASC`,
+    [run.project.id]
+  );
+  const selected = new Set(run.check_ids);
+  const checks: AuthorizationCheck[] = [];
+  for (const row of result.rows) {
+    const check: AuthorizationCheck = {
+      id: row.id,
+      project_id: row.project_id,
+      name: sanitizeText(row.name || ""),
+      description: sanitizeText(row.description || ""),
+      type: row.type,
+      resource_label: sanitizeText(row.resource_label || ""),
+      owner_credential_profile_id: row.owner_credential_profile_id || "",
+      actor_credential_profile_id: row.actor_credential_profile_id || "",
+      expected_outcome: row.expected_outcome,
+      target_url: row.target_url || "",
+      method: row.method || "",
+      path: row.path || "",
+      expected_statuses: jsonArray<number>(row.expected_statuses_json),
+      success_text_contains: row.success_text_contains || "",
+      denied_statuses: jsonArray<number>(row.denied_statuses_json),
+      denied_text_contains: row.denied_text_contains || "",
+      enabled: row.enabled
+    };
+    if (selected.size > 0 && !selected.has(check.id)) {
+      continue;
+    }
+    checks.push(check);
+    if (checks.length >= run.max_checks) {
+      break;
+    }
+  }
+  return checks;
+}
+
+async function markAuthorizationCheckRunRunning(runID: string): Promise<void> {
+  await pool.query(
+    `UPDATE authorization_check_runs
+     SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
+     WHERE id = $1`,
+    [runID]
+  );
+}
+
+async function finishAuthorizationCheckRun(
+  runID: string,
+  status: "completed" | "failed",
+  errorMessage: string,
+  totalChecks: number,
+  passedChecks: number,
+  failedChecks: number,
+  skippedChecks: number
+): Promise<void> {
+  await pool.query(
+    `UPDATE authorization_check_runs
+     SET status = $2, error_message = $3, total_checks = GREATEST(total_checks, $4),
+         passed_checks = $5, failed_checks = $6, skipped_checks = $7,
+         completed_at = now(), updated_at = now()
+     WHERE id = $1`,
+    [runID, status, errorMessage, totalChecks, passedChecks, failedChecks, skippedChecks]
+  );
+}
+
+async function executeAuthorizationCheck(run: AuthorizationCheckRunContext, check: AuthorizationCheck): Promise<AuthorizationExecutionResult> {
+  const startedAt = Date.now();
+  let profile: CredentialProfile | null = null;
+  let targetURL = check.target_url || check.path || "";
+
+  if (check.type !== "browser_url") {
+    const skipReason = "authenticated API authorization checks are not implemented in v0.10.0-alpha";
+    const evidenceID = await insertAuthorizationObservation(run, check, null, {
+      target_url: targetURL,
+      actual_outcome: "unknown",
+      status: "skipped",
+      skip_reason: skipReason,
+      safe_methods_only: true
+    });
+    const findingID = await insertPrimaryAuthorizationFinding(run, check, null, {
+      status: "skipped",
+      expectedOutcome: check.expected_outcome,
+      actualOutcome: "unknown",
+      targetURL,
+      finalURL: "",
+      httpStatus: null,
+      pageTitle: "",
+      durationMS: Date.now() - startedAt,
+      evidenceIDs: [evidenceID],
+      skipReason,
+      errorMessage: "",
+      timedOut: false,
+      consoleErrors: [],
+      failedRequests: [],
+      blockedRequests: []
+    });
+    return authorizationExecutionResult(run.id, check, profile, "skipped", "unknown", targetURL, "", null, "", Date.now() - startedAt, evidenceID, findingID, skipReason, "");
+  }
+
+  try {
+    targetURL = await safeExecutionTarget(run.project, check.target_url);
+  } catch (error) {
+    const skipReason = sanitizeText(error instanceof Error ? error.message : String(error));
+    const evidenceID = await insertAuthorizationObservation(run, check, null, {
+      target_url: targetURL,
+      actual_outcome: "unknown",
+      status: "skipped",
+      skip_reason: skipReason
+    });
+    const findingID = await insertPrimaryAuthorizationFinding(run, check, null, {
+      status: "skipped",
+      expectedOutcome: check.expected_outcome,
+      actualOutcome: "unknown",
+      targetURL,
+      finalURL: "",
+      httpStatus: null,
+      pageTitle: "",
+      durationMS: Date.now() - startedAt,
+      evidenceIDs: [evidenceID],
+      skipReason,
+      errorMessage: "",
+      timedOut: false,
+      consoleErrors: [],
+      failedRequests: [],
+      blockedRequests: []
+    });
+    return authorizationExecutionResult(run.id, check, profile, "skipped", "unknown", targetURL, "", null, "", Date.now() - startedAt, evidenceID, findingID, skipReason, "");
+  }
+
+  profile = await getCredentialProfile(check.actor_credential_profile_id, run.project.id);
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox"]
+  });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: false,
+    viewport: { width: 1365, height: 768 }
+  });
+  const page = await context.newPage();
+  const signals = createBrowserSignals(page);
+  await installAllowedHostRoutes(page, run.project, signals);
+
+  let finalURL = "";
+  let httpStatus: number | null = null;
+  let pageTitle = "";
+  let bodyText = "";
+  let loadError = "";
+  let timedOut = false;
+  let screenshot: Buffer | null = null;
+  let login: LoginFlowResult | null = null;
+
+  try {
+    login = await executeLoginFlowOnPage(page, run.project, profile, signals, 30);
+    if (!login.success) {
+      screenshot = await captureScreenshot(page);
+      const evidenceIDs = await storeAuthorizationEvidence(run, check, profile, {
+        screenshot,
+        targetURL,
+        finalURL: login.finalURL,
+        httpStatus,
+        pageTitle: login.pageTitle,
+        bodyTextLength: null,
+        actualOutcome: "unknown",
+        resultStatus: "error",
+        durationMS: Date.now() - startedAt,
+        skipReason: "",
+        errorMessage: `login failed: ${login.failureReason}`,
+        login,
+        signals
+      });
+      const findingID = await insertPrimaryAuthorizationFinding(run, check, profile, {
+        status: "error",
+        expectedOutcome: check.expected_outcome,
+        actualOutcome: "unknown",
+        targetURL,
+        finalURL: login.finalURL,
+        httpStatus,
+        pageTitle: login.pageTitle,
+        durationMS: Date.now() - startedAt,
+        evidenceIDs,
+        skipReason: "",
+        errorMessage: `login failed: ${login.failureReason}`,
+        timedOut: login.failureCategory === "login_timeout",
+        consoleErrors: login.consoleErrors,
+        failedRequests: login.failedRequests,
+        blockedRequests: login.blockedRequests
+      });
+      return authorizationExecutionResult(run.id, check, profile, "error", "unknown", targetURL, login.finalURL, httpStatus, login.pageTitle, Date.now() - startedAt, evidenceIDs[0] ?? null, findingID, "", login.failureReason);
+    }
+
+    const response = await page.goto(targetURL, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+    httpStatus = response ? response.status() : null;
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+    finalURL = sanitizeURL(page.url());
+    pageTitle = sanitizeText(await page.title().catch(() => ""));
+    bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    screenshot = await captureScreenshot(page);
+  } catch (error) {
+    loadError = sanitizeText(error instanceof Error ? error.message : String(error));
+    timedOut = /\btimeout\b|timed out/i.test(loadError);
+    finalURL = sanitizeURL(page.url());
+    pageTitle = sanitizeText(await page.title().catch(() => ""));
+    bodyText = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+    screenshot = await captureScreenshot(page);
+  } finally {
+    await browser.close();
+  }
+
+  const actualOutcome = classifyAuthorizationOutcome({
+    statusCode: httpStatus,
+    bodyText,
+    successTextContains: check.success_text_contains,
+    deniedTextContains: check.denied_text_contains,
+    loadError,
+    timedOut
+  });
+  const status = compareAuthorizationOutcome(check.expected_outcome, actualOutcome);
+  const evidenceIDs = await storeAuthorizationEvidence(run, check, profile, {
+    screenshot,
+    targetURL,
+    finalURL,
+    httpStatus,
+    pageTitle,
+    bodyTextLength: bodyText.trim().length,
+    actualOutcome,
+    resultStatus: status,
+    durationMS: Date.now() - startedAt,
+    skipReason: "",
+    errorMessage: loadError,
+    login,
+    signals
+  });
+  const findingID = await insertPrimaryAuthorizationFinding(run, check, profile, {
+    status,
+    expectedOutcome: check.expected_outcome,
+    actualOutcome,
+    targetURL,
+    finalURL,
+    httpStatus,
+    pageTitle,
+    durationMS: Date.now() - startedAt,
+    evidenceIDs,
+    skipReason: "",
+    errorMessage: loadError,
+    timedOut,
+    consoleErrors: signals.consoleErrors.slice(0, 50),
+    failedRequests: signals.failedRequests.slice(0, 50),
+    blockedRequests: signals.blockedRequests.slice(0, 50)
+  });
+  return authorizationExecutionResult(run.id, check, profile, status, actualOutcome, targetURL, finalURL, httpStatus, pageTitle, Date.now() - startedAt, evidenceIDs[0] ?? null, findingID, "", loadError);
+}
+
+type AuthorizationEvidenceInput = {
+  screenshot: Buffer | null;
+  targetURL: string;
+  finalURL: string;
+  httpStatus: number | null;
+  pageTitle: string;
+  bodyTextLength: number | null;
+  actualOutcome: AuthorizationActualOutcome;
+  resultStatus: AuthorizationResultStatus;
+  durationMS: number;
+  skipReason: string;
+  errorMessage: string;
+  login: LoginFlowResult | null;
+  signals: BrowserSignals;
+};
+
+type AuthorizationFindingContext = {
+  status: AuthorizationResultStatus;
+  expectedOutcome: AuthorizationExpectedOutcome;
+  actualOutcome: AuthorizationActualOutcome;
+  targetURL: string;
+  finalURL: string;
+  httpStatus: number | null;
+  pageTitle: string;
+  durationMS: number;
+  evidenceIDs: string[];
+  skipReason: string;
+  errorMessage: string;
+  timedOut: boolean;
+  consoleErrors: BrowserResult["consoleErrors"];
+  failedRequests: BrowserResult["failedRequests"];
+  blockedRequests: BrowserResult["blockedRequests"];
+};
+
+async function storeAuthorizationEvidence(
+  run: AuthorizationCheckRunContext,
+  check: AuthorizationCheck,
+  profile: CredentialProfile,
+  input: AuthorizationEvidenceInput
+): Promise<string[]> {
+  const evidenceIds: string[] = [];
+  if (input.screenshot) {
+    const object = await storeScreenshot("authorization-check-runs", run.id, input.screenshot);
+    evidenceIds.push(
+      await insertEvidence({ authorizationRunID: run.id }, "screenshot", object.uri, {
+        authorization_check_run_id: run.id,
+        authorization_check_id: check.id,
+        credential_profile_id: profile.id,
+        credential_profile_name: profile.name,
+        role_name: profile.role_name,
+        filename: object.filename,
+        key: object.key,
+        content_type: object.contentType,
+        size_bytes: object.sizeBytes,
+        created_at: object.createdAt,
+        storage: object.storage,
+        target_url: input.targetURL,
+        final_url: input.finalURL,
+        page_title: input.pageTitle,
+        status_code: input.httpStatus,
+        expected_outcome: check.expected_outcome,
+        actual_outcome: input.actualOutcome
+      })
+    );
+  }
+  evidenceIds.push(
+    await insertAuthorizationObservation(run, check, profile, {
+      target_url: input.targetURL,
+      final_url: input.finalURL,
+      status_code: input.httpStatus,
+      page_title: input.pageTitle,
+      body_text_length: input.bodyTextLength,
+      actual_outcome: input.actualOutcome,
+      result_status: input.resultStatus,
+      duration_ms: input.durationMS,
+      skip_reason: input.skipReason,
+      error_message: input.errorMessage,
+      login_status: input.login ? (input.login.success ? "passed" : "failed") : "not_run",
+      login_url: input.login?.loginURL ?? "",
+      login_final_url: input.login?.finalURL ?? "",
+      login_duration_ms: input.login?.durationMS ?? 0,
+      console_errors: input.signals.consoleErrors.slice(0, 50),
+      failed_requests: input.signals.failedRequests.slice(0, 50),
+      blocked_requests: input.signals.blockedRequests.slice(0, 50)
+    })
+  );
+  return evidenceIds;
+}
+
+async function insertAuthorizationObservation(
+  run: AuthorizationCheckRunContext,
+  check: AuthorizationCheck,
+  profile: CredentialProfile | null,
+  metadata: Record<string, unknown>
+): Promise<string> {
+  return insertEvidence({ authorizationRunID: run.id }, "authorization_observations", "inline://authorization-observations", {
+    authorization_check_run_id: run.id,
+    authorization_check_id: check.id,
+    check_name: check.name,
+    check_type: check.type,
+    resource_label: check.resource_label,
+    actor_credential_profile_id: profile?.id ?? check.actor_credential_profile_id,
+    actor_credential_profile_name: profile?.name ?? "",
+    actor_role_name: profile?.role_name ?? "",
+    expected_outcome: check.expected_outcome,
+    success_text_configured: Boolean(check.success_text_contains),
+    denied_text_configured: Boolean(check.denied_text_contains),
+    destructive_actions: false,
+    autonomous_ai_browser_control: false,
+    ...metadata
+  });
+}
+
+async function insertPrimaryAuthorizationFinding(
+  run: AuthorizationCheckRunContext,
+  check: AuthorizationCheck,
+  profile: CredentialProfile | null,
+  context: AuthorizationFindingContext
+): Promise<string | null> {
+  const findings = buildAuthorizationFindings(
+    {
+      checkName: check.name,
+      actorName: profile?.name ?? "",
+      actorRoleName: profile?.role_name ?? "",
+      targetURL: context.targetURL,
+      expectedOutcome: context.expectedOutcome,
+      actualOutcome: context.actualOutcome,
+      resultStatus: context.status,
+      errorMessage: context.errorMessage,
+      skipReason: context.skipReason,
+      timedOut: context.timedOut,
+      consoleErrors: context.consoleErrors,
+      failedRequests: context.failedRequests,
+      blockedRequests: context.blockedRequests
+    },
+    context.evidenceIDs
+  );
+  let firstID: string | null = null;
+  for (const finding of findings) {
+    const findingID = await insertFinding({ authorizationRunID: run.id }, finding);
+    if (!firstID) {
+      firstID = findingID;
+    }
+  }
+  return firstID;
+}
+
+function authorizationExecutionResult(
+  runID: string,
+  check: AuthorizationCheck,
+  profile: CredentialProfile | null,
+  status: AuthorizationResultStatus,
+  actualOutcome: AuthorizationActualOutcome,
+  targetURL: string,
+  finalURL: string,
+  httpStatus: number | null,
+  pageTitle: string,
+  durationMS: number,
+  evidenceID: string | null,
+  findingID: string | null,
+  skipReason: string,
+  errorMessage: string
+): AuthorizationExecutionResult {
+  return {
+    runID,
+    check,
+    profile,
+    status,
+    expectedOutcome: check.expected_outcome,
+    actualOutcome,
+    targetURL,
+    finalURL,
+    httpStatus,
+    pageTitle,
+    durationMS,
+    evidenceID,
+    findingID,
+    skipReason,
+    errorMessage
+  };
+}
+
+async function insertAuthorizationCheckResult(result: AuthorizationExecutionResult): Promise<void> {
+  await pool.query(
+    `INSERT INTO authorization_check_results (
+       id, run_id, check_id, status, expected_outcome, actual_outcome,
+       actor_credential_profile_id, actor_role_name, target_url, final_url,
+       http_status, page_title, duration_ms, evidence_id, finding_id, skip_reason, error_message
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+    [
+      randomUUID(),
+      result.runID,
+      result.check.id,
+      result.status,
+      result.expectedOutcome,
+      result.actualOutcome,
+      result.check.actor_credential_profile_id,
+      result.profile?.role_name ?? "",
+      result.targetURL,
+      result.finalURL,
+      result.httpStatus,
+      result.pageTitle,
+      result.durationMS,
+      result.evidenceID,
+      result.findingID,
+      result.skipReason,
+      result.errorMessage
+    ]
+  );
+}
+
 async function getRunContext(runID: string, projectID: string): Promise<RunContext> {
   const result = await pool.query(
     `SELECT r.id, r.run_type, r.credential_profile_id::text, r.target_path,
@@ -362,7 +1003,8 @@ async function getCredentialProfile(profileID: string, projectID: string): Promi
     throw new Error("credential profile is required");
   }
   const result = await pool.query(
-    `SELECT id, project_id, name, type, username_encrypted, password_encrypted, login_url,
+    `SELECT id, project_id, name, role_name, role_description, subject_label,
+            type, username_encrypted, password_encrypted, login_url,
             username_selector, password_selector, submit_selector, success_url_contains,
             success_text_contains, failure_text_contains, post_login_wait_ms
      FROM credential_profiles
@@ -377,6 +1019,9 @@ async function getCredentialProfile(profileID: string, projectID: string): Promi
     id: row.id,
     project_id: row.project_id,
     name: sanitizeText(row.name),
+    role_name: sanitizeText(row.role_name || ""),
+    role_description: sanitizeText(row.role_description || ""),
+    subject_label: sanitizeText(row.subject_label || ""),
     type: row.type,
     username_encrypted: row.username_encrypted,
     password_encrypted: row.password_encrypted,
@@ -681,7 +1326,8 @@ async function storeLoginEvidence(
         final_url: result.finalURL,
         page_title: result.pageTitle,
         login_status: result.success ? "passed" : "failed",
-        credential_profile_name: profile.name
+        credential_profile_name: profile.name,
+        role_name: profile.role_name
       })
     );
   }
@@ -689,6 +1335,8 @@ async function storeLoginEvidence(
     await insertEvidence({ runID }, "login_observations", "inline://login-observations", {
       credential_profile_id: profile.id,
       credential_profile_name: profile.name,
+      role_name: profile.role_name,
+      subject_label: profile.subject_label,
       login_url: result.loginURL,
       final_url: result.finalURL,
       page_title: result.pageTitle,
@@ -1536,24 +2184,26 @@ async function captureScreenshot(page: Page): Promise<Buffer | null> {
 async function insertEvidence(owner: EvidenceOwner, type: string, uri: string, metadata: Record<string, unknown>): Promise<string> {
   const id = randomUUID();
   await pool.query(
-    `INSERT INTO evidence (id, run_id, test_plan_execution_id, type, uri, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [id, owner.runID ?? null, owner.executionID ?? null, type, uri, JSON.stringify(metadata)]
+    `INSERT INTO evidence (id, run_id, test_plan_execution_id, authorization_check_run_id, type, uri, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [id, owner.runID ?? null, owner.executionID ?? null, owner.authorizationRunID ?? null, type, uri, JSON.stringify(metadata)]
   );
   return id;
 }
 
-async function insertFinding(owner: FindingOwner, finding: FindingInput): Promise<void> {
+async function insertFinding(owner: FindingOwner, finding: FindingInput): Promise<string> {
+  const id = randomUUID();
   await pool.query(
     `INSERT INTO findings (
-       id, run_id, test_plan_execution_id, scenario_execution_id, step_execution_id,
+       id, run_id, test_plan_execution_id, authorization_check_run_id, scenario_execution_id, step_execution_id,
        title, severity, category, confidence, description, recommendation, evidence_ids
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
-      randomUUID(),
+      id,
       owner.runID ?? null,
       owner.executionID ?? null,
+      owner.authorizationRunID ?? null,
       owner.scenarioExecutionID ?? null,
       owner.stepExecutionID ?? null,
       finding.title,
@@ -1565,6 +2215,7 @@ async function insertFinding(owner: FindingOwner, finding: FindingInput): Promis
       JSON.stringify(finding.evidenceIds)
     ]
   );
+  return id;
 }
 
 async function ensureS3Bucket(): Promise<void> {
@@ -1579,7 +2230,7 @@ async function ensureS3Bucket(): Promise<void> {
   }
 }
 
-async function storeScreenshot(ownerKind: "runs" | "test-plan-executions", ownerID: string, screenshot: Buffer): Promise<StoredEvidenceObject> {
+async function storeScreenshot(ownerKind: "runs" | "test-plan-executions" | "authorization-check-runs", ownerID: string, screenshot: Buffer): Promise<StoredEvidenceObject> {
   const filename = `${Date.now()}-${randomUUID()}.png`;
   const key = `${ownerKind}/${ownerID}/screenshots/${filename}`;
   const createdAt = new Date().toISOString();
@@ -1777,6 +2428,21 @@ function sanitizeURL(raw: string): string {
   } catch {
     return sanitizeText(raw);
   }
+}
+
+function jsonArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) {
+    return value as T[];
+  }
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as T[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 function sanitizeText(input: string): string {

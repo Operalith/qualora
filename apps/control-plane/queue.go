@@ -21,6 +21,11 @@ type BrowserRunJob struct {
 	ProjectID string `json:"project_id"`
 }
 
+type AuthorizationCheckRunJob struct {
+	AuthorizationCheckRunID string `json:"authorization_check_run_id"`
+	ProjectID               string `json:"project_id"`
+}
+
 type APIRunJob struct {
 	JobID     string `json:"job_id"`
 	RunID     string `json:"run_id"`
@@ -58,6 +63,17 @@ func (q *Queue) EnqueueBrowserRun(ctx context.Context, job BrowserRunJob) error 
 	}
 	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
 		return fmt.Errorf("enqueue browser run: %w", err)
+	}
+	return nil
+}
+
+func (q *Queue) EnqueueAuthorizationCheckRun(ctx context.Context, job AuthorizationCheckRunJob) error {
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("marshal authorization check run job: %w", err)
+	}
+	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
+		return fmt.Errorf("enqueue authorization check run: %w", err)
 	}
 	return nil
 }

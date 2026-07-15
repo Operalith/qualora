@@ -3,6 +3,13 @@ const http = require("node:http");
 const port = Number(process.env.PORT || "8080");
 const demoUsername = "demo@example.com";
 const demoPassword = "demo-password";
+const demoAccounts = {
+  [demoUsername]: { password: demoPassword, role: "demo", label: "Demo User" },
+  "admin@example.com": { password: "admin-password", role: "admin", label: "Demo Admin" },
+  "readonly@example.com": { password: "readonly-password", role: "readonly", label: "Demo Readonly" },
+  "customer-a@example.com": { password: "customer-a-password", role: "customer-a", label: "Customer A" },
+  "customer-b@example.com": { password: "customer-b-password", role: "customer-b", label: "Customer B" }
+};
 
 const server = http.createServer((request, response) => {
   const url = new URL(request.url, "http://demo-web");
@@ -37,9 +44,11 @@ const server = http.createServer((request, response) => {
   if (url.pathname === "/login" && request.method === "POST") {
     readForm(request)
       .then((form) => {
-        if (form.get("username") === demoUsername && form.get("password") === demoPassword) {
+        const username = String(form.get("username") || "");
+        const account = demoAccounts[username];
+        if (account && form.get("password") === account.password) {
           response.writeHead(303, {
-            "set-cookie": "qualora_demo_session=authenticated; HttpOnly; SameSite=Lax; Path=/",
+            "set-cookie": `qualora_demo_session=${encodeURIComponent(account.role)}; HttpOnly; SameSite=Lax; Path=/`,
             location: "/dashboard"
           });
           response.end();
@@ -55,7 +64,8 @@ const server = http.createServer((request, response) => {
   }
 
   if (url.pathname === "/dashboard") {
-    if (!isAuthenticated(request)) {
+    const account = accountFromRequest(request);
+    if (!account) {
       response.writeHead(302, { location: "/login" });
       response.end();
       return;
@@ -64,8 +74,44 @@ const server = http.createServer((request, response) => {
       response,
       "Qualora Demo Dashboard",
       "Welcome to the Qualora demo dashboard",
-      "Authenticated area"
+      `Authenticated area for ${account.label} (${account.role})`
     );
+    return;
+  }
+
+  if (url.pathname === "/admin") {
+    const account = requireRole(request, response, ["admin"]);
+    if (!account) {
+      return;
+    }
+    writePage(response, "Qualora Demo Admin", "Admin console", "Administrative settings for role-aware authorization checks.");
+    return;
+  }
+
+  if (url.pathname === "/reports") {
+    const account = requireRole(request, response, ["admin", "readonly"]);
+    if (!account) {
+      return;
+    }
+    writePage(response, "Qualora Demo Reports", "Reports center", "Readonly report content for admin and readonly roles.");
+    return;
+  }
+
+  if (url.pathname === "/customers/a/invoice") {
+    const account = requireRole(request, response, ["admin", "customer-a"]);
+    if (!account) {
+      return;
+    }
+    writePage(response, "Customer A Invoice", "Invoice for Customer A", "Customer A invoice total: $42.00.");
+    return;
+  }
+
+  if (url.pathname === "/customers/b/invoice") {
+    const account = requireRole(request, response, ["admin", "customer-b"]);
+    if (!account) {
+      return;
+    }
+    writePage(response, "Customer B Invoice", "Invoice for Customer B", "Customer B invoice total: $84.00.");
     return;
   }
 
@@ -132,6 +178,9 @@ function writePage(response, title, heading, body) {
       <a href="/">Home</a>
       <a href="/status">Status</a>
       <a href="/about">About</a>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/admin">Admin</a>
+      <a href="/reports">Reports</a>
     </nav>
     <h1>${escapeHTML(heading)}</h1>
     <p>${escapeHTML(body)}</p>
@@ -225,9 +274,49 @@ function readForm(request) {
   });
 }
 
-function isAuthenticated(request) {
+function accountFromRequest(request) {
   const cookie = request.headers.cookie || "";
-  return cookie.split(";").map((part) => part.trim()).includes("qualora_demo_session=authenticated");
+  const session = cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("qualora_demo_session="));
+  if (!session) {
+    return null;
+  }
+  const role = decodeURIComponent(session.split("=").slice(1).join("="));
+  return Object.values(demoAccounts).find((account) => account.role === role) || null;
+}
+
+function requireRole(request, response, roles) {
+  const account = accountFromRequest(request);
+  if (!account) {
+    response.writeHead(302, { location: "/login" });
+    response.end();
+    return null;
+  }
+  if (!roles.includes(account.role)) {
+    writeDeniedPage(response, account);
+    return null;
+  }
+  return account;
+}
+
+function writeDeniedPage(response, account) {
+  response.writeHead(403, { "content-type": "text/html; charset=utf-8" });
+  response.end(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Access denied</title>
+</head>
+<body>
+  <main>
+    <h1>Access denied</h1>
+    <p>${escapeHTML(account.label)} (${escapeHTML(account.role)}) is not allowed to view this resource.</p>
+  </main>
+</body>
+</html>`);
 }
 
 function escapeHTML(value) {

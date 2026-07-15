@@ -31,8 +31,8 @@ The MVP Compose stack includes:
 The smoke profile also includes:
 
 - `mock-api`: older deterministic local API retained for compatibility with earlier alpha API worker checks.
-- `demo-api`: deterministic OpenAPI demo API used by v0.8 safe API smoke tests.
-- `demo-web`: deterministic local frontend used by browser smoke tests.
+- `demo-api`: deterministic OpenAPI demo API used by safe API smoke tests.
+- `demo-web`: deterministic local frontend used by browser, login, authenticated smoke, and role-aware authorization smoke tests.
 - `fake-llm`: deterministic OpenAI-compatible provider used by AI smoke tests.
 
 The control plane receives the same MinIO/S3 configuration as the browser worker so `GET /api/v1/evidence/{evidence_id}` can stream screenshot evidence without exposing MinIO credentials to the web UI.

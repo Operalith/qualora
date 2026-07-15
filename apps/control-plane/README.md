@@ -16,9 +16,9 @@ Responsibilities:
 - AI-assisted test plan storage.
 - Approved safe test plan execution orchestration.
 - OpenAPI import, operation discovery, safe API smoke execution, and API result reporting.
-- Credential profile CRUD, deterministic login checks, and authenticated browser smoke orchestration.
+- Credential profile CRUD, deterministic login checks, authenticated browser smoke orchestration, and role-aware authorization check orchestration.
 
-The MVP delegates browser checks, credential-profile login checks, authenticated browser smoke checks, legacy project API checks, and safe test plan execution to workers through Redis queues. Imported-spec API smoke execution runs in the control plane so API operations and result rows are first-class API/UI resources.
+The MVP delegates browser checks, credential-profile login checks, authenticated browser smoke checks, role-aware authorization checks, legacy project API checks, and safe test plan execution to workers through Redis queues. Imported-spec API smoke execution runs in the control plane so API operations and result rows are first-class API/UI resources.
 
 The API performs project target validation, including `allowed_hosts` enforcement, blocked private/metadata targets by default, and DNS resolution checks for hostnames.
 
@@ -56,6 +56,16 @@ Current report endpoints:
 - `DELETE /api/v1/credential-profiles/{credential_profile_id}`
 - `POST /api/v1/credential-profiles/{credential_profile_id}/test-login`
 - `POST /api/v1/projects/{project_id}/authenticated-browser-smoke-runs`
+- `GET /api/v1/projects/{project_id}/authorization-checks`
+- `POST /api/v1/projects/{project_id}/authorization-checks`
+- `GET /api/v1/authorization-checks/{authorization_check_id}`
+- `PUT /api/v1/authorization-checks/{authorization_check_id}`
+- `DELETE /api/v1/authorization-checks/{authorization_check_id}`
+- `GET /api/v1/projects/{project_id}/authorization-check-runs`
+- `POST /api/v1/projects/{project_id}/authorization-check-runs`
+- `GET /api/v1/authorization-check-runs/{authorization_check_run_id}`
+- `GET /api/v1/authorization-check-runs/{authorization_check_run_id}/report`
+- `GET /api/v1/authorization-check-runs/{authorization_check_run_id}/report.html`
 - `GET /api/v1/ai/providers`
 - `POST /api/v1/ai/providers`
 - `POST /api/v1/ai/providers/{provider_id}/test`

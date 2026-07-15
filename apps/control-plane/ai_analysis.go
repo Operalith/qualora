@@ -69,6 +69,26 @@ func BuildSafeAIInput(report *Report) map[string]any {
 	return sanitizeValue(input).(map[string]any)
 }
 
+func BuildSafeAuthorizationAIInput(report *AuthorizationCheckReport) map[string]any {
+	input := map[string]any{
+		"run_id":     report.Run.ID,
+		"project_id": report.Project.ID,
+		"status":     report.Run.Status,
+		"summary":    report.Summary,
+		"metadata": map[string]any{
+			"authorization_checks":  len(report.Checks),
+			"authorization_results": len(report.Results),
+			"safe_methods_only":     true,
+			"destructive_actions":   false,
+		},
+		"results":              safeAuthorizationResults(report.Results),
+		"findings":             safeFindings(report.Findings),
+		"evidence":             safeEvidence(report.Evidence),
+		"authorization_checks": safeAuthorizationChecks(report.Checks),
+	}
+	return sanitizeValue(input).(map[string]any)
+}
+
 func ParseAIAnalysisPayload(raw string) (*AIAnalysisPayload, map[string]any, error) {
 	raw = strings.TrimSpace(raw)
 	if strings.HasPrefix(raw, "```") {
@@ -183,6 +203,48 @@ func safeAPIResults(results []APICheckResult) []map[string]any {
 	return output
 }
 
+func safeAuthorizationChecks(checks []AuthorizationCheck) []map[string]any {
+	output := make([]map[string]any, 0, min(len(checks), 100))
+	for i, check := range checks {
+		if i >= 100 {
+			break
+		}
+		output = append(output, map[string]any{
+			"name":             check.Name,
+			"type":             check.Type,
+			"resource_label":   check.ResourceLabel,
+			"expected_outcome": check.ExpectedOutcome,
+			"target_url":       check.TargetURL,
+			"enabled":          check.Enabled,
+		})
+	}
+	return output
+}
+
+func safeAuthorizationResults(results []AuthorizationCheckResult) []map[string]any {
+	output := make([]map[string]any, 0, min(len(results), 100))
+	for i, result := range results {
+		if i >= 100 {
+			break
+		}
+		output = append(output, map[string]any{
+			"status":         result.Status,
+			"expected":       result.ExpectedOutcome,
+			"actual":         result.ActualOutcome,
+			"actor_role":     result.ActorRoleName,
+			"target_url":     result.TargetURL,
+			"final_url":      result.FinalURL,
+			"http_status":    result.HTTPStatus,
+			"page_title":     result.PageTitle,
+			"duration_ms":    result.DurationMS,
+			"skip_reason":    result.SkipReason,
+			"error_message":  firstLine(result.ErrorMessage),
+			"credential_ref": result.ActorCredentialProfileID,
+		})
+	}
+	return output
+}
+
 func safeEvidence(records []Evidence) []map[string]any {
 	output := make([]map[string]any, 0, len(records))
 	for _, record := range records {
@@ -205,6 +267,11 @@ func safeEvidenceMetadata(metadata map[string]any) map[string]any {
 		"response_bodies", "request_response_bodies_saved",
 		"credential_profile_name", "login_status", "login_url", "final_url", "duration_ms",
 		"success", "failure_reason", "authenticated_target_url",
+		"authorization_check_id", "authorization_check_run_id", "check_name", "check_type",
+		"resource_label", "actor_credential_profile_name", "actor_role_name", "expected_outcome",
+		"actual_outcome", "result_status", "login_final_url", "login_duration_ms",
+		"success_text_configured", "denied_text_configured", "destructive_actions",
+		"autonomous_ai_browser_control",
 	} {
 		if value, ok := metadata[key]; ok {
 			output[key] = sanitizeValue(value)
