@@ -140,6 +140,27 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
     <div class="metric"><span>Info</span><strong>{{ .Report.Summary.Info }}</strong></div>
   </div>
 
+  {{ with .Report.LoginSummary }}
+  <section style="margin-bottom: 16px;">
+    <h2>Login Summary</h2>
+    <div class="grid two">
+      <div>
+        <p><strong>Status:</strong> <span class="status">{{ .LoginStatus }}</span></p>
+        <p><strong>Credential profile:</strong> {{ if .CredentialProfileName }}{{ .CredentialProfileName }}{{ else }}<span class="subtle">Not available</span>{{ end }}</p>
+        <p><strong>Login URL:</strong> <code>{{ .LoginURL }}</code></p>
+        <p><strong>Final URL:</strong> {{ if .LoginFinalURL }}<code>{{ .LoginFinalURL }}</code>{{ else }}<span class="subtle">Not captured</span>{{ end }}</p>
+      </div>
+      <div>
+        <p><strong>Page title:</strong> {{ if .PageTitle }}{{ .PageTitle }}{{ else }}<span class="subtle">Not captured</span>{{ end }}</p>
+        <p><strong>Duration:</strong> {{ .LoginDurationMS }}ms</p>
+        <p><strong>Authenticated Target:</strong> {{ if .AuthenticatedTargetURL }}<code>{{ .AuthenticatedTargetURL }}</code>{{ else }}<span class="subtle">Login check only</span>{{ end }}</p>
+        {{ if .FailureReason }}<p class="severity-high"><strong>Failure:</strong> {{ .FailureReason }}</p>{{ end }}
+      </div>
+    </div>
+    <p class="subtle">Credentials, cookies, local storage, session storage, auth headers, and page bodies are not included in this report.</p>
+  </section>
+  {{ end }}
+
   {{ with .Report.AIAnalysis }}
   <section style="margin-bottom: 16px;">
     <h2>AI Analysis</h2>
@@ -231,7 +252,7 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
       <div class="metric"><span>Skipped</span><strong>{{ .SkippedOperations }}</strong></div>
     </div>
     {{ end }}
-    <p class="subtle">Qualora v0.8 executes only safe read-only API operations. Request bodies, response bodies, auth headers, cookies, and tokens are not stored.</p>
+    <p class="subtle">Qualora v0.9 executes only safe read-only API operations. Request bodies, response bodies, auth headers, cookies, and tokens are not stored.</p>
     <table>
       <thead>
         <tr><th>Status</th><th>Method</th><th>Path</th><th>HTTP</th><th>Duration</th><th>Content Type</th><th>Reason/Error</th></tr>

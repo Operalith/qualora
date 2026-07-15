@@ -15,6 +15,8 @@ BROWSER_ALLOWED_HOST = os.environ.get(
     "QUALORA_ALLOWED_HOST",
     urllib.parse.urlparse(BROWSER_TARGET_URL).hostname or "demo-web",
 )
+DEMO_USERNAME = os.environ.get("QUALORA_DEMO_USERNAME", "demo@example.com")
+DEMO_PASSWORD = os.environ.get("QUALORA_DEMO_PASSWORD", "demo-password")
 DEMO_WEB_HEALTH_URL = os.environ.get("DEMO_WEB_HEALTH_URL", "http://localhost:18082/health")
 API_SMOKE_URL = os.environ.get("QUALORA_API_SMOKE_URL", "http://demo-api:8080")
 API_SMOKE_OPENAPI_URL = os.environ.get(
@@ -88,6 +90,53 @@ def create_project(payload):
     return project
 
 
+def assert_no_demo_secret(value, label):
+    text = value if isinstance(value, str) else json.dumps(value, sort_keys=True)
+    for secret in (DEMO_USERNAME, DEMO_PASSWORD):
+        if secret and secret in text:
+            raise RuntimeError(f"{label} exposed demo credential secret")
+
+
+def create_credential_profile(project):
+    login_url = f"{BROWSER_TARGET_URL.rstrip('/')}/login"
+    profile = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/credential-profiles",
+        {
+            "name": "Qualora Demo Login",
+            "type": "username_password",
+            "username": DEMO_USERNAME,
+            "password": DEMO_PASSWORD,
+            "login_url": login_url,
+            "username_selector": "#username",
+            "password_selector": "#password",
+            "submit_selector": "#login-submit",
+            "success_url_contains": "/dashboard",
+            "success_text_contains": "Authenticated area",
+            "failure_text_contains": "Invalid credentials",
+            "post_login_wait_ms": 100,
+            "is_default": True,
+        },
+    )
+    print(f"created credential profile: {profile['id']} ({profile['name']})")
+    assert_no_demo_secret(profile, "credential profile response")
+    if not profile.get("username_configured") or not profile.get("password_configured"):
+        raise RuntimeError(f"credential profile did not report configured secrets: {profile}")
+    if profile.get("username_display_hint") == DEMO_USERNAME:
+        raise RuntimeError("credential profile returned the raw username as display hint")
+
+    profiles = request("GET", f"/api/v1/projects/{project['id']}/credential-profiles").get("credential_profiles", [])
+    assert_no_demo_secret(profiles, "credential profile list")
+    if not any(item.get("id") == profile["id"] for item in profiles):
+        raise RuntimeError("credential profile list did not include created profile")
+
+    fetched = request("GET", f"/api/v1/credential-profiles/{profile['id']}")
+    assert_no_demo_secret(fetched, "credential profile detail")
+    if fetched.get("id") != profile["id"]:
+        raise RuntimeError("credential profile detail did not match created profile")
+    return profile
+
+
 def create_ai_provider():
     provider = request(
         "POST",
@@ -129,12 +178,14 @@ def run_ai_analysis(report, provider):
     run_id = report["run_id"]
     analysis = request("POST", f"/api/v1/runs/{run_id}/ai-analysis", {"provider_id": provider["id"]})
     print(f"AI analysis: {json.dumps(analysis, indent=2)}")
+    assert_no_demo_secret(analysis, "AI analysis response")
     if analysis.get("status") != "completed":
         raise RuntimeError(f"AI analysis did not complete: {analysis}")
     if analysis.get("risk_level") != "medium":
         raise RuntimeError(f"AI analysis risk level was unexpected: {analysis}")
 
     updated_report = request("GET", f"/api/v1/runs/{run_id}/report")
+    assert_no_demo_secret(updated_report, "AI JSON report")
     ai_analysis = updated_report.get("ai_analysis")
     if not ai_analysis or ai_analysis.get("status") != "completed":
         raise RuntimeError("JSON report did not include completed AI analysis")
@@ -142,6 +193,7 @@ def run_ai_analysis(report, provider):
     print(f"AI HTML report: {API_URL}/api/v1/runs/{run_id}/report.html")
 
     html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    assert_no_demo_secret(html, "AI HTML report")
     if "AI Analysis" not in html or "fake provider" not in html:
         raise RuntimeError("HTML report did not include the fake AI analysis")
     return updated_report
@@ -161,6 +213,7 @@ def generate_ai_test_plan(project, report, provider):
         },
     )
     print(f"AI test plan: {json.dumps(plan, indent=2)}")
+    assert_no_demo_secret(plan, "AI test plan response")
     if plan.get("status") != "completed":
         raise RuntimeError(f"AI test plan did not complete: {plan}")
     if int(plan.get("total_scenarios") or 0) < 1:
@@ -177,6 +230,7 @@ def generate_ai_test_plan(project, report, provider):
         raise RuntimeError(f"test plan detail did not match generated plan: {fetched}")
 
     exported = request("GET", f"/api/v1/test-plans/{plan['id']}/export.json")
+    assert_no_demo_secret(exported, "AI test plan export")
     if not exported.get("scenarios"):
         raise RuntimeError(f"test plan export did not include scenarios: {exported}")
 
@@ -185,6 +239,7 @@ def generate_ai_test_plan(project, report, provider):
         raise RuntimeError("JSON report did not include related AI test plan")
 
     html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    assert_no_demo_secret(html, "AI test plan HTML report")
     if "Related AI Test Plans" not in html or "Qualora deterministic alpha test plan" not in html:
         raise RuntimeError("HTML report did not include the related AI test plan")
 
@@ -397,6 +452,23 @@ def run_project(project, run_path=None):
     return report
 
 
+def wait_for_run_report(run_id, label):
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/runs/{run_id}")
+        status = current["status"]
+        print(f"{label} status: {status}")
+        if status in ("completed", "passed", "failed", "canceled", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"{label} run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    report = request("GET", f"/api/v1/runs/{run_id}/report")
+    print(f"{label} report: {json.dumps(report, indent=2)}")
+    return report
+
+
 def assert_browser_report(report):
     evidence = report.get("evidence", [])
     types = {item.get("type") for item in evidence}
@@ -421,6 +493,81 @@ def assert_browser_report(report):
         raise RuntimeError("downloaded screenshot did not look like a PNG")
 
 
+def assert_login_report(report, expected_type, expect_authenticated_target):
+    assert_no_demo_secret(report, f"{expected_type} JSON report")
+    if report.get("run_type") != expected_type:
+        raise RuntimeError(f"login report had unexpected run type: {report.get('run_type')}")
+    if report.get("status") != "completed":
+        raise RuntimeError(f"login report did not complete: {report}")
+    summary = report.get("login_summary") or {}
+    if summary.get("login_status") != "passed":
+        raise RuntimeError(f"login summary did not report passed login: {summary}")
+    if "dashboard" not in (summary.get("login_final_url") or ""):
+        raise RuntimeError(f"login final URL did not reach dashboard: {summary}")
+    if summary.get("credential_profile_name") != "Qualora Demo Login":
+        raise RuntimeError(f"login summary did not include the safe profile name: {summary}")
+
+    evidence = report.get("evidence", [])
+    types = {item.get("type") for item in evidence}
+    if "login_observations" not in types:
+        raise RuntimeError(f"login report missed login_observations evidence: {types}")
+    login_evidence = next(item for item in evidence if item.get("type") == "login_observations")
+    metadata = login_evidence.get("metadata", {})
+    if metadata.get("success") is not True or metadata.get("login_status") != "passed":
+        raise RuntimeError(f"login evidence metadata did not report success: {metadata}")
+    if expect_authenticated_target and "dashboard" not in (metadata.get("authenticated_target_url") or ""):
+        raise RuntimeError(f"authenticated target URL was missing from login evidence: {metadata}")
+
+    if expect_authenticated_target:
+        if "browser_observations" not in types:
+            raise RuntimeError(f"authenticated smoke report missed browser observations: {types}")
+        browser_observations = [item for item in evidence if item.get("type") == "browser_observations"]
+        if not any(item.get("metadata", {}).get("authenticated") is True for item in browser_observations):
+            raise RuntimeError("authenticated smoke report did not mark browser observations as authenticated")
+        assert_browser_report(report)
+
+
+def test_credential_profile_login(profile):
+    run = request("POST", f"/api/v1/credential-profiles/{profile['id']}/test-login", {})
+    run_id = run["id"]
+    print(f"started login check run: {run_id}")
+    report = wait_for_run_report(run_id, "login check")
+    assert_login_report(report, "login_check", False)
+    html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    assert_no_demo_secret(html, "login HTML report")
+    if "Login Summary" not in html or "Qualora Demo Login" not in html:
+        raise RuntimeError("login HTML report did not include login summary")
+    print(f"login check JSON report: {API_URL}/api/v1/runs/{run_id}/report")
+    print(f"login check HTML report: {API_URL}/api/v1/runs/{run_id}/report.html")
+    print(f"Web login check report: {WEB_URL}/#/runs/{run_id}")
+    return report
+
+
+def run_authenticated_browser_smoke(project, profile):
+    run = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/authenticated-browser-smoke-runs",
+        {
+            "credential_profile_id": profile["id"],
+            "target_path": "/dashboard",
+            "capture_screenshot": True,
+            "max_duration_seconds": 30,
+        },
+    )
+    run_id = run["id"]
+    print(f"started authenticated browser smoke run: {run_id}")
+    report = wait_for_run_report(run_id, "authenticated browser smoke")
+    assert_login_report(report, "authenticated_browser_smoke", True)
+    html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    assert_no_demo_secret(html, "authenticated browser smoke HTML report")
+    if "Login Summary" not in html or "Authenticated Target" not in html:
+        raise RuntimeError("authenticated browser smoke HTML report did not include login summary")
+    print(f"authenticated browser smoke JSON report: {API_URL}/api/v1/runs/{run_id}/report")
+    print(f"authenticated browser smoke HTML report: {API_URL}/api/v1/runs/{run_id}/report.html")
+    print(f"Web authenticated browser smoke report: {WEB_URL}/#/runs/{run_id}")
+    return report
+
+
 def main():
     print(f"Web UI: {WEB_URL}")
 
@@ -443,6 +590,13 @@ def main():
             "allow_private_targets": True,
         }
     )
+    credential_profile = create_credential_profile(browser_project)
+    login_report = test_credential_profile_login(credential_profile)
+    run_ai_analysis(login_report, provider)
+    authenticated_report = run_authenticated_browser_smoke(browser_project, credential_profile)
+    authenticated_report = run_ai_analysis(authenticated_report, provider)
+    generate_ai_test_plan(browser_project, authenticated_report, provider)
+
     browser_report = run_project(browser_project, f"/api/v1/projects/{browser_project['id']}/browser-smoke-runs")
     assert_browser_report(browser_report)
     browser_report = run_ai_analysis(browser_report, provider)

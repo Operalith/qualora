@@ -92,7 +92,7 @@ Delivered:
 
 ## v0.8.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - OpenAPI 3.x import from URL or inline JSON/YAML.
 - Imported API spec metadata and operation discovery.
@@ -105,7 +105,22 @@ Current alpha scope:
 - Deterministic local `demo-api` OpenAPI smoke target with a `/broken` 500 finding.
 - Smoke validation for OpenAPI import, operation discovery, skipped unsafe operations, API results, API reports, browser smoke, AI analysis, AI test planning, and safe plan execution.
 
-## Phase 9: Run And Worker Hardening
+## v0.9.0-alpha
+
+Current alpha scope:
+
+- Project-scoped encrypted credential profiles.
+- Credential profile CRUD API and web UI workflow.
+- Raw usernames/passwords are never returned by API responses.
+- Deterministic selector-based login check endpoint.
+- Authenticated browser smoke endpoint.
+- Demo-web `/login` and protected `/dashboard` support.
+- Login summary, login observations, screenshots, browser observations, findings, JSON reports, and HTML reports for login/authenticated runs.
+- Findings for login failure, missing selectors, timeouts, console errors, failed requests, and authenticated navigation failures.
+- Safe AI input support for authenticated browser runs without credentials, cookies, storage, auth headers, or tokens.
+- Smoke validation for credential creation, login checks, authenticated smoke reports, password redaction, existing browser smoke, API smoke, AI analysis, AI test planning, and safe test plan execution.
+
+## Phase 10: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -117,14 +132,14 @@ Current alpha scope:
 - Move AI analysis to an async analyzer worker.
 - Move AI-assisted test planning to an async analyzer worker.
 
-## Phase 10: Deeper API Checks
+## Phase 11: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 11: Passive Security Checks
+## Phase 12: Passive Security Checks
 
 - Passive security headers.
 - Cookie flag checks.
@@ -133,7 +148,7 @@ Current alpha scope:
 
 ## Later
 
-- Login automation with safe credential storage.
+- Harden deterministic login support with richer validation and clearer troubleshooting.
 - Playwright trace capture and download.
 - Project editing and report filtering in the web UI.
 - Native provider integrations beyond OpenAI-compatible APIs.

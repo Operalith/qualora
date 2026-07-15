@@ -1,6 +1,6 @@
 # Qualora Web
 
-Minimal React/Vite web UI for Qualora v0.8.0-alpha.
+Minimal React/Vite web UI for Qualora v0.9.0-alpha.
 
 The UI supports:
 
@@ -10,6 +10,9 @@ The UI supports:
 - Importing OpenAPI specs for projects.
 - Viewing API spec details, discovered operations, and skip reasons.
 - Starting safe API smoke runs from imported specs.
+- Managing credential profiles.
+- Testing deterministic login flows.
+- Starting authenticated browser smoke runs.
 - Starting runs.
 - Listing runs.
 - Viewing run reports, findings, evidence metadata, browser metadata, API metadata, and worker job metadata.
@@ -52,5 +55,7 @@ QUALORA_API_BASE_URL=http://localhost:8080 docker compose up -d --build qualora-
 - AI-assisted test plans are suggestions and are never executed automatically.
 - Safe test plan execution is limited to the supported non-destructive browser DSL.
 - Safe API smoke execution is read-only and skips mutating, authenticated, ambiguous, request-body, unresolved-parameter, and sensitive operations.
+- Credential profiles are intended for trusted local/self-hosted test accounts and never return raw credentials.
+- Authenticated browser smoke is limited to one configured login form and one same-origin target path.
 - Evidence preview/download is limited to evidence records known to Qualora.
 - No advanced filtering, pagination, or project editing yet.

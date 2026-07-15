@@ -20,9 +20,11 @@ const (
 )
 
 const (
-	RunTypeFull         = "full"
-	RunTypeBrowserSmoke = "browser_smoke"
-	RunTypeAPISmoke     = "api_smoke"
+	RunTypeFull                      = "full"
+	RunTypeBrowserSmoke              = "browser_smoke"
+	RunTypeAPISmoke                  = "api_smoke"
+	RunTypeLoginCheck                = "login_check"
+	RunTypeAuthenticatedBrowserSmoke = "authenticated_browser_smoke"
 )
 
 const (
@@ -55,17 +57,21 @@ type Project struct {
 }
 
 type TestRun struct {
-	ID           string     `json:"id"`
-	ProjectID    string     `json:"project_id"`
-	RunType      string     `json:"run_type"`
-	APISpecID    string     `json:"api_spec_id,omitempty"`
-	Status       string     `json:"status"`
-	ErrorMessage string     `json:"error_message,omitempty"`
-	PageTitle    string     `json:"page_title,omitempty"`
-	StartedAt    *time.Time `json:"started_at,omitempty"`
-	CompletedAt  *time.Time `json:"completed_at,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID                  string     `json:"id"`
+	ProjectID           string     `json:"project_id"`
+	RunType             string     `json:"run_type"`
+	APISpecID           string     `json:"api_spec_id,omitempty"`
+	CredentialProfileID string     `json:"credential_profile_id,omitempty"`
+	TargetPath          string     `json:"target_path,omitempty"`
+	CaptureScreenshot   bool       `json:"capture_screenshot"`
+	MaxDurationSeconds  int        `json:"max_duration_seconds"`
+	Status              string     `json:"status"`
+	ErrorMessage        string     `json:"error_message,omitempty"`
+	PageTitle           string     `json:"page_title,omitempty"`
+	StartedAt           *time.Time `json:"started_at,omitempty"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 type RunJob struct {
@@ -107,19 +113,20 @@ type Evidence struct {
 }
 
 type Report struct {
-	RunID      string           `json:"run_id"`
-	ProjectID  string           `json:"project_id"`
-	RunType    string           `json:"run_type"`
-	Status     string           `json:"status"`
-	Summary    ReportSummary    `json:"summary"`
-	Findings   []Finding        `json:"findings"`
-	Evidence   []Evidence       `json:"evidence"`
-	Metadata   map[string]any   `json:"metadata"`
-	AIAnalysis *AIAnalysis      `json:"ai_analysis"`
-	TestPlans  []TestPlanRef    `json:"test_plans"`
-	APISpec    *APISpec         `json:"api_spec,omitempty"`
-	APISummary *APISmokeSummary `json:"api_summary,omitempty"`
-	APIResults []APICheckResult `json:"api_results,omitempty"`
+	RunID        string           `json:"run_id"`
+	ProjectID    string           `json:"project_id"`
+	RunType      string           `json:"run_type"`
+	Status       string           `json:"status"`
+	Summary      ReportSummary    `json:"summary"`
+	Findings     []Finding        `json:"findings"`
+	Evidence     []Evidence       `json:"evidence"`
+	Metadata     map[string]any   `json:"metadata"`
+	AIAnalysis   *AIAnalysis      `json:"ai_analysis"`
+	TestPlans    []TestPlanRef    `json:"test_plans"`
+	APISpec      *APISpec         `json:"api_spec,omitempty"`
+	APISummary   *APISmokeSummary `json:"api_summary,omitempty"`
+	APIResults   []APICheckResult `json:"api_results,omitempty"`
+	LoginSummary *LoginSummary    `json:"login_summary,omitempty"`
 }
 
 type ReportSummary struct {
@@ -170,6 +177,64 @@ type AIProviderRequest struct {
 	SendNetworkBodies *bool             `json:"send_network_bodies"`
 	RedactionEnabled  *bool             `json:"redaction_enabled"`
 	IsDefault         bool              `json:"is_default"`
+}
+
+type CredentialProfile struct {
+	ID                  string    `json:"id"`
+	ProjectID           string    `json:"project_id"`
+	Name                string    `json:"name"`
+	Type                string    `json:"type"`
+	UsernameEncrypted   string    `json:"-"`
+	PasswordEncrypted   string    `json:"-"`
+	UsernameConfigured  bool      `json:"username_configured"`
+	PasswordConfigured  bool      `json:"password_configured"`
+	UsernameDisplayHint string    `json:"username_display_hint,omitempty"`
+	LoginURL            string    `json:"login_url"`
+	UsernameSelector    string    `json:"username_selector"`
+	PasswordSelector    string    `json:"password_selector"`
+	SubmitSelector      string    `json:"submit_selector"`
+	SuccessURLContains  string    `json:"success_url_contains,omitempty"`
+	SuccessTextContains string    `json:"success_text_contains,omitempty"`
+	FailureTextContains string    `json:"failure_text_contains,omitempty"`
+	PostLoginWaitMS     int       `json:"post_login_wait_ms"`
+	IsDefault           bool      `json:"is_default"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+type CredentialProfileRequest struct {
+	Name                string `json:"name"`
+	Type                string `json:"type"`
+	Username            string `json:"username"`
+	Password            string `json:"password"`
+	LoginURL            string `json:"login_url"`
+	UsernameSelector    string `json:"username_selector"`
+	PasswordSelector    string `json:"password_selector"`
+	SubmitSelector      string `json:"submit_selector"`
+	SuccessURLContains  string `json:"success_url_contains"`
+	SuccessTextContains string `json:"success_text_contains"`
+	FailureTextContains string `json:"failure_text_contains"`
+	PostLoginWaitMS     int    `json:"post_login_wait_ms"`
+	IsDefault           bool   `json:"is_default"`
+}
+
+type AuthenticatedBrowserSmokeRequest struct {
+	CredentialProfileID string `json:"credential_profile_id"`
+	TargetPath          string `json:"target_path"`
+	CaptureScreenshot   *bool  `json:"capture_screenshot"`
+	MaxDurationSeconds  int    `json:"max_duration_seconds"`
+}
+
+type LoginSummary struct {
+	CredentialProfileID    string `json:"credential_profile_id,omitempty"`
+	CredentialProfileName  string `json:"credential_profile_name,omitempty"`
+	LoginStatus            string `json:"login_status,omitempty"`
+	LoginURL               string `json:"login_url,omitempty"`
+	LoginFinalURL          string `json:"login_final_url,omitempty"`
+	PageTitle              string `json:"page_title,omitempty"`
+	LoginDurationMS        int    `json:"login_duration_ms,omitempty"`
+	AuthenticatedTargetURL string `json:"authenticated_target_url,omitempty"`
+	FailureReason          string `json:"failure_reason,omitempty"`
 }
 
 type AIProviderTestResult struct {

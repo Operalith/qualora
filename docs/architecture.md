@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.8.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with a minimal web UI, human-friendly reports, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
+Qualora v0.9.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with a minimal web UI, human-friendly reports, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,7 +10,7 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: projects, credential_profiles, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
@@ -19,6 +19,8 @@ qualora-api
         |
         +--> qualora-worker-browser
         |       +--> Playwright Chromium smoke test
+        |       +--> Deterministic selector-based login checks
+        |       +--> Authenticated browser smoke test
         |       +--> Approved safe test plan execution
         |       +--> MinIO/S3 screenshot evidence
         |
@@ -46,6 +48,13 @@ Current endpoints:
 - `POST /api/v1/projects/{project_id}/runs`
 - `GET /api/v1/projects/{project_id}/runs`
 - `POST /api/v1/projects/{project_id}/browser-smoke-runs`
+- `POST /api/v1/projects/{project_id}/authenticated-browser-smoke-runs`
+- `GET /api/v1/projects/{project_id}/credential-profiles`
+- `POST /api/v1/projects/{project_id}/credential-profiles`
+- `GET /api/v1/credential-profiles/{credential_profile_id}`
+- `PUT /api/v1/credential-profiles/{credential_profile_id}`
+- `DELETE /api/v1/credential-profiles/{credential_profile_id}`
+- `POST /api/v1/credential-profiles/{credential_profile_id}/test-login`
 - `POST /api/v1/projects/{project_id}/ai-test-plans`
 - `GET /api/v1/projects/{project_id}/test-plans`
 - `POST /api/v1/projects/{project_id}/api-specs`
@@ -95,12 +104,16 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - Safe execution history, detail pages, findings, evidence, and HTML report links.
 - OpenAPI spec import, operation discovery, skip reasons, and safe API smoke run controls.
 - API smoke result tables in run reports.
+- Credential profile creation, listing, editing, deletion, default selection, login testing, and authenticated browser smoke actions.
+- Login summary and login observation metadata in run reports.
 
 It has no authentication in this alpha and should be exposed only in trusted local/self-hosted environments.
 
 ### `qualora-worker-browser`
 
 The Node.js browser worker consumes Redis browser jobs and runs a Playwright smoke check against `frontend_url`.
+
+For credential-profile runs, the worker decrypts the project-scoped username/password with `QUALORA_ENCRYPTION_KEY`, opens only the configured login URL, fills only the configured username/password selectors, clicks only the configured submit selector, and evaluates configured success/failure criteria. Authenticated smoke then visits one configured same-origin target path. It does not use AI, does not submit arbitrary forms, and does not expose cookies, storage, auth headers, tokens, usernames, or passwords in evidence.
 
 The same worker also consumes safe test plan execution jobs. It executes only persisted mapped actions from the supported DSL:
 
@@ -130,10 +143,13 @@ It currently captures:
 - Failed network requests.
 - Blocked out-of-scope browser requests.
 - Basic findings for obvious load, timeout, non-success status, console, request, empty page, and scope issues.
+- Login findings for failed login, missing selectors, timeouts, console errors, failed requests, and authenticated navigation failures.
+
+Login evidence is stored as `login_observations` metadata plus screenshots when configured. JSON and HTML run reports include a `login_summary` for login checks and authenticated browser smoke runs.
 
 ### Safe API Smoke Execution
 
-The v0.8 spec-driven API smoke flow runs in the Go control plane. It imports OpenAPI 3.x specs from project-scoped URLs or inline JSON/YAML, stores discovered operations, classifies safe operations, and persists skip reasons before any API test execution.
+The v0.9 spec-driven API smoke flow runs in the Go control plane. It imports OpenAPI 3.x specs from project-scoped URLs or inline JSON/YAML, stores discovered operations, classifies safe operations, and persists skip reasons before any API test execution.
 
 Safe by default means:
 
@@ -165,13 +181,14 @@ It currently captures:
 
 It does not perform authenticated API checks, request body generation, schema fuzzing, or destructive methods.
 
-This worker remains available for legacy project-level API jobs. New v0.8 imported-spec API smoke runs use the control-plane executor so operation discovery and result rows are first-class API/UI concepts.
+This worker remains available for legacy project-level API jobs. New imported-spec API smoke runs use the control-plane executor so operation discovery and result rows are first-class API/UI concepts.
 
 ### PostgreSQL
 
 PostgreSQL stores durable metadata:
 
 - `projects`
+- `credential_profiles`
 - `test_runs`
 - `run_jobs`
 - `findings`
@@ -198,7 +215,11 @@ MinIO stores screenshot evidence through the S3-compatible API. API evidence is 
 
 ### `demo-api`
 
-The `demo-api` Compose service is profile-gated for smoke tests. It serves deterministic API endpoints and an OpenAPI 3.x document at `/openapi.yaml` for v0.8 OpenAPI import and safe API smoke validation.
+The `demo-api` Compose service is profile-gated for smoke tests. It serves deterministic API endpoints and an OpenAPI 3.x document at `/openapi.yaml` for OpenAPI import and safe API smoke validation.
+
+### `demo-web`
+
+The `demo-web` Compose service is profile-gated for smoke tests. It serves public pages for browser and safe test plan execution validation plus a deterministic `/login` and protected `/dashboard` route for credential profile and authenticated browser smoke validation.
 
 ### `mock-api`
 
@@ -221,9 +242,9 @@ Provider records store:
 - Safe-send toggles for screenshots, HTML, and network bodies.
 - Redaction setting, enabled by default.
 
-For v0.8, AI analysis and AI test planning run synchronously in the control plane. The database models are separated so both paths can move to a dedicated analyzer worker later.
+For v0.9, AI analysis and AI test planning run synchronously in the control plane. The database models are separated so both paths can move to a dedicated analyzer worker later.
 
-The safe AI input builder includes only sanitized report data such as run status, summary counts, finding titles/summaries, safe evidence metadata, browser/API metadata, API smoke result summaries, and job metadata. It strips or redacts URL queries, cookies, authorization values, tokens, passwords, API keys, session IDs, JWT-looking strings, full response bodies, full HTML, and secret-looking fields. Screenshots, HTML, request bodies, response bodies, and network bodies are not sent by default.
+The safe AI input builder includes only sanitized report data such as run status, summary counts, finding titles/summaries, safe evidence metadata, browser/API/login metadata, API smoke result summaries, and job metadata. It strips or redacts URL queries, cookies, authorization values, usernames, tokens, passwords, API keys, session IDs, JWT-looking strings, full response bodies, full HTML, and secret-looking fields. Screenshots, HTML, request bodies, response bodies, browser storage, auth headers, cookies, and network bodies are not sent by default.
 
 AI-assisted test plans use sanitized project configuration, optional product context, selected focus areas, optional latest/run-specific report metadata, and optional AI analysis summaries. The strict plan parser accepts only a reviewable JSON structure with assumptions, coverage goals, scenarios, steps, assertions, test data needs, instrumentation suggestions, and limitations.
 
@@ -257,6 +278,11 @@ Generated plans are not executed automatically. A user can explicitly preview an
 24. The API stores spec metadata and discovered operations without executing them.
 25. Optionally, a user starts a safe API smoke run for the imported spec.
 26. The control plane executes only safe read-only operations, records API results/evidence/findings, and serves JSON/HTML run reports with API result tables.
+27. Optionally, a user creates a credential profile for a project with encrypted username/password values and deterministic login selectors.
+28. Optionally, a user starts a login check run for that profile.
+29. The browser worker executes the configured selector-based login flow, records login evidence/findings, and serves JSON/HTML reports with a login summary.
+30. Optionally, a user starts an authenticated browser smoke run.
+31. The browser worker logs in through the credential profile, visits one configured same-origin target path, records browser/login evidence and findings, and serves JSON/HTML reports.
 
 ## Intentional Alpha Constraints
 
@@ -266,12 +292,13 @@ Generated plans are not executed automatically. A user can explicitly preview an
 - AI-assisted test planning is alpha and should be treated as human-reviewable suggestions.
 - Safe test plan execution is alpha and limited to approved non-destructive browser DSL steps.
 - API smoke execution is alpha and read-only by default.
+- Credential profiles and authenticated browser smoke are alpha and intended for deterministic test accounts only.
 - Authenticated API testing is not supported.
 - Request bodies and response bodies are not stored.
 - Only OpenAI-compatible chat completion providers are supported.
 - Evidence download is limited to stored evidence records and is not a signed URL system.
 - No authenticated API testing.
-- No login automation.
+- No arbitrary form submission, MFA, session export, multi-step authenticated journeys, or AI-controlled login.
 - No autonomous AI browser control.
 - No automatic execution of generated AI test plan steps and no free-form model-controlled browser actions.
 - No active security scanning.

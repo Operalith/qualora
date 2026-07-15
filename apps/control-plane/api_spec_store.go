@@ -173,15 +173,22 @@ func (s *Store) DeleteAPISpec(ctx context.Context, id string) error {
 func (s *Store) CreateAPISmokeRunRecord(ctx context.Context, projectID string, apiSpecID string) (*TestRun, error) {
 	run := TestRun{}
 	var specID sql.NullString
+	var credentialProfileID sql.NullString
 	err := s.db.QueryRow(ctx, `
 INSERT INTO test_runs (id, project_id, run_type, api_spec_id, status, started_at)
 VALUES ($1, $2, $3, $4, $5, now())
-RETURNING id, project_id, run_type, api_spec_id::text, status, error_message, page_title, started_at, completed_at, created_at, updated_at
+RETURNING id, project_id, run_type, api_spec_id::text, credential_profile_id::text,
+	target_path, capture_screenshot, max_duration_seconds, status, error_message,
+	page_title, started_at, completed_at, created_at, updated_at
 `, uuid.NewString(), projectID, RunTypeAPISmoke, apiSpecID, StatusRunning).Scan(
 		&run.ID,
 		&run.ProjectID,
 		&run.RunType,
 		&specID,
+		&credentialProfileID,
+		&run.TargetPath,
+		&run.CaptureScreenshot,
+		&run.MaxDurationSeconds,
 		&run.Status,
 		&run.ErrorMessage,
 		&run.PageTitle,
@@ -195,6 +202,9 @@ RETURNING id, project_id, run_type, api_spec_id::text, status, error_message, pa
 	}
 	if specID.Valid {
 		run.APISpecID = specID.String
+	}
+	if credentialProfileID.Valid {
+		run.CredentialProfileID = credentialProfileID.String
 	}
 	return &run, nil
 }

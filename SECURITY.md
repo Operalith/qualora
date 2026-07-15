@@ -8,6 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
+| v0.9.0-alpha | Best-effort alpha support |
 | v0.8.0-alpha | Best-effort alpha support |
 | v0.7.0-alpha | Best-effort alpha support |
 | v0.6.0-alpha | Best-effort alpha support |
@@ -34,7 +35,7 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.8.0-alpha API and web UI do not include authentication. Expose them only in trusted local or self-hosted environments, or put them behind an external access-control layer.
+The v0.9.0-alpha API and web UI do not include Qualora user authentication. Expose them only in trusted local or self-hosted environments, or put them behind an external access-control layer.
 
 See [docs/security-model.md](docs/security-model.md) for the current alpha safety model.
 
@@ -51,6 +52,9 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - AI analysis must use sanitized report data, with redaction enabled by default.
 - AI-assisted test planning must use sanitized project/run/report metadata, with redaction enabled by default.
 - AI-generated test plans must remain reviewable suggestions and must not be executed automatically.
+- Credential profile username/password values must be encrypted at rest and never returned raw by API responses.
+- Deterministic login checks must only use configured selectors on the configured login form.
+- Authenticated browser smoke must not expose cookies, session storage, local storage, authorization headers, tokens, or raw credentials.
 - OpenAPI import must not execute API operations.
 - Safe API smoke execution must remain read-only by default.
 - Mutating, authenticated, request-body, unresolved-parameter, and sensitive API operations must be skipped unless a future explicit design changes this policy.
@@ -64,6 +68,7 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - Brute force testing.
 - Destructive payloads.
 - Broad unauthenticated crawling.
+- Arbitrary form submission or autonomous login automation.
 - OWASP ZAP active scans.
 - Autonomous AI browser control.
 

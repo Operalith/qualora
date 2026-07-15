@@ -9,7 +9,10 @@ import type {
   AIProviderInput,
   AIProviderTestResult,
   AITestPlanInput,
+  AuthenticatedBrowserSmokeInput,
   CreateProjectInput,
+  CredentialProfile,
+  CredentialProfileInput,
   Project,
   Report,
   TestPlan,
@@ -79,6 +82,48 @@ export async function startRun(projectID: string): Promise<TestRun> {
 
 export async function startBrowserSmokeRun(projectID: string): Promise<TestRun> {
   return request<TestRun>(`/api/v1/projects/${projectID}/browser-smoke-runs`, {
+    method: "POST"
+  });
+}
+
+export async function startAuthenticatedBrowserSmokeRun(projectID: string, input: AuthenticatedBrowserSmokeInput): Promise<TestRun> {
+  return request<TestRun>(`/api/v1/projects/${projectID}/authenticated-browser-smoke-runs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function listCredentialProfiles(projectID: string): Promise<CredentialProfile[]> {
+  const response = await request<{ credential_profiles: CredentialProfile[] }>(`/api/v1/projects/${projectID}/credential-profiles`);
+  return response.credential_profiles;
+}
+
+export async function createCredentialProfile(projectID: string, input: CredentialProfileInput): Promise<CredentialProfile> {
+  return request<CredentialProfile>(`/api/v1/projects/${projectID}/credential-profiles`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getCredentialProfile(profileID: string): Promise<CredentialProfile> {
+  return request<CredentialProfile>(`/api/v1/credential-profiles/${profileID}`);
+}
+
+export async function updateCredentialProfile(profileID: string, input: CredentialProfileInput): Promise<CredentialProfile> {
+  return request<CredentialProfile>(`/api/v1/credential-profiles/${profileID}`, {
+    method: "PUT",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function deleteCredentialProfile(profileID: string): Promise<void> {
+  await request<void>(`/api/v1/credential-profiles/${profileID}`, {
+    method: "DELETE"
+  });
+}
+
+export async function testCredentialProfileLogin(profileID: string): Promise<TestRun> {
+  return request<TestRun>(`/api/v1/credential-profiles/${profileID}/test-login`, {
     method: "POST"
   });
 }

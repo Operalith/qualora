@@ -26,8 +26,12 @@ export type CreateProjectInput = {
 export type TestRun = {
   id: string;
   project_id: string;
-  run_type: "full" | "browser_smoke" | "api_smoke" | string;
+  run_type: "full" | "browser_smoke" | "api_smoke" | "login_check" | "authenticated_browser_smoke" | string;
   api_spec_id?: string;
+  credential_profile_id?: string;
+  target_path?: string;
+  capture_screenshot?: boolean;
+  max_duration_seconds?: number;
   status: "queued" | "pending" | "running" | "completed" | "failed" | "canceled" | "passed" | "error";
   error_message?: string;
   page_title?: string;
@@ -120,6 +124,50 @@ export type AIProviderTestResult = {
   model: string;
   latency_ms: number;
   error_message?: string;
+};
+
+export type CredentialProfile = {
+  id: string;
+  project_id: string;
+  name: string;
+  type: "username_password";
+  username_configured: boolean;
+  password_configured: boolean;
+  username_display_hint?: string;
+  login_url: string;
+  username_selector: string;
+  password_selector: string;
+  submit_selector: string;
+  success_url_contains?: string;
+  success_text_contains?: string;
+  failure_text_contains?: string;
+  post_login_wait_ms: number;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CredentialProfileInput = {
+  name: string;
+  type: "username_password";
+  username?: string;
+  password?: string;
+  login_url: string;
+  username_selector: string;
+  password_selector: string;
+  submit_selector: string;
+  success_url_contains: string;
+  success_text_contains: string;
+  failure_text_contains: string;
+  post_login_wait_ms: number;
+  is_default: boolean;
+};
+
+export type AuthenticatedBrowserSmokeInput = {
+  credential_profile_id?: string;
+  target_path?: string;
+  capture_screenshot?: boolean;
+  max_duration_seconds?: number;
 };
 
 export type AIAnalysis = {
@@ -441,4 +489,15 @@ export type Report = {
   api_spec?: APISpec;
   api_summary?: APISmokeSummary;
   api_results?: APICheckResult[];
+  login_summary?: {
+    credential_profile_id?: string;
+    credential_profile_name?: string;
+    login_status?: string;
+    login_url?: string;
+    login_final_url?: string;
+    page_title?: string;
+    login_duration_ms?: number;
+    authenticated_target_url?: string;
+    failure_reason?: string;
+  };
 };

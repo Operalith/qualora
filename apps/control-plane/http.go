@@ -41,6 +41,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/test-plans/", a.handleTestPlanSubroutes)
 	mux.HandleFunc("/api/v1/test-plan-executions/", a.handleTestPlanExecutionSubroutes)
 	mux.HandleFunc("/api/v1/api-specs/", a.handleAPISpecSubroutes)
+	mux.HandleFunc("/api/v1/credential-profiles/", a.handleCredentialProfileSubroutes)
 	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, mux)))
 }
 
@@ -138,6 +139,14 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 		a.createBrowserSmokeRun(w, r, parts[0])
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "authenticated-browser-smoke-runs" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.createAuthenticatedBrowserSmokeRun(w, r, parts[0])
+		return
+	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "ai-test-plans" {
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
@@ -160,6 +169,17 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 			a.createAPISpec(w, r, parts[0])
 		case http.MethodGet:
 			a.listAPISpecs(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "credential-profiles" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createCredentialProfile(w, r, parts[0])
+		case http.MethodGet:
+			a.listCredentialProfiles(w, r, parts[0])
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
 		}

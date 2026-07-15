@@ -139,6 +139,12 @@ func safeMetadata(metadata map[string]any) map[string]any {
 	if apiSummary, ok := metadata["api_summary"]; ok {
 		output["api_summary"] = sanitizeValue(apiSummary)
 	}
+	if login, ok := metadata["login"]; ok {
+		output["login"] = sanitizeValue(login)
+	}
+	if credentialProfile, ok := metadata["credential_profile"]; ok {
+		output["credential_profile"] = sanitizeValue(credentialProfile)
+	}
 	return output
 }
 
@@ -197,6 +203,8 @@ func safeEvidenceMetadata(metadata map[string]any) map[string]any {
 		"operations", "safe_operations", "skipped_unsafe_operations", "skipped_endpoints",
 		"api_spec_id", "api_spec_name", "title", "server_url", "authenticated_tests",
 		"response_bodies", "request_response_bodies_saved",
+		"credential_profile_name", "login_status", "login_url", "final_url", "duration_ms",
+		"success", "failure_reason", "authenticated_target_url",
 	} {
 		if value, ok := metadata[key]; ok {
 			output[key] = sanitizeValue(value)
@@ -278,7 +286,7 @@ func sanitizePotentialURL(value string) string {
 
 func sensitiveKey(key string) bool {
 	key = strings.ToLower(key)
-	for _, part := range []string{"authorization", "password", "passwd", "token", "secret", "api_key", "apikey", "cookie", "session", "body", "html"} {
+	for _, part := range []string{"authorization", "password", "passwd", "username", "token", "secret", "api_key", "apikey", "cookie", "session", "body", "html"} {
 		if strings.Contains(key, part) {
 			return true
 		}

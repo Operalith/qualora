@@ -16,8 +16,9 @@ Responsibilities:
 - AI-assisted test plan storage.
 - Approved safe test plan execution orchestration.
 - OpenAPI import, operation discovery, safe API smoke execution, and API result reporting.
+- Credential profile CRUD, deterministic login checks, and authenticated browser smoke orchestration.
 
-The MVP delegates browser checks, legacy project API checks, and safe test plan execution to workers through Redis queues. The v0.8 imported-spec API smoke executor runs in the control plane so API operations and result rows are first-class API/UI resources.
+The MVP delegates browser checks, credential-profile login checks, authenticated browser smoke checks, legacy project API checks, and safe test plan execution to workers through Redis queues. Imported-spec API smoke execution runs in the control plane so API operations and result rows are first-class API/UI resources.
 
 The API performs project target validation, including `allowed_hosts` enforcement, blocked private/metadata targets by default, and DNS resolution checks for hostnames.
 
@@ -48,6 +49,13 @@ Current report endpoints:
 - `GET /api/v1/runs/{run_id}/report`
 - `GET /api/v1/runs/{run_id}/report.html`
 - `GET /api/v1/evidence/{evidence_id}`
+- `GET /api/v1/projects/{project_id}/credential-profiles`
+- `POST /api/v1/projects/{project_id}/credential-profiles`
+- `GET /api/v1/credential-profiles/{credential_profile_id}`
+- `PUT /api/v1/credential-profiles/{credential_profile_id}`
+- `DELETE /api/v1/credential-profiles/{credential_profile_id}`
+- `POST /api/v1/credential-profiles/{credential_profile_id}/test-login`
+- `POST /api/v1/projects/{project_id}/authenticated-browser-smoke-runs`
 - `GET /api/v1/ai/providers`
 - `POST /api/v1/ai/providers`
 - `POST /api/v1/ai/providers/{provider_id}/test`
@@ -66,4 +74,4 @@ Current report endpoints:
 - `GET /api/v1/test-plan-executions/{execution_id}/report`
 - `GET /api/v1/test-plan-executions/{execution_id}/report.html`
 
-The default encryption key is for local development only. Set a strong `QUALORA_ENCRYPTION_KEY` before storing real AI provider credentials.
+The default encryption key is for local development only. Set a strong `QUALORA_ENCRYPTION_KEY` before storing real AI provider credentials or credential profiles.

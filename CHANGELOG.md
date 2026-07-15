@@ -4,6 +4,43 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.9.0-alpha] - 2026-07-15
+
+### Added
+
+- Project-scoped encrypted credential profiles for deterministic target-application logins.
+- Credential profile CRUD API and web UI workflows.
+- Deterministic selector-based login check endpoint at `POST /api/v1/credential-profiles/{credential_profile_id}/test-login`.
+- Authenticated browser smoke endpoint at `POST /api/v1/projects/{project_id}/authenticated-browser-smoke-runs`.
+- Browser worker support for decrypting credential profiles, filling configured selectors, clicking the configured submit selector, and checking configured success/failure criteria.
+- Demo-web `/login` and protected `/dashboard` routes for deterministic authenticated smoke validation.
+- Login summary support in JSON and HTML run reports.
+- `login_observations` evidence metadata for login checks and authenticated browser smoke runs.
+- Web UI credential profile section with create, edit, delete, default, login test, and authenticated smoke actions.
+- Smoke validation for credential creation, login check, authenticated browser smoke, JSON/HTML reports, and password redaction.
+- Go tests for credential profile validation, encryption, update preservation, and safe AI input redaction.
+
+### Changed
+
+- Browser worker now handles `login_check` and `authenticated_browser_smoke` run types in addition to browser smoke and safe test plan execution.
+- AI-safe report input includes sanitized login metadata while excluding credentials, cookies, browser storage, auth headers, and tokens.
+- Package metadata has been updated to `0.9.0-alpha`.
+
+### Security
+
+- Raw usernames and passwords are never returned by credential profile API responses.
+- Credential profile username/password values are encrypted at rest with `QUALORA_ENCRYPTION_KEY`.
+- Login automation is deterministic and selector-based; it does not use AI browser control or arbitrary form submission.
+- Authenticated browser evidence does not expose cookies, local storage, session storage, authorization headers, tokens, or raw credentials.
+
+### Known Limitations
+
+- No Qualora user authentication or authorization.
+- Authenticated browser smoke supports one configured login form and one same-origin target path per run.
+- No MFA, role switching, session export, arbitrary form submission, broad crawling, or multi-step authenticated journeys.
+- No authenticated API testing.
+- No active security scanning or destructive testing.
+
 ## [v0.8.0-alpha] - 2026-07-14
 
 ### Added

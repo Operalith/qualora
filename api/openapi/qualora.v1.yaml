@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.8.0-alpha
-  description: API for creating QA projects, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading reports, and downloading stored evidence objects.
+  version: 0.9.0-alpha
+  description: API for creating QA projects, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading reports, and downloading stored evidence objects.
 servers:
   - url: http://localhost:8080
 paths:
@@ -126,6 +126,137 @@ paths:
                 $ref: "#/components/schemas/TestRun"
         "400":
           $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/authenticated-browser-smoke-runs:
+    post:
+      summary: Start an authenticated browser smoke run
+      description: Creates a deterministic selector-based login job followed by one same-origin authenticated target navigation. Credentials come from a project-scoped credential profile and are never returned by API responses.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthenticatedBrowserSmokeRequest"
+      responses:
+        "201":
+          description: Created authenticated browser smoke run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestRun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/credential-profiles:
+    get:
+      summary: List credential profiles for a project
+      description: Returns safe credential profile metadata only. Raw usernames and passwords are never returned.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Credential profile list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [credential_profiles]
+                properties:
+                  credential_profiles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CredentialProfile"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create a credential profile
+      description: Stores deterministic login selectors and encrypted username/password credentials for one project. The login URL must stay inside the project's allowed host policy and frontend origin.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialProfileRequest"
+      responses:
+        "201":
+          description: Created credential profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialProfile"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/credential-profiles/{credential_profile_id}:
+    get:
+      summary: Get a credential profile
+      description: Returns safe credential profile metadata only. Raw usernames and passwords are never returned.
+      parameters:
+        - $ref: "#/components/parameters/CredentialProfileID"
+      responses:
+        "200":
+          description: Credential profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialProfile"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      summary: Update a credential profile
+      description: Updates selectors and login criteria. Omit username or password to keep the existing encrypted secret value.
+      parameters:
+        - $ref: "#/components/parameters/CredentialProfileID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialProfileRequest"
+      responses:
+        "200":
+          description: Updated credential profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialProfile"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete a credential profile
+      parameters:
+        - $ref: "#/components/parameters/CredentialProfileID"
+      responses:
+        "204":
+          description: Credential profile deleted
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/credential-profiles/{credential_profile_id}/test-login:
+    post:
+      summary: Test a deterministic credential-profile login flow
+      description: Queues a browser job that opens only the configured login URL, fills the configured selectors, clicks the configured submit selector, and checks the configured success/failure criteria.
+      parameters:
+        - $ref: "#/components/parameters/CredentialProfileID"
+      responses:
+        "201":
+          description: Created login check run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestRun"
         "404":
           $ref: "#/components/responses/Error"
         "503":
@@ -739,6 +870,13 @@ components:
       schema:
         type: string
         format: uuid
+    CredentialProfileID:
+      name: credential_profile_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     EvidenceID:
       name: evidence_id
       in: path
@@ -871,11 +1009,24 @@ components:
           format: uuid
         run_type:
           type: string
-          enum: [full, browser_smoke, api_smoke]
+          enum: [full, browser_smoke, api_smoke, login_check, authenticated_browser_smoke]
         api_spec_id:
           type: string
           format: uuid
           nullable: true
+        credential_profile_id:
+          type: string
+          format: uuid
+          nullable: true
+        target_path:
+          type: string
+          example: /dashboard
+        capture_screenshot:
+          type: boolean
+          default: false
+        max_duration_seconds:
+          type: integer
+          default: 30
         status:
           type: string
           enum: [queued, pending, running, completed, failed, canceled, passed, error]
@@ -905,6 +1056,137 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TestRun"
+    CredentialProfileRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - login_url
+        - username_selector
+        - password_selector
+        - submit_selector
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        type:
+          type: string
+          enum: [username_password]
+          default: username_password
+        username:
+          type: string
+          description: Stored encrypted and never returned. Required on create; omit on update to keep the existing username secret.
+        password:
+          type: string
+          description: Stored encrypted and never returned. Required on create; omit on update to keep the existing password secret.
+        login_url:
+          type: string
+          description: Must be allowed by the project allowed_hosts policy and match the frontend_url origin when frontend_url is configured.
+        username_selector:
+          type: string
+          description: Deterministic selector for the username field.
+        password_selector:
+          type: string
+          description: Deterministic selector for the password field.
+        submit_selector:
+          type: string
+          description: Deterministic selector for the configured login submit control.
+        success_url_contains:
+          type: string
+          description: At least one of success_url_contains or success_text_contains is required.
+        success_text_contains:
+          type: string
+          description: At least one of success_url_contains or success_text_contains is required.
+        failure_text_contains:
+          type: string
+        post_login_wait_ms:
+          type: integer
+          minimum: 0
+          maximum: 30000
+          default: 0
+        is_default:
+          type: boolean
+          default: false
+    CredentialProfile:
+      type: object
+      required:
+        - id
+        - project_id
+        - name
+        - type
+        - username_configured
+        - password_configured
+        - login_url
+        - username_selector
+        - password_selector
+        - submit_selector
+        - post_login_wait_ms
+        - is_default
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum: [username_password]
+        username_configured:
+          type: boolean
+        password_configured:
+          type: boolean
+        username_display_hint:
+          type: string
+          description: Masked display hint only, never the raw username.
+        login_url:
+          type: string
+        username_selector:
+          type: string
+        password_selector:
+          type: string
+        submit_selector:
+          type: string
+        success_url_contains:
+          type: string
+        success_text_contains:
+          type: string
+        failure_text_contains:
+          type: string
+        post_login_wait_ms:
+          type: integer
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AuthenticatedBrowserSmokeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        credential_profile_id:
+          type: string
+          format: uuid
+          description: Optional. Uses the project's default credential profile when omitted.
+        target_path:
+          type: string
+          default: /
+          description: Relative same-origin path to visit after login. Absolute URLs and sensitive query parameter names are rejected.
+        capture_screenshot:
+          type: boolean
+          default: true
+        max_duration_seconds:
+          type: integer
+          minimum: 5
+          maximum: 120
+          default: 30
     APISpecImportRequest:
       type: object
       additionalProperties: false
@@ -1193,6 +1475,33 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/APICheckResult"
+        login_summary:
+          allOf:
+            - $ref: "#/components/schemas/LoginSummary"
+          nullable: true
+    LoginSummary:
+      type: object
+      properties:
+        credential_profile_id:
+          type: string
+          format: uuid
+        credential_profile_name:
+          type: string
+        login_status:
+          type: string
+          enum: [passed, failed, ""]
+        login_url:
+          type: string
+        login_final_url:
+          type: string
+        page_title:
+          type: string
+        login_duration_ms:
+          type: integer
+        authenticated_target_url:
+          type: string
+        failure_reason:
+          type: string
     ReportSummary:
       type: object
       required: [total_findings, critical, high, medium, low, info]
@@ -1270,7 +1579,7 @@ components:
           format: uuid
         type:
           type: string
-          enum: [screenshot, browser_observations, api_observations, openapi_summary, api_request]
+          enum: [screenshot, browser_observations, login_observations, api_observations, openapi_summary, api_request]
         uri:
           type: string
         metadata:

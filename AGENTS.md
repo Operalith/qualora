@@ -10,7 +10,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.8.0-alpha` Docker Compose MVP working.
+- Keep the `v0.9.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
@@ -19,6 +19,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Optional OpenAI-compatible AI provider management and AI report analysis.
 - Optional AI-assisted test planning as reviewable suggestions.
 - Approved safe test plan execution for a small deterministic browser DSL.
+- Project-scoped encrypted credential profiles and deterministic selector-based login checks.
+- Authenticated browser smoke runs for one configured same-origin target path.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
 - Redis for queues and short-lived run state.
@@ -46,9 +48,10 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Do not introduce paid SaaS assumptions.
 - Do not add Kubernetes-only concepts before the Docker Compose path works.
 - Keep the web UI focused on alpha workflows; do not add complex design systems, auth, teams, billing, or SaaS assumptions without an explicit request.
-- Do not introduce Temporal, OWASP ZAP, login automation, or active security scanning in the MVP without an explicit request.
+- Do not introduce Temporal, OWASP ZAP, arbitrary login automation, or active security scanning in the MVP without an explicit request.
 - Do not introduce autonomous AI browser control or native non-OpenAI-compatible provider SDKs without an explicit request.
 - Do not execute AI-generated test plan steps automatically or as free-form model instructions.
+- Do not use AI for login automation or authenticated browser control.
 - Safe test plan execution must remain explicit, previewable, same-origin, allowlist-enforced, non-destructive, and limited to the supported persisted DSL.
 - API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
 - Imported OpenAPI API smoke runs must stay read-only: skip mutating methods, authenticated operations, required request bodies, unresolved parameters, sensitive paths/parameters, and external redirects.

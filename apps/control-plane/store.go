@@ -125,6 +125,25 @@ func (s *Store) CreateRunForKinds(ctx context.Context, project Project, kinds []
 }
 
 func (s *Store) CreateRunForKindsWithType(ctx context.Context, project Project, kinds []string, runType string, apiSpecID string) (*TestRun, []RunJob, error) {
+	return s.CreateRunForKindsWithOptions(ctx, project, kinds, RunOptions{RunType: runType, APISpecID: apiSpecID, CaptureScreenshot: true, MaxDurationSeconds: 30})
+}
+
+type RunOptions struct {
+	RunType             string
+	APISpecID           string
+	CredentialProfileID string
+	TargetPath          string
+	CaptureScreenshot   bool
+	MaxDurationSeconds  int
+}
+
+func (s *Store) CreateRunForKindsWithOptions(ctx context.Context, project Project, kinds []string, options RunOptions) (*TestRun, []RunJob, error) {
+	if options.RunType == "" {
+		options.RunType = RunTypeFull
+	}
+	if options.MaxDurationSeconds <= 0 {
+		options.MaxDurationSeconds = 30
+	}
 	for _, kind := range kinds {
 		switch kind {
 		case JobKindBrowser:
@@ -151,15 +170,24 @@ func (s *Store) CreateRunForKindsWithType(ctx context.Context, project Project, 
 
 	run := &TestRun{}
 	var runAPISpecID sql.NullString
+	var credentialProfileID sql.NullString
 	err = tx.QueryRow(ctx, `
-INSERT INTO test_runs (id, project_id, run_type, api_spec_id, status)
-VALUES ($1, $2, $3, NULLIF($4, '')::uuid, $5)
-RETURNING id, project_id, run_type, api_spec_id::text, status, error_message, page_title, started_at, completed_at, created_at, updated_at
-`, uuid.NewString(), project.ID, runType, apiSpecID, StatusQueued).Scan(
+INSERT INTO test_runs (
+	id, project_id, run_type, api_spec_id, credential_profile_id, target_path,
+	capture_screenshot, max_duration_seconds, status
+) VALUES ($1, $2, $3, NULLIF($4, '')::uuid, NULLIF($5, '')::uuid, $6, $7, $8, $9)
+RETURNING id, project_id, run_type, api_spec_id::text, credential_profile_id::text,
+	target_path, capture_screenshot, max_duration_seconds, status, error_message,
+	page_title, started_at, completed_at, created_at, updated_at
+`, uuid.NewString(), project.ID, options.RunType, options.APISpecID, options.CredentialProfileID, options.TargetPath, options.CaptureScreenshot, options.MaxDurationSeconds, StatusQueued).Scan(
 		&run.ID,
 		&run.ProjectID,
 		&run.RunType,
 		&runAPISpecID,
+		&credentialProfileID,
+		&run.TargetPath,
+		&run.CaptureScreenshot,
+		&run.MaxDurationSeconds,
 		&run.Status,
 		&run.ErrorMessage,
 		&run.PageTitle,
@@ -173,6 +201,9 @@ RETURNING id, project_id, run_type, api_spec_id::text, status, error_message, pa
 	}
 	if runAPISpecID.Valid {
 		run.APISpecID = runAPISpecID.String
+	}
+	if credentialProfileID.Valid {
+		run.CredentialProfileID = credentialProfileID.String
 	}
 
 	jobs := make([]RunJob, 0, len(kinds))
@@ -235,7 +266,9 @@ WHERE id = $1
 
 func (s *Store) GetRun(ctx context.Context, id string) (*TestRun, error) {
 	run, err := scanRun(s.db.QueryRow(ctx, `
-SELECT id, project_id, run_type, api_spec_id::text, status, error_message, page_title, started_at, completed_at, created_at, updated_at
+SELECT id, project_id, run_type, api_spec_id::text, credential_profile_id::text,
+	target_path, capture_screenshot, max_duration_seconds, status, error_message,
+	page_title, started_at, completed_at, created_at, updated_at
 FROM test_runs
 WHERE id = $1
 `, id))
@@ -255,13 +288,17 @@ func (s *Store) ListRuns(ctx context.Context, projectID string) ([]TestRun, erro
 	)
 	if projectID == "" {
 		rows, err = s.db.Query(ctx, `
-SELECT id, project_id, run_type, api_spec_id::text, status, error_message, page_title, started_at, completed_at, created_at, updated_at
+SELECT id, project_id, run_type, api_spec_id::text, credential_profile_id::text,
+	target_path, capture_screenshot, max_duration_seconds, status, error_message,
+	page_title, started_at, completed_at, created_at, updated_at
 FROM test_runs
 ORDER BY created_at DESC
 `)
 	} else {
 		rows, err = s.db.Query(ctx, `
-SELECT id, project_id, run_type, api_spec_id::text, status, error_message, page_title, started_at, completed_at, created_at, updated_at
+SELECT id, project_id, run_type, api_spec_id::text, credential_profile_id::text,
+	target_path, capture_screenshot, max_duration_seconds, status, error_message,
+	page_title, started_at, completed_at, created_at, updated_at
 FROM test_runs
 WHERE project_id = $1
 ORDER BY created_at DESC
@@ -347,6 +384,25 @@ func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 		apiSummary := summarizeAPICheckResults(apiResults)
 		report.APISummary = &apiSummary
 		report.Metadata["api_summary"] = apiSummary
+	}
+	if run.CredentialProfileID != "" {
+		profile, err := s.GetCredentialProfile(ctx, run.CredentialProfileID)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		if profile != nil {
+			report.Metadata["credential_profile"] = map[string]any{
+				"id":   profile.ID,
+				"name": profile.Name,
+			}
+		}
+	}
+	if run.RunType == RunTypeLoginCheck || run.RunType == RunTypeAuthenticatedBrowserSmoke {
+		loginSummary := summarizeLoginEvidence(run, evidence)
+		if loginSummary != nil {
+			report.LoginSummary = loginSummary
+			report.Metadata["login"] = loginSummary
+		}
 	}
 	if run.ErrorMessage != "" {
 		report.Metadata["error_message"] = run.ErrorMessage
@@ -465,11 +521,16 @@ type scanRow interface {
 func scanRun(row scanRow) (TestRun, error) {
 	var run TestRun
 	var apiSpecID sql.NullString
+	var credentialProfileID sql.NullString
 	if err := row.Scan(
 		&run.ID,
 		&run.ProjectID,
 		&run.RunType,
 		&apiSpecID,
+		&credentialProfileID,
+		&run.TargetPath,
+		&run.CaptureScreenshot,
+		&run.MaxDurationSeconds,
 		&run.Status,
 		&run.ErrorMessage,
 		&run.PageTitle,
@@ -485,6 +546,12 @@ func scanRun(row scanRow) (TestRun, error) {
 	}
 	if apiSpecID.Valid {
 		run.APISpecID = apiSpecID.String
+	}
+	if credentialProfileID.Valid {
+		run.CredentialProfileID = credentialProfileID.String
+	}
+	if run.MaxDurationSeconds <= 0 {
+		run.MaxDurationSeconds = 30
 	}
 	return run, nil
 }

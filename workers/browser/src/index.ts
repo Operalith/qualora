@@ -5,7 +5,7 @@ import {
   S3Client
 } from "@aws-sdk/client-s3";
 import dns from "node:dns/promises";
-import { randomUUID } from "node:crypto";
+import { createDecipheriv, createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -26,6 +26,7 @@ type Config = {
   s3AccessKeyId: string;
   s3SecretAccessKey: string;
   s3ForcePathStyle: boolean;
+  encryptionKey: string;
 };
 
 type BrowserRunJob = {
@@ -43,6 +44,53 @@ type Project = {
   frontend_url: string;
   allowed_hosts: string[];
   allow_private_targets: boolean;
+};
+
+type RunContext = {
+  id: string;
+  run_type: string;
+  credential_profile_id: string;
+  target_path: string;
+  capture_screenshot: boolean;
+  max_duration_seconds: number;
+  project: Project;
+};
+
+type CredentialProfile = {
+  id: string;
+  project_id: string;
+  name: string;
+  type: "username_password";
+  username_encrypted: string;
+  password_encrypted: string;
+  login_url: string;
+  username_selector: string;
+  password_selector: string;
+  submit_selector: string;
+  success_url_contains: string;
+  success_text_contains: string;
+  failure_text_contains: string;
+  post_login_wait_ms: number;
+};
+
+type LoginFlowResult = {
+  loginURL: string;
+  finalURL: string;
+  pageTitle: string;
+  durationMS: number;
+  success: boolean;
+  failureReason: string;
+  failureCategory: string;
+  consoleErrors: BrowserResult["consoleErrors"];
+  failedRequests: BrowserResult["failedRequests"];
+  blockedRequests: BrowserResult["blockedRequests"];
+  screenshot: Buffer | null;
+};
+
+type AuthenticatedBrowserResult = BrowserResult & {
+  login: LoginFlowResult;
+  credentialProfileName: string;
+  authenticatedTargetURL: string;
 };
 
 type TestPlanExecutionContext = {
@@ -167,10 +215,20 @@ async function handleJob(job: BrowserRunJob): Promise<void> {
   try {
     await markJobRunning(job);
 
-    const project = await getProject(job.project_id);
+    const run = await getRunContext(job.run_id, job.project_id);
+    const project = run.project;
     const scopeCheck = await validateTargetURL(project.frontend_url, project.allowed_hosts, project.allow_private_targets);
     if (!scopeCheck.ok) {
       throw new Error(scopeCheck.reason);
+    }
+
+    if (run.run_type === "login_check") {
+      await handleLoginCheckJob(job, run);
+      return;
+    }
+    if (run.run_type === "authenticated_browser_smoke") {
+      await handleAuthenticatedBrowserSmokeJob(job, run);
+      return;
     }
 
     const result = await runBrowserCheck(project);
@@ -227,6 +285,570 @@ async function handleJob(job: BrowserRunJob): Promise<void> {
     }).catch(() => undefined);
     await finishJob(job, "failed", message, "").catch(() => undefined);
     log("run_failed", { run_id: job.run_id, error: message });
+  }
+}
+
+async function handleLoginCheckJob(job: BrowserRunJob, run: RunContext): Promise<void> {
+  const profile = await getCredentialProfile(run.credential_profile_id, run.project.id);
+  const result = await runLoginCheck(run.project, profile, run.capture_screenshot, run.max_duration_seconds);
+  const evidenceIds = await storeLoginEvidence(job.run_id, profile, result, "");
+  const findings = buildLoginFindings(result, evidenceIds);
+  for (const finding of findings) {
+    await insertFinding({ runID: job.run_id }, finding);
+  }
+  await finishJob(job, result.success ? "completed" : "failed", result.success ? "" : result.failureReason, result.pageTitle);
+  log("login_check_completed", { run_id: job.run_id, success: result.success, findings: findings.length });
+}
+
+async function handleAuthenticatedBrowserSmokeJob(job: BrowserRunJob, run: RunContext): Promise<void> {
+  const profile = await getCredentialProfile(run.credential_profile_id, run.project.id);
+  const result = await runAuthenticatedBrowserCheck(run, profile);
+  const evidenceIds = await storeAuthenticatedBrowserEvidence(job.run_id, profile, result);
+  const findings = buildAuthenticatedBrowserFindings(result, evidenceIds);
+  for (const finding of findings) {
+    await insertFinding({ runID: job.run_id }, finding);
+  }
+  await finishJob(job, result.login.success ? "completed" : "failed", result.login.success ? "" : result.login.failureReason, result.pageTitle || result.login.pageTitle);
+  log("authenticated_browser_smoke_completed", {
+    run_id: job.run_id,
+    login_success: result.login.success,
+    findings: findings.length
+  });
+}
+
+async function getRunContext(runID: string, projectID: string): Promise<RunContext> {
+  const result = await pool.query(
+    `SELECT r.id, r.run_type, r.credential_profile_id::text, r.target_path,
+            r.capture_screenshot, r.max_duration_seconds,
+            p.id AS project_id, p.frontend_url, p.allowed_hosts, p.allow_private_targets
+     FROM test_runs r
+     JOIN projects p ON p.id = r.project_id
+     WHERE r.id = $1 AND p.id = $2`,
+    [runID, projectID]
+  );
+  if (result.rowCount !== 1) {
+    throw new Error("run was not found");
+  }
+  const row = result.rows[0] as {
+    id: string;
+    run_type: string;
+    credential_profile_id: string | null;
+    target_path: string;
+    capture_screenshot: boolean;
+    max_duration_seconds: number;
+    project_id: string;
+    frontend_url: string;
+    allowed_hosts: string[] | string;
+    allow_private_targets: boolean;
+  };
+  return {
+    id: row.id,
+    run_type: row.run_type || "full",
+    credential_profile_id: row.credential_profile_id ?? "",
+    target_path: row.target_path || "/",
+    capture_screenshot: row.capture_screenshot,
+    max_duration_seconds: Number(row.max_duration_seconds || 30),
+    project: {
+      id: row.project_id,
+      frontend_url: row.frontend_url,
+      allowed_hosts: Array.isArray(row.allowed_hosts) ? row.allowed_hosts : JSON.parse(row.allowed_hosts),
+      allow_private_targets: row.allow_private_targets
+    }
+  };
+}
+
+async function getCredentialProfile(profileID: string, projectID: string): Promise<CredentialProfile> {
+  if (!profileID) {
+    throw new Error("credential profile is required");
+  }
+  const result = await pool.query(
+    `SELECT id, project_id, name, type, username_encrypted, password_encrypted, login_url,
+            username_selector, password_selector, submit_selector, success_url_contains,
+            success_text_contains, failure_text_contains, post_login_wait_ms
+     FROM credential_profiles
+     WHERE id = $1 AND project_id = $2`,
+    [profileID, projectID]
+  );
+  if (result.rowCount !== 1) {
+    throw new Error("credential profile was not found");
+  }
+  const row = result.rows[0] as CredentialProfile;
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    name: sanitizeText(row.name),
+    type: row.type,
+    username_encrypted: row.username_encrypted,
+    password_encrypted: row.password_encrypted,
+    login_url: row.login_url,
+    username_selector: row.username_selector,
+    password_selector: row.password_selector,
+    submit_selector: row.submit_selector,
+    success_url_contains: row.success_url_contains || "",
+    success_text_contains: row.success_text_contains || "",
+    failure_text_contains: row.failure_text_contains || "",
+    post_login_wait_ms: Number(row.post_login_wait_ms || 0)
+  };
+}
+
+async function runLoginCheck(
+  project: Project,
+  profile: CredentialProfile,
+  shouldCaptureScreenshot: boolean,
+  maxDurationSeconds: number
+): Promise<LoginFlowResult> {
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox"]
+  });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: false,
+    viewport: { width: 1365, height: 768 }
+  });
+  const page = await context.newPage();
+  const signals = createBrowserSignals(page);
+  await installAllowedHostRoutes(page, project, signals);
+
+  try {
+    const result = await executeLoginFlowOnPage(page, project, profile, signals, maxDurationSeconds);
+    if (shouldCaptureScreenshot) {
+      result.screenshot = await captureScreenshot(page);
+    }
+    return result;
+  } finally {
+    await browser.close();
+  }
+}
+
+async function runAuthenticatedBrowserCheck(run: RunContext, profile: CredentialProfile): Promise<AuthenticatedBrowserResult> {
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox"]
+  });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: false,
+    viewport: { width: 1365, height: 768 }
+  });
+  const page = await context.newPage();
+  const signals = createBrowserSignals(page);
+  await installAllowedHostRoutes(page, run.project, signals);
+
+  let targetURL = "";
+  let pageTitle = "";
+  let statusCode: number | null = null;
+  let finalURL = "";
+  let bodyTextLength: number | null = null;
+  let loadError = "";
+  let screenshot: Buffer | null = null;
+  let login: LoginFlowResult | null = null;
+
+  try {
+    login = await executeLoginFlowOnPage(page, run.project, profile, signals, run.max_duration_seconds);
+    if (!login.success) {
+      if (run.capture_screenshot) {
+        login.screenshot = await captureScreenshot(page);
+        screenshot = login.screenshot;
+      }
+      return {
+        targetURL: login.loginURL,
+        authenticatedTargetURL: "",
+        finalURL: login.finalURL,
+        pageTitle: login.pageTitle,
+        statusCode: null,
+        bodyTextLength: null,
+        loadError: login.failureReason,
+        timedOut: login.failureCategory === "login_timeout",
+        consoleErrors: signals.consoleErrors.slice(0, 50),
+        failedRequests: signals.failedRequests.slice(0, 50),
+        blockedRequests: signals.blockedRequests.slice(0, 50),
+        screenshot,
+        login,
+        credentialProfileName: profile.name
+      };
+    }
+
+    targetURL = await safeExecutionTarget(run.project, run.target_path || "/");
+    const response = await page.goto(targetURL, {
+      waitUntil: "domcontentloaded",
+      timeout: run.max_duration_seconds * 1000
+    });
+    statusCode = response ? response.status() : null;
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+    pageTitle = sanitizeText(await page.title().catch(() => ""));
+    finalURL = sanitizeURL(page.url());
+    bodyTextLength = await page
+      .evaluate(() => (document.body?.innerText ?? "").trim().length)
+      .catch(() => null);
+    if (run.capture_screenshot) {
+      screenshot = await captureScreenshot(page);
+    }
+    return {
+      targetURL,
+      authenticatedTargetURL: targetURL,
+      finalURL,
+      pageTitle,
+      statusCode,
+      bodyTextLength,
+      loadError,
+      timedOut: false,
+      consoleErrors: signals.consoleErrors.slice(0, 50),
+      failedRequests: signals.failedRequests.slice(0, 50),
+      blockedRequests: signals.blockedRequests.slice(0, 50),
+      screenshot,
+      login,
+      credentialProfileName: profile.name
+    };
+  } catch (error) {
+    loadError = sanitizeText(error instanceof Error ? error.message : String(error));
+    finalURL = sanitizeURL(page.url());
+    pageTitle = sanitizeText(await page.title().catch(() => ""));
+    bodyTextLength = await page
+      .evaluate(() => (document.body?.innerText ?? "").trim().length)
+      .catch(() => null);
+    if (run.capture_screenshot) {
+      screenshot = await captureScreenshot(page);
+    }
+    const fallbackLogin: LoginFlowResult = {
+      loginURL: profile.login_url,
+      finalURL,
+      pageTitle,
+      durationMS: 0,
+      success: false,
+      failureReason: loadError,
+      failureCategory: /\btimeout\b|timed out/i.test(loadError) ? "login_timeout" : "login_failure",
+      consoleErrors: signals.consoleErrors.slice(0, 50),
+      failedRequests: signals.failedRequests.slice(0, 50),
+      blockedRequests: signals.blockedRequests.slice(0, 50),
+      screenshot
+    };
+    const completedLogin = login ?? fallbackLogin;
+    return {
+      targetURL: targetURL || profile.login_url,
+      authenticatedTargetURL: targetURL,
+      finalURL,
+      pageTitle,
+      statusCode,
+      bodyTextLength,
+      loadError,
+      timedOut: /\btimeout\b|timed out/i.test(loadError),
+      consoleErrors: signals.consoleErrors.slice(0, 50),
+      failedRequests: signals.failedRequests.slice(0, 50),
+      blockedRequests: signals.blockedRequests.slice(0, 50),
+      screenshot,
+      login: completedLogin,
+      credentialProfileName: profile.name
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+async function executeLoginFlowOnPage(
+  page: Page,
+  project: Project,
+  profile: CredentialProfile,
+  signals: BrowserSignals,
+  maxDurationSeconds: number
+): Promise<LoginFlowResult> {
+  const startedAt = Date.now();
+  const timeoutMS = Math.max(5000, Math.min(maxDurationSeconds || 30, 120) * 1000);
+  let finalURL = sanitizeURL(profile.login_url);
+  let pageTitle = "";
+
+  try {
+    await validateLoginURL(project, profile.login_url);
+    const username = decryptSecret(profile.username_encrypted);
+    const password = decryptSecret(profile.password_encrypted);
+    if (!username || !password) {
+      throw new LoginFlowError("login_failure", "credential profile is missing a configured username or password");
+    }
+
+    const response = await page.goto(profile.login_url, {
+      waitUntil: "domcontentloaded",
+      timeout: timeoutMS
+    });
+    if (response && response.status() >= 400) {
+      throw new LoginFlowError("login_failure", `login page returned HTTP ${response.status()}`);
+    }
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+
+    await fillLoginField(page, profile.username_selector, username, "username_selector", timeoutMS);
+    await fillLoginField(page, profile.password_selector, password, "password_selector", timeoutMS);
+    const submit = page.locator(profile.submit_selector);
+    if ((await submit.count()) < 1) {
+      throw new LoginFlowError("login_selector_missing", "configured submit_selector was not found");
+    }
+    await submit.first().waitFor({ state: "visible", timeout: timeoutMS }).catch(() => {
+      throw new LoginFlowError("login_selector_missing", "configured submit_selector was not visible");
+    });
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 10000 }).catch(() => undefined),
+      submit.first().click({ timeout: timeoutMS })
+    ]);
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+    if (profile.post_login_wait_ms > 0) {
+      await page.waitForTimeout(Math.min(profile.post_login_wait_ms, 30000));
+    }
+
+    finalURL = sanitizeURL(page.url());
+    pageTitle = sanitizeText(await page.title().catch(() => ""));
+    const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    const lowerBody = bodyText.toLowerCase();
+    if (profile.failure_text_contains && lowerBody.includes(profile.failure_text_contains.toLowerCase())) {
+      throw new LoginFlowError("login_failure", "configured failure_text_contains was visible after login");
+    }
+    if (profile.success_url_contains && !finalURL.includes(profile.success_url_contains)) {
+      throw new LoginFlowError("login_failure", "final URL did not match configured success_url_contains");
+    }
+    if (profile.success_text_contains && !lowerBody.includes(profile.success_text_contains.toLowerCase())) {
+      throw new LoginFlowError("login_failure", "configured success_text_contains was not visible after login");
+    }
+
+    return {
+      loginURL: sanitizeURL(profile.login_url),
+      finalURL,
+      pageTitle,
+      durationMS: Date.now() - startedAt,
+      success: true,
+      failureReason: "",
+      failureCategory: "",
+      consoleErrors: signals.consoleErrors.slice(0, 50),
+      failedRequests: signals.failedRequests.slice(0, 50),
+      blockedRequests: signals.blockedRequests.slice(0, 50),
+      screenshot: null
+    };
+  } catch (error) {
+    finalURL = sanitizeURL(page.url() || profile.login_url);
+    pageTitle = sanitizeText(await page.title().catch(() => ""));
+    const category = error instanceof LoginFlowError ? error.category : /\btimeout\b|timed out/i.test(String(error)) ? "login_timeout" : "login_failure";
+    return {
+      loginURL: sanitizeURL(profile.login_url),
+      finalURL,
+      pageTitle,
+      durationMS: Date.now() - startedAt,
+      success: false,
+      failureReason: sanitizeText(error instanceof Error ? error.message : String(error)),
+      failureCategory: category,
+      consoleErrors: signals.consoleErrors.slice(0, 50),
+      failedRequests: signals.failedRequests.slice(0, 50),
+      blockedRequests: signals.blockedRequests.slice(0, 50),
+      screenshot: null
+    };
+  }
+}
+
+async function fillLoginField(page: Page, selector: string, value: string, label: string, timeoutMS: number): Promise<void> {
+  const field = page.locator(selector);
+  if ((await field.count()) < 1) {
+    throw new LoginFlowError("login_selector_missing", `configured ${label} was not found`);
+  }
+  await field.first().waitFor({ state: "visible", timeout: timeoutMS }).catch(() => {
+    throw new LoginFlowError("login_selector_missing", `configured ${label} was not visible`);
+  });
+  await field.first().fill(value, { timeout: timeoutMS });
+}
+
+async function validateLoginURL(project: Project, raw: string): Promise<void> {
+  const loginURL = new URL(raw);
+  const frontendURL = new URL(project.frontend_url);
+  if (loginURL.origin !== frontendURL.origin) {
+    throw new LoginFlowError("login_failure", "login URL must stay on the project frontend origin");
+  }
+  const scopeCheck = await validateTargetURL(raw, project.allowed_hosts, project.allow_private_targets);
+  if (!scopeCheck.ok) {
+    throw new LoginFlowError("login_failure", scopeCheck.reason);
+  }
+}
+
+async function storeLoginEvidence(
+  runID: string,
+  profile: CredentialProfile,
+  result: LoginFlowResult,
+  authenticatedTargetURL: string
+): Promise<string[]> {
+  const evidenceIds: string[] = [];
+  if (result.screenshot) {
+    const object = await storeScreenshot("runs", runID, result.screenshot);
+    evidenceIds.push(
+      await insertEvidence({ runID }, "screenshot", object.uri, {
+        filename: object.filename,
+        key: object.key,
+        content_type: object.contentType,
+        size_bytes: object.sizeBytes,
+        created_at: object.createdAt,
+        storage: object.storage,
+        login_url: result.loginURL,
+        final_url: result.finalURL,
+        page_title: result.pageTitle,
+        login_status: result.success ? "passed" : "failed",
+        credential_profile_name: profile.name
+      })
+    );
+  }
+  evidenceIds.push(
+    await insertEvidence({ runID }, "login_observations", "inline://login-observations", {
+      credential_profile_id: profile.id,
+      credential_profile_name: profile.name,
+      login_url: result.loginURL,
+      final_url: result.finalURL,
+      page_title: result.pageTitle,
+      login_status: result.success ? "passed" : "failed",
+      success: result.success,
+      duration_ms: result.durationMS,
+      failure_reason: result.failureReason,
+      authenticated_target_url: authenticatedTargetURL,
+      console_errors: result.consoleErrors,
+      failed_requests: result.failedRequests,
+      blocked_requests: result.blockedRequests
+    })
+  );
+  return evidenceIds;
+}
+
+async function storeAuthenticatedBrowserEvidence(
+  runID: string,
+  profile: CredentialProfile,
+  result: AuthenticatedBrowserResult
+): Promise<string[]> {
+  const evidenceIds = await storeLoginEvidence(runID, profile, result.login, result.authenticatedTargetURL);
+  if (result.screenshot && result.screenshot !== result.login.screenshot) {
+    const object = await storeScreenshot("runs", runID, result.screenshot);
+    evidenceIds.push(
+      await insertEvidence({ runID }, "screenshot", object.uri, {
+        filename: object.filename,
+        key: object.key,
+        content_type: object.contentType,
+        size_bytes: object.sizeBytes,
+        created_at: object.createdAt,
+        storage: object.storage,
+        target_url: result.targetURL,
+        final_url: result.finalURL,
+        page_title: result.pageTitle,
+        status_code: result.statusCode,
+        login_status: result.login.success ? "passed" : "failed",
+        credential_profile_name: profile.name
+      })
+    );
+  }
+  evidenceIds.push(
+    await insertEvidence({ runID }, "browser_observations", "inline://authenticated-browser-observations", {
+      authenticated: true,
+      credential_profile_name: profile.name,
+      login_status: result.login.success ? "passed" : "failed",
+      target_url: result.targetURL,
+      authenticated_target_url: result.authenticatedTargetURL,
+      final_url: result.finalURL,
+      page_title: result.pageTitle,
+      status_code: result.statusCode,
+      body_text_length: result.bodyTextLength,
+      load_error: result.loadError,
+      timed_out: result.timedOut,
+      console_errors: result.consoleErrors,
+      failed_requests: result.failedRequests,
+      blocked_requests: result.blockedRequests
+    })
+  );
+  return evidenceIds;
+}
+
+function buildLoginFindings(result: LoginFlowResult, evidenceIds: string[]): FindingInput[] {
+  const findings: FindingInput[] = [];
+  if (!result.success) {
+    findings.push({
+      title: result.failureCategory === "login_selector_missing" ? "Login selector missing" : result.failureCategory === "login_timeout" ? "Login flow timed out" : "Login failed",
+      severity: "high",
+      category: result.failureCategory || "login_failure",
+      confidence: "high",
+      description: [
+        `Summary: the configured deterministic login flow did not succeed: ${result.failureReason}`,
+        `Steps to reproduce: open ${result.loginURL}, fill the configured username/password selectors with the test credential profile, and click the configured submit selector.`
+      ].join("\n"),
+      recommendation: "Verify the login URL, selectors, deterministic test credentials, and configured success/failure criteria.",
+      evidenceIds
+    });
+  }
+  if (result.consoleErrors.length > 0) {
+    findings.push({
+      title: "Console error detected during login",
+      severity: "medium",
+      category: "console_error",
+      confidence: "medium",
+      description: `Summary: the browser observed ${result.consoleErrors.length} console error(s) during the configured login flow.`,
+      recommendation: "Review frontend console errors on the login route and post-login page.",
+      evidenceIds
+    });
+  }
+  if (result.failedRequests.length > 0) {
+    findings.push({
+      title: "Failed network request detected during login",
+      severity: "medium",
+      category: "network_failure",
+      confidence: "medium",
+      description: `Summary: the browser observed ${result.failedRequests.length} failed network request(s) during the configured login flow.`,
+      recommendation: "Inspect failed login-flow requests and ensure first-party dependencies are reachable from the worker.",
+      evidenceIds
+    });
+  }
+  return findings;
+}
+
+function buildAuthenticatedBrowserFindings(result: AuthenticatedBrowserResult, evidenceIds: string[]): FindingInput[] {
+  const findings = buildLoginFindings(result.login, evidenceIds);
+  if (!result.login.success) {
+    return findings;
+  }
+  if (result.loadError) {
+    findings.push({
+      title: result.timedOut ? "Authenticated navigation timed out" : "Authenticated navigation failed",
+      severity: "high",
+      category: result.timedOut ? "timeout" : "authenticated_navigation_failure",
+      confidence: "high",
+      description: `Summary: after login, the authenticated target did not load successfully: ${result.loadError}`,
+      recommendation: "Verify the authenticated target path and application availability after login.",
+      evidenceIds
+    });
+  } else if (result.statusCode !== null && (result.statusCode < 200 || result.statusCode >= 300)) {
+    findings.push({
+      title: "Authenticated target returned non-2xx status",
+      severity: "high",
+      category: "authenticated_navigation_failure",
+      confidence: "high",
+      description: `Summary: after login, ${result.targetURL} returned HTTP ${result.statusCode}.`,
+      recommendation: "Verify the authenticated route, session handling, and required test-account permissions.",
+      evidenceIds
+    });
+  }
+  if (result.consoleErrors.length > result.login.consoleErrors.length) {
+    findings.push({
+      title: "Console error detected after login",
+      severity: "medium",
+      category: "console_error",
+      confidence: "medium",
+      description: `Summary: the browser observed ${result.consoleErrors.length} total console error(s) during authenticated smoke.`,
+      recommendation: "Review browser console errors on the authenticated route.",
+      evidenceIds
+    });
+  }
+  if (result.failedRequests.length > result.login.failedRequests.length) {
+    findings.push({
+      title: "Failed network request detected after login",
+      severity: "medium",
+      category: "network_failure",
+      confidence: "medium",
+      description: `Summary: the browser observed ${result.failedRequests.length} total failed network request(s) during authenticated smoke.`,
+      recommendation: "Inspect failed authenticated-route requests and ensure first-party dependencies are reachable.",
+      evidenceIds
+    });
+  }
+  return findings;
+}
+
+class LoginFlowError extends Error {
+  category: string;
+
+  constructor(category: string, message: string) {
+    super(message);
+    this.category = category;
   }
 }
 
@@ -1164,6 +1786,28 @@ function sanitizeText(input: string): string {
     .slice(0, 1000);
 }
 
+function decryptSecret(encrypted: string): string {
+  if (!encrypted) {
+    return "";
+  }
+  if (!encrypted.startsWith("v1:")) {
+    throw new LoginFlowError("login_failure", "encrypted credential has unsupported format");
+  }
+  const raw = Buffer.from(encrypted.slice(3), "base64");
+  const nonceSize = 12;
+  const authTagSize = 16;
+  if (raw.length <= nonceSize + authTagSize) {
+    throw new LoginFlowError("login_failure", "encrypted credential is too short");
+  }
+  const key = createHash("sha256").update(config.encryptionKey).digest();
+  const nonce = raw.subarray(0, nonceSize);
+  const ciphertext = raw.subarray(nonceSize, raw.length - authTagSize);
+  const authTag = raw.subarray(raw.length - authTagSize);
+  const decipher = createDecipheriv("aes-256-gcm", key, nonce);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+}
+
 function loadConfig(): Config {
   return {
     databaseUrl: env("DATABASE_URL", "postgres://qualora:qualora@localhost:5432/qualora?sslmode=disable"),
@@ -1176,7 +1820,8 @@ function loadConfig(): Config {
     s3Bucket: env("S3_BUCKET", "qualora-evidence"),
     s3AccessKeyId: env("S3_ACCESS_KEY_ID", "qualora"),
     s3SecretAccessKey: env("S3_SECRET_ACCESS_KEY", "qualora-dev-secret"),
-    s3ForcePathStyle: env("S3_FORCE_PATH_STYLE", "true") === "true"
+    s3ForcePathStyle: env("S3_FORCE_PATH_STYLE", "true") === "true",
+    encryptionKey: env("QUALORA_ENCRYPTION_KEY", "qualora-insecure-dev-key-change-me")
   };
 }
 

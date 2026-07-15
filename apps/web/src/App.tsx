@@ -1,10 +1,12 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   API_BASE_URL,
+  createCredentialProfile,
   createAIProvider,
   createProject,
   deleteAIProvider,
   deleteAPISpec,
+  deleteCredentialProfile,
   deleteTestPlan,
   evidenceDownloadURL,
   executeTestPlan,
@@ -19,6 +21,7 @@ import {
   importAPISpec,
   listAIProviders,
   listAPISpecs,
+  listCredentialProfiles,
   listProjects,
   listRuns,
   listTestPlanExecutions,
@@ -26,11 +29,14 @@ import {
   previewTestPlanExecution,
   runAIAnalysis,
   startAPISmokeRun,
+  startAuthenticatedBrowserSmokeRun,
   startBrowserSmokeRun,
   startRun,
+  testCredentialProfileLogin,
   testPlanExportURL,
   testPlanExecutionHTMLReportURL,
   testAIProvider,
+  updateCredentialProfile,
   updateAIProvider
 } from "./api";
 import type {
@@ -45,6 +51,8 @@ import type {
   AIProviderTestResult,
   AITestPlanInput,
   CreateProjectInput,
+  CredentialProfile,
+  CredentialProfileInput,
   Evidence,
   Project,
   Report,
@@ -128,7 +136,7 @@ export default function App() {
       <aside className="sidebar">
         <a className="brand" href="#/">
           <span>Qualora</span>
-          <small>v0.8.0-alpha</small>
+          <small>v0.9.0-alpha</small>
         </a>
         <nav>
           <a className={route.name === "dashboard" ? "active" : ""} href="#/">
@@ -722,6 +730,7 @@ function ProjectPage({
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [testPlans, setTestPlans] = useState<LoadState<TestPlan[]>>({ data: [], loading: true, error: "" });
   const [apiSpecs, setAPISpecs] = useState<LoadState<APISpec[]>>({ data: [], loading: true, error: "" });
+  const [credentialProfiles, setCredentialProfiles] = useState<LoadState<CredentialProfile[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
   const [starting, setStarting] = useState("");
 
@@ -729,26 +738,30 @@ function ProjectPage({
     setRuns((current) => ({ ...current, loading: true, error: "" }));
     setTestPlans((current) => ({ ...current, loading: true, error: "" }));
     setAPISpecs((current) => ({ ...current, loading: true, error: "" }));
+    setCredentialProfiles((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
-      const [nextProject, nextRuns, nextProviders, nextTestPlans, nextAPISpecs] = await Promise.all([
+      const [nextProject, nextRuns, nextProviders, nextTestPlans, nextAPISpecs, nextCredentialProfiles] = await Promise.all([
         cachedProject ? Promise.resolve(cachedProject) : getProject(projectID),
         listRuns(projectID),
         listAIProviders(),
         listTestPlans(projectID),
-        listAPISpecs(projectID)
+        listAPISpecs(projectID),
+        listCredentialProfiles(projectID)
       ]);
       setProject(nextProject);
       setRuns({ data: nextRuns, loading: false, error: "" });
       setProviders(nextProviders);
       setTestPlans({ data: nextTestPlans, loading: false, error: "" });
       setAPISpecs({ data: nextAPISpecs, loading: false, error: "" });
+      setCredentialProfiles({ data: nextCredentialProfiles, loading: false, error: "" });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
       setRuns((current) => ({ ...current, loading: false, error: message }));
       setTestPlans((current) => ({ ...current, loading: false, error: message }));
       setAPISpecs((current) => ({ ...current, loading: false, error: message }));
+      setCredentialProfiles((current) => ({ ...current, loading: false, error: message }));
     }
   }, [cachedProject, projectID]);
 
@@ -782,6 +795,27 @@ function ProjectPage({
     }
   }
 
+  async function startAuthenticatedRun(profileID?: string) {
+    if (!project) {
+      return;
+    }
+    setStarting("authenticated");
+    setError("");
+    try {
+      const run = await startAuthenticatedBrowserSmokeRun(project.id, {
+        credential_profile_id: profileID,
+        target_path: "/dashboard",
+        capture_screenshot: true,
+        max_duration_seconds: 30
+      });
+      window.location.hash = `#/runs/${run.id}`;
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : String(startError));
+    } finally {
+      setStarting("");
+    }
+  }
+
   return (
     <div className="grid">
       <section>
@@ -794,6 +828,11 @@ function ProjectPage({
             {project.frontend_url && (
               <button type="button" disabled={starting !== ""} onClick={() => void startProjectRun("browser")}>
                 {starting === "browser" ? "Starting" : "Run browser smoke test"}
+              </button>
+            )}
+            {project.frontend_url && credentialProfiles.data.length > 0 && (
+              <button type="button" className="secondary" disabled={starting !== ""} onClick={() => void startAuthenticatedRun()}>
+                {starting === "authenticated" ? "Starting" : "Run authenticated browser smoke test"}
               </button>
             )}
             <button type="button" className="secondary" disabled={starting !== ""} onClick={() => void startProjectRun("full")}>
@@ -829,6 +868,41 @@ function ProjectPage({
         <div className="section-split">
           {apiSpecs.error && <Notice tone="danger" message={apiSpecs.error} />}
           {apiSpecs.loading ? <SkeletonRows /> : <APISpecTable specs={apiSpecs.data} onDeleted={() => void refresh()} />}
+        </div>
+      </section>
+
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>Credential Profiles</h2>
+            <p>Deterministic test credentials for target application login flows.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="This alpha build has no Qualora authentication. Store test credentials only in trusted local/self-hosted environments. Credentials are encrypted at rest and are never sent to AI."
+        />
+        <CredentialProfileForm project={project} onSaved={() => void refresh()} />
+        <div className="section-split">
+          {credentialProfiles.error && <Notice tone="danger" message={credentialProfiles.error} />}
+          {credentialProfiles.loading ? (
+            <SkeletonRows />
+          ) : (
+            <CredentialProfileTable
+              profiles={credentialProfiles.data}
+              onChanged={() => void refresh()}
+              onTestRun={(run) => {
+                window.location.hash = `#/runs/${run.id}`;
+              }}
+              onAuthenticatedRun={(profileID) => void startAuthenticatedRun(profileID)}
+            />
+          )}
+          {!credentialProfiles.loading && credentialProfiles.data.length === 0 && (
+            <Notice tone="info" message="Create a credential profile to enable authenticated browser smoke testing." />
+          )}
         </div>
       </section>
 
@@ -875,6 +949,298 @@ function ProjectPage({
       </section>
     </div>
   );
+}
+
+function CredentialProfileForm({ project, onSaved }: { project: Project; onSaved: () => void }) {
+  const [form, setForm] = useState<CredentialProfileInput>({
+    name: "Demo Login",
+    type: "username_password",
+    username: "",
+    password: "",
+    login_url: project.frontend_url ? new URL("/login", project.frontend_url).toString() : "",
+    username_selector: "#username",
+    password_selector: "#password",
+    submit_selector: "button[type=submit]",
+    success_url_contains: "/dashboard",
+    success_text_contains: "Welcome to the Qualora demo dashboard",
+    failure_text_contains: "Invalid credentials",
+    post_login_wait_ms: 250,
+    is_default: true
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      const saved = await createCredentialProfile(project.id, {
+        ...form,
+        name: form.name.trim(),
+        username: form.username?.trim(),
+        login_url: form.login_url.trim(),
+        username_selector: form.username_selector.trim(),
+        password_selector: form.password_selector.trim(),
+        submit_selector: form.submit_selector.trim(),
+        success_url_contains: form.success_url_contains.trim(),
+        success_text_contains: form.success_text_contains.trim(),
+        failure_text_contains: form.failure_text_contains.trim(),
+        post_login_wait_ms: Number(form.post_login_wait_ms || 0)
+      });
+      setMessage(`Saved credential profile ${saved.name}.`);
+      setForm({ ...form, username: "", password: "", is_default: false });
+      onSaved();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="project-form credential-form" onSubmit={(event) => void submit(event)}>
+      {error && <Notice tone="danger" message={error} />}
+      {message && <Notice tone="info" message={message} />}
+      <div className="form-grid two">
+        <label>
+          Name
+          <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+        </label>
+        <label>
+          Login URL
+          <input value={form.login_url} onChange={(event) => setForm({ ...form, login_url: event.target.value })} required />
+        </label>
+        <label>
+          Username
+          <input value={form.username || ""} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
+        </label>
+        <label>
+          Password
+          <input type="password" value={form.password || ""} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
+        </label>
+        <label>
+          Username selector
+          <input value={form.username_selector} onChange={(event) => setForm({ ...form, username_selector: event.target.value })} required />
+        </label>
+        <label>
+          Password selector
+          <input value={form.password_selector} onChange={(event) => setForm({ ...form, password_selector: event.target.value })} required />
+        </label>
+        <label>
+          Submit selector
+          <input value={form.submit_selector} onChange={(event) => setForm({ ...form, submit_selector: event.target.value })} required />
+        </label>
+        <label>
+          Post-login wait ms
+          <input
+            type="number"
+            min="0"
+            max="30000"
+            value={form.post_login_wait_ms}
+            onChange={(event) => setForm({ ...form, post_login_wait_ms: Number(event.target.value) })}
+          />
+        </label>
+      </div>
+      <div className="form-grid three">
+        <label>
+          Success URL contains
+          <input value={form.success_url_contains} onChange={(event) => setForm({ ...form, success_url_contains: event.target.value })} />
+        </label>
+        <label>
+          Success text contains
+          <input value={form.success_text_contains} onChange={(event) => setForm({ ...form, success_text_contains: event.target.value })} />
+        </label>
+        <label>
+          Failure text contains
+          <input value={form.failure_text_contains} onChange={(event) => setForm({ ...form, failure_text_contains: event.target.value })} />
+        </label>
+      </div>
+      <label className="checkbox-row">
+        <input type="checkbox" checked={form.is_default} onChange={(event) => setForm({ ...form, is_default: event.target.checked })} />
+        Default profile
+      </label>
+      <p className="muted">Credentials are encrypted at rest and are never sent to AI.</p>
+      <div className="form-actions">
+        <button type="submit" disabled={saving}>
+          {saving ? "Saving" : "Add Credential Profile"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function CredentialProfileTable({
+  profiles,
+  onChanged,
+  onTestRun,
+  onAuthenticatedRun
+}: {
+  profiles: CredentialProfile[];
+  onChanged: () => void;
+  onTestRun: (run: TestRun) => void;
+  onAuthenticatedRun: (profileID: string) => void;
+}) {
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+
+  if (profiles.length === 0) {
+    return <EmptyState title="No credential profiles" body="Create a credential profile to test a deterministic login flow." />;
+  }
+
+  async function runAction(profile: CredentialProfile, action: "test" | "auth" | "default" | "edit" | "delete") {
+    setBusy(`${action}:${profile.id}`);
+    setError("");
+    try {
+      if (action === "test") {
+        const run = await testCredentialProfileLogin(profile.id);
+        onTestRun(run);
+      } else if (action === "auth") {
+        onAuthenticatedRun(profile.id);
+      } else if (action === "default") {
+        await updateCredentialProfile(profile.id, profileInputFromProfile(profile, { is_default: true }));
+        onChanged();
+      } else if (action === "edit") {
+        const next = promptProfileEdit(profile);
+        if (next) {
+          await updateCredentialProfile(profile.id, next);
+          onChanged();
+        }
+      } else if (action === "delete") {
+        if (window.confirm(`Delete credential profile ${profile.name}?`)) {
+          await deleteCredentialProfile(profile.id);
+          onChanged();
+        }
+      }
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : String(actionError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div>
+      {error && <Notice tone="danger" message={error} />}
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Configured</th>
+            <th>Login URL</th>
+            <th>Default</th>
+            <th>Updated</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {profiles.map((profile) => (
+            <tr key={profile.id}>
+              <td>
+                <strong>{profile.name}</strong>
+                {profile.username_display_hint && <div className="muted">{profile.username_display_hint}</div>}
+              </td>
+              <td>{profile.type}</td>
+              <td>
+                Username {profile.username_configured ? "yes" : "no"} · Password {profile.password_configured ? "yes" : "no"}
+              </td>
+              <td>
+                <code>{profile.login_url}</code>
+              </td>
+              <td>{profile.is_default ? "Default" : "No"}</td>
+              <td>{formatDate(profile.updated_at)}</td>
+              <td>
+                <div className="button-row compact">
+                  <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void runAction(profile, "test")}>
+                    {busy === `test:${profile.id}` ? "Testing" : "Test login"}
+                  </button>
+                  <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void runAction(profile, "auth")}>
+                    Auth smoke
+                  </button>
+                  {!profile.is_default && (
+                    <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void runAction(profile, "default")}>
+                      Set default
+                    </button>
+                  )}
+                  <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void runAction(profile, "edit")}>
+                    Edit
+                  </button>
+                  <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void runAction(profile, "delete")}>
+                    Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function profileInputFromProfile(profile: CredentialProfile, overrides: Partial<CredentialProfileInput> = {}): CredentialProfileInput {
+  return {
+    name: profile.name,
+    type: "username_password",
+    login_url: profile.login_url,
+    username_selector: profile.username_selector,
+    password_selector: profile.password_selector,
+    submit_selector: profile.submit_selector,
+    success_url_contains: profile.success_url_contains || "",
+    success_text_contains: profile.success_text_contains || "",
+    failure_text_contains: profile.failure_text_contains || "",
+    post_login_wait_ms: profile.post_login_wait_ms || 0,
+    is_default: profile.is_default,
+    ...overrides
+  };
+}
+
+function promptProfileEdit(profile: CredentialProfile): CredentialProfileInput | null {
+  const name = window.prompt("Credential profile name", profile.name);
+  if (name === null) {
+    return null;
+  }
+  const loginURL = window.prompt("Login URL", profile.login_url);
+  if (loginURL === null) {
+    return null;
+  }
+  const usernameSelector = window.prompt("Username selector", profile.username_selector);
+  if (usernameSelector === null) {
+    return null;
+  }
+  const passwordSelector = window.prompt("Password selector", profile.password_selector);
+  if (passwordSelector === null) {
+    return null;
+  }
+  const submitSelector = window.prompt("Submit selector", profile.submit_selector);
+  if (submitSelector === null) {
+    return null;
+  }
+  const successURL = window.prompt("Success URL contains", profile.success_url_contains || "");
+  if (successURL === null) {
+    return null;
+  }
+  const successText = window.prompt("Success text contains", profile.success_text_contains || "");
+  if (successText === null) {
+    return null;
+  }
+  const failureText = window.prompt("Failure text contains", profile.failure_text_contains || "");
+  if (failureText === null) {
+    return null;
+  }
+  return profileInputFromProfile(profile, {
+    name,
+    login_url: loginURL,
+    username_selector: usernameSelector,
+    password_selector: passwordSelector,
+    submit_selector: submitSelector,
+    success_url_contains: successURL,
+    success_text_contains: successText,
+    failure_text_contains: failureText
+  });
 }
 
 function APISpecImportForm({ project, onImported }: { project: Project; onImported: () => void }) {
@@ -2141,6 +2507,7 @@ function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cache
   }
 
   const browserEvidence = report.evidence.filter((item) => item.type === "browser_observations");
+  const loginEvidence = report.evidence.filter((item) => item.type === "login_observations");
   const apiEvidence = report.evidence.filter((item) => item.type === "api_observations" || item.type === "openapi_summary");
   const relatedTestPlans = report.test_plans || [];
   const apiResults = report.api_results || [];
@@ -2191,6 +2558,27 @@ function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cache
           <Field label="Page Title" value={run.page_title || "Not captured"} />
         </div>
       </section>
+
+      {report.login_summary && (
+        <section>
+          <div className="section-heading">
+            <div>
+              <h2>Login Summary</h2>
+              <p>Deterministic selector-based login metadata. Credentials are not displayed or sent to AI.</p>
+            </div>
+          </div>
+          <div className="detail-grid compact">
+            <Field label="Login Status" value={report.login_summary.login_status || "Not captured"} />
+            <Field label="Credential Profile" value={report.login_summary.credential_profile_name || "Not available"} />
+            <Field label="Login URL" value={report.login_summary.login_url || "Not captured"} />
+            <Field label="Final URL" value={report.login_summary.login_final_url || "Not captured"} />
+            <Field label="Page Title" value={report.login_summary.page_title || "Not captured"} />
+            <Field label="Duration" value={`${report.login_summary.login_duration_ms || 0}ms`} />
+            <Field label="Authenticated Target" value={report.login_summary.authenticated_target_url || "Login check only"} />
+            <Field label="Failure Reason" value={report.login_summary.failure_reason || "None"} />
+          </div>
+        </section>
+      )}
 
       {apiResults.length > 0 && (
         <section>
@@ -2293,6 +2681,11 @@ function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cache
       <section>
         <h2>Browser Metadata</h2>
         <MetadataBlocks evidence={browserEvidence} empty="No browser metadata for this run." />
+      </section>
+
+      <section>
+        <h2>Login Metadata</h2>
+        <MetadataBlocks evidence={loginEvidence} empty="No login metadata for this run." />
       </section>
 
       <section>
@@ -2886,6 +3279,12 @@ function formatRunType(value: string): string {
   }
   if (value === "browser_smoke") {
     return "Browser smoke";
+  }
+  if (value === "login_check") {
+    return "Login check";
+  }
+  if (value === "authenticated_browser_smoke") {
+    return "Authenticated browser smoke";
   }
   if (value === "full") {
     return "Full";

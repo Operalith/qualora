@@ -75,6 +75,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-qualora-dev-secret}
       S3_FORCE_PATH_STYLE: "true"
       EVIDENCE_DIR: /var/lib/qualora/evidence
+      QUALORA_ENCRYPTION_KEY: ${QUALORA_ENCRYPTION_KEY:-qualora-insecure-dev-key-change-me}
     volumes:
       - qualora_evidence:/var/lib/qualora/evidence
     depends_on:
