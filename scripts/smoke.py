@@ -130,7 +130,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.11.0-alpha" not in status.get("version", ""):
+    if "0.12.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -702,6 +702,70 @@ def run_authenticated_browser_smoke(project, profile):
     return report
 
 
+def run_application_discovery(project, profile=None):
+    payload = {
+        "start_url": BROWSER_TARGET_URL,
+        "max_pages": 12,
+        "max_depth": 2,
+        "same_origin_only": True,
+    }
+    if profile:
+        payload["credential_profile_id"] = profile["id"]
+    run = request("POST", f"/api/v1/projects/{project['id']}/discovery-runs", payload)
+    run_id = run["id"]
+    print(f"started application discovery run: {run_id}")
+
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/discovery-runs/{run_id}")
+        status = current["status"]
+        print(f"discovery status: {status}")
+        if status in ("completed", "failed", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"discovery run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    app_map = request("GET", f"/api/v1/discovery-runs/{run_id}/map")
+    report = request("GET", f"/api/v1/discovery-runs/{run_id}/report")
+    print(f"discovery report: {json.dumps(report, indent=2)}")
+    assert_no_demo_secret(report, "discovery JSON report")
+    if report["run"]["status"] != "completed":
+        raise RuntimeError(f"discovery run did not complete: {report['run']}")
+    if int(report["summary"].get("total_pages") or 0) <= 1:
+        raise RuntimeError(f"discovery found too few pages: {report['summary']}")
+    if int(report["summary"].get("total_links") or 0) <= 1:
+        raise RuntimeError(f"discovery found too few links: {report['summary']}")
+    if int(report["summary"].get("total_forms") or 0) < 1:
+        raise RuntimeError(f"discovery did not find forms: {report['summary']}")
+    if not any(link.get("skip_reason") == "unsafe_link_skipped" for link in report.get("links", [])):
+        raise RuntimeError("discovery did not record an unsafe skipped link")
+    if not any(link.get("skip_reason") == "external_link_skipped" for link in report.get("links", [])):
+        raise RuntimeError("discovery did not record an external skipped link")
+    if not any(page.get("screenshot_evidence_id") for page in report.get("pages", [])):
+        raise RuntimeError("discovery pages did not include screenshot evidence IDs")
+    evidence = report.get("evidence") or []
+    if "screenshot" not in {item.get("type") for item in evidence}:
+        raise RuntimeError("discovery report did not include screenshot evidence")
+    screenshot = next(item for item in evidence if item.get("type") == "screenshot")
+    headers, body = fetch_binary(f"/api/v1/evidence/{screenshot['id']}")
+    if "image/png" not in headers.get("content-type", "") or not body.startswith(b"\x89PNG"):
+        raise RuntimeError("discovery screenshot evidence was not downloadable PNG data")
+    if app_map.get("summary", {}).get("total_pages") != report.get("summary", {}).get("total_pages"):
+        raise RuntimeError("discovery map summary did not match report summary")
+
+    html = fetch_text(f"/api/v1/discovery-runs/{run_id}/report.html")
+    assert_no_demo_secret(html, "discovery HTML report")
+    if "Qualora application discovery report" not in html or "Skipped Links" not in html:
+        raise RuntimeError("discovery HTML report did not include expected content")
+
+    print(f"discovery JSON report: {API_URL}/api/v1/discovery-runs/{run_id}/report")
+    print(f"discovery HTML report: {API_URL}/api/v1/discovery-runs/{run_id}/report.html")
+    print(f"discovery map: {API_URL}/api/v1/discovery-runs/{run_id}/map")
+    print(f"Web discovery report: {WEB_URL}/#/discovery-runs/{run_id}")
+    return report
+
+
 def create_authorization_check(project, profile, name, target_path, expected_outcome, success_text="", denied_text="Access denied"):
     check = request(
         "POST",
@@ -813,6 +877,7 @@ def main():
     authenticated_report = run_authenticated_browser_smoke(browser_project, credential_profile)
     authenticated_report = run_ai_analysis(authenticated_report, provider)
     generate_ai_test_plan(browser_project, authenticated_report, provider)
+    run_application_discovery(browser_project)
 
     role_profiles = {
         role_name: create_role_credential_profile(browser_project, name, username, password, role_name, subject_label)

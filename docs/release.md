@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.11.0-alpha is the eleventh public alpha release. It adds local first-run admin setup, session-based protection for the API and web UI, CSRF protection for mutating API requests, and smoke coverage for setup/login/logout/protected-route behavior while keeping the existing deterministic QA workflows intact.
+Qualora v0.12.0-alpha is the twelfth public alpha release. It adds safe deterministic application discovery and persistent application maps while keeping local auth, browser/API smoke, credential profiles, authorization checks, AI analysis, AI test planning, and safe plan execution intact.
 
 ## Pre-Release Checklist
 
@@ -40,6 +40,11 @@ Confirm:
 - The authorization check run reaches `completed`.
 - Authorization JSON and HTML reports work and do not contain demo passwords.
 - Authorization reports include `authorization_observations` and screenshot evidence.
+- Application discovery reaches `completed` against `demo-web`.
+- Discovery JSON report and application map endpoints include pages, links, forms, findings, and evidence metadata.
+- Discovery records skipped unsafe and external links.
+- Discovery pages include screenshot evidence IDs and downloadable screenshot evidence.
+- Discovery HTML report includes the application discovery summary, pages, skipped links, forms, findings, and safety notes.
 - Login and authenticated smoke JSON reports include `login_summary` and `login_observations`.
 - Login and authenticated smoke HTML reports include the login summary.
 - Login and authenticated smoke reports do not contain the demo password.
@@ -75,10 +80,10 @@ Confirm:
 ```bash
 git status --short
 git add .
-git commit -m "feat: add local auth for v0.11.0-alpha"
-git tag -a v0.11.0-alpha -m "v0.11.0-alpha"
+git commit -m "feat: add application discovery for v0.12.0-alpha"
+git tag -a v0.12.0-alpha -m "v0.12.0-alpha"
 git push origin main
-git push origin v0.11.0-alpha
+git push origin v0.12.0-alpha
 ```
 
 ## GitHub Release
@@ -86,7 +91,7 @@ git push origin v0.11.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.11.0-alpha
+Qualora v0.12.0-alpha
 ```
 
-Use [release-notes/v0.11.0-alpha.md](release-notes/v0.11.0-alpha.md) as the release body.
+Use [release-notes/v0.12.0-alpha.md](release-notes/v0.12.0-alpha.md) as the release body.

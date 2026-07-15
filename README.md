@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.11.0-alpha` adds local first-run admin setup and session-based authentication for the self-hosted API and web UI. Qualora remains deterministic and useful without AI: browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
+`v0.12.0-alpha` adds safe deterministic application discovery and a persistent application map. Qualora remains useful without AI: discovery, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
 
 ## Current Alpha Capabilities
 
@@ -23,6 +23,10 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Define explicit role-aware authorization checks for browser URL targets.
 - Run deterministic authorization checks that log in with an actor credential profile, navigate only the configured target, and compare expected `allowed` or `denied` outcomes.
 - View authorization run JSON/HTML reports, findings, screenshots, and `authorization_observations` evidence.
+- Start safe application discovery runs for projects with `frontend_url`.
+- Persist discovered pages, links, forms, fields, screenshots, browser observations, findings, and skip reasons.
+- View discovery runs and application maps in the web UI.
+- Export discovery JSON reports and self-contained HTML reports.
 - View projects, runs, findings, evidence metadata, and reports in the web UI.
 - Execute Playwright Chromium checks against a configured frontend URL.
 - Execute safe API checks against `api_base_url`.
@@ -60,7 +64,7 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
@@ -69,6 +73,7 @@ qualora-api
         |       +--> Playwright browser smoke test
         |       +--> Deterministic selector-based login checks
         |       +--> Authenticated browser smoke test
+        |       +--> Safe deterministic application discovery
         |       +--> Explicit role-aware authorization checks
         |       +--> Approved safe test plan execution steps
         |       +--> MinIO/S3 screenshot evidence
@@ -124,6 +129,7 @@ The smoke target includes:
 - Browser smoke against the local `demo-web` Compose service.
 - Credential profile creation, deterministic login check, and authenticated browser smoke against `demo-web`.
 - Role credential profile creation plus explicit authorization checks against demo `/admin` and customer invoice routes.
+- Application discovery against `demo-web`, including discovered pages/forms, skipped unsafe/external links, screenshots, JSON report, and HTML report.
 - OpenAPI import and safe API smoke against a local `demo-api` service started by the Makefile.
 - AI provider smoke against a local fake OpenAI-compatible provider.
 - Safe test plan execution smoke against the local `demo-web` service.
@@ -271,6 +277,25 @@ Start only a browser smoke run:
 RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/browser-smoke-runs" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 ```
+
+Start a safe application discovery run:
+
+```bash
+DISCOVERY_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/discovery-runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "max_pages": 20,
+    "max_depth": 2,
+    "same_origin_only": true
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -s "http://localhost:8080/api/v1/discovery-runs/${DISCOVERY_RUN_ID}/report" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
+```
+
+Discovery follows safe links only, skips external/unsafe/non-HTML links with recorded reasons, captures screenshots and browser observations, and never submits forms or clicks arbitrary buttons.
 
 Create a credential profile for deterministic login:
 
@@ -447,7 +472,7 @@ open "http://localhost:8080/api/v1/test-plan-executions/${EXECUTION_ID}/report.h
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.11.0-alpha`:
+Supported provider type in `v0.12.0-alpha`:
 
 - `openai-compatible`
 
@@ -467,7 +492,7 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.11.0-alpha`, a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks and role-aware authorization checks are separate deterministic browser-worker paths and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.12.0-alpha`, a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, and application discovery are deterministic browser-worker paths and are not AI-controlled.
 
 ## Report Example
 

@@ -89,6 +89,30 @@ func BuildSafeAuthorizationAIInput(report *AuthorizationCheckReport) map[string]
 	return sanitizeValue(input).(map[string]any)
 }
 
+func BuildSafeDiscoveryAIInput(report *DiscoveryReport) map[string]any {
+	input := map[string]any{
+		"run_id":     report.Run.ID,
+		"project_id": report.Project.ID,
+		"status":     report.Run.Status,
+		"settings": map[string]any{
+			"max_pages":        report.Run.MaxPages,
+			"max_depth":        report.Run.MaxDepth,
+			"same_origin_only": report.Run.SameOriginOnly,
+			"safe_links_only":  true,
+			"forms_submitted":  false,
+		},
+		"summary":      report.Summary,
+		"pages":        safeDiscoveryPages(report.Pages),
+		"links":        safeDiscoveryLinks(report.Links),
+		"forms":        safeDiscoveryForms(report.Forms),
+		"findings":     safeFindings(report.Findings),
+		"evidence":     safeEvidence(report.Evidence),
+		"safety_notes": report.SafetyNotes,
+		"limitations":  report.Limitations,
+	}
+	return sanitizeValue(input).(map[string]any)
+}
+
 func ParseAIAnalysisPayload(raw string) (*AIAnalysisPayload, map[string]any, error) {
 	raw = strings.TrimSpace(raw)
 	if strings.HasPrefix(raw, "```") {
@@ -245,6 +269,77 @@ func safeAuthorizationResults(results []AuthorizationCheckResult) []map[string]a
 	return output
 }
 
+func safeDiscoveryPages(pages []DiscoveredPage) []map[string]any {
+	output := make([]map[string]any, 0, min(len(pages), 100))
+	for i, page := range pages {
+		if i >= 100 {
+			break
+		}
+		output = append(output, map[string]any{
+			"path":                 page.Path,
+			"normalized_url":       page.NormalizedURL,
+			"title":                page.Title,
+			"http_status":          page.HTTPStatus,
+			"content_type":         page.ContentType,
+			"body_text_length":     page.BodyTextLength,
+			"depth":                page.Depth,
+			"console_error_count":  page.ConsoleErrorCount,
+			"failed_request_count": page.FailedRequestCount,
+			"has_screenshot":       page.ScreenshotEvidenceID != "",
+		})
+	}
+	return output
+}
+
+func safeDiscoveryLinks(links []DiscoveredLink) []map[string]any {
+	output := make([]map[string]any, 0, min(len(links), 200))
+	for i, link := range links {
+		if i >= 200 {
+			break
+		}
+		output = append(output, map[string]any{
+			"normalized_url": link.NormalizedURL,
+			"link_text":      link.LinkText,
+			"same_origin":    link.SameOrigin,
+			"skipped":        link.Skipped,
+			"skip_reason":    link.SkipReason,
+		})
+	}
+	return output
+}
+
+func safeDiscoveryForms(forms []DiscoveredForm) []map[string]any {
+	output := make([]map[string]any, 0, min(len(forms), 100))
+	for i, form := range forms {
+		if i >= 100 {
+			break
+		}
+		fields := make([]map[string]any, 0, min(len(form.Fields), 50))
+		for index, field := range form.Fields {
+			if index >= 50 {
+				break
+			}
+			fields = append(fields, map[string]any{
+				"field_name": field.FieldName,
+				"field_type": field.FieldType,
+				"label":      field.Label,
+				"required":   field.Required,
+			})
+		}
+		output = append(output, map[string]any{
+			"form_method":          form.FormMethod,
+			"form_action":          form.FormAction,
+			"field_count":          form.FieldCount,
+			"password_field_count": form.PasswordFieldCount,
+			"submit_button_count":  form.SubmitButtonCount,
+			"classification":       form.Classification,
+			"skipped_reason":       form.SkippedReason,
+			"fields":               fields,
+		})
+	}
+	return output
+}
+
 func safeEvidence(records []Evidence) []map[string]any {
 	output := make([]map[string]any, 0, len(records))
 	for _, record := range records {
@@ -261,6 +356,8 @@ func safeEvidenceMetadata(metadata map[string]any) map[string]any {
 	for _, key := range []string{
 		"target_url", "final_url", "page_title", "status_code", "body_text_length", "timed_out",
 		"load_error", "content_type", "size_bytes", "filename", "key", "storage",
+		"page_id", "normalized_url", "load_duration_ms", "console_error_count",
+		"failed_request_count", "blocked_request_count",
 		"checked_endpoints", "failed_endpoints", "safe_methods_only", "version", "paths",
 		"operations", "safe_operations", "skipped_unsafe_operations", "skipped_endpoints",
 		"api_spec_id", "api_spec_name", "title", "server_url", "authenticated_tests",

@@ -115,6 +115,7 @@ export type Evidence = {
   run_id?: string;
   test_plan_execution_id?: string;
   authorization_check_run_id?: string;
+  discovery_run_id?: string;
   type: string;
   uri: string;
   metadata: Record<string, unknown>;
@@ -308,6 +309,128 @@ export type AuthorizationCheckReport = {
   evidence: Evidence[];
   metadata: Record<string, unknown>;
   generated_at: string;
+};
+
+export type DiscoveryRunInput = {
+  start_url?: string;
+  credential_profile_id?: string;
+  max_pages?: number;
+  max_depth?: number;
+  same_origin_only?: boolean;
+};
+
+export type DiscoveryRun = {
+  id: string;
+  project_id: string;
+  credential_profile_id?: string;
+  status: "queued" | "running" | "completed" | "failed" | "error" | string;
+  start_url: string;
+  max_pages: number;
+  max_depth: number;
+  same_origin_only: boolean;
+  started_at?: string;
+  completed_at?: string;
+  total_pages: number;
+  total_links: number;
+  total_forms: number;
+  total_console_errors: number;
+  total_failed_requests: number;
+  total_findings: number;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DiscoveredPage = {
+  id: string;
+  discovery_run_id: string;
+  project_id: string;
+  url: string;
+  normalized_url: string;
+  path: string;
+  title?: string;
+  http_status?: number;
+  content_type?: string;
+  body_text_length?: number;
+  load_duration_ms?: number;
+  depth: number;
+  screenshot_evidence_id?: string;
+  console_error_count: number;
+  failed_request_count: number;
+  discovered_at: string;
+  created_at: string;
+};
+
+export type DiscoveredLink = {
+  id: string;
+  discovery_run_id: string;
+  source_page_id: string;
+  href: string;
+  normalized_url?: string;
+  link_text?: string;
+  same_origin: boolean;
+  skipped: boolean;
+  skip_reason?: string;
+  created_at: string;
+};
+
+export type DiscoveredFormField = {
+  id: string;
+  form_id: string;
+  field_name?: string;
+  field_type?: string;
+  placeholder?: string;
+  label?: string;
+  required: boolean;
+  created_at: string;
+};
+
+export type DiscoveredForm = {
+  id: string;
+  discovery_run_id: string;
+  page_id: string;
+  form_name?: string;
+  form_action?: string;
+  form_method?: string;
+  field_count: number;
+  password_field_count: number;
+  submit_button_count: number;
+  classification?: string;
+  skipped_reason?: string;
+  fields?: DiscoveredFormField[];
+  created_at: string;
+};
+
+export type DiscoverySummary = {
+  total_pages: number;
+  total_links: number;
+  total_forms: number;
+  total_console_errors: number;
+  total_failed_requests: number;
+  total_findings: number;
+  skipped_links: number;
+  external_links_skipped: number;
+  unsafe_links_skipped: number;
+  pages_with_screenshots: number;
+};
+
+export type DiscoveryMap = {
+  run: DiscoveryRun;
+  project: Project;
+  summary: DiscoverySummary;
+  pages: DiscoveredPage[];
+  links: DiscoveredLink[];
+  forms: DiscoveredForm[];
+  findings: Finding[];
+  evidence: Evidence[];
+};
+
+export type DiscoveryReport = DiscoveryMap & {
+  generated_at: string;
+  settings: Record<string, unknown>;
+  safety_notes: string[];
+  limitations: string[];
+  metadata: Record<string, unknown>;
 };
 
 export type AuthenticatedBrowserSmokeInput = {

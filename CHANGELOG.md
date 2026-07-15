@@ -4,6 +4,35 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.12.0-alpha] - 2026-07-15
+
+### Added
+
+- Safe deterministic application discovery run API.
+- Persistent application map storage for pages, links, forms, and form fields.
+- Browser-worker discovery execution with same-origin defaults, allowed-host enforcement, sensitive query redaction, duplicate avoidance, crawl limits, and screenshot evidence.
+- Discovery findings for page load failures, 404/5xx pages, console errors, network failures, empty pages, broken internal links, skipped unsafe/external links, forms without labels, and password forms.
+- Discovery JSON report, application map endpoint, and self-contained HTML report.
+- Web UI project discovery form, discovery run list, and discovery report/map page.
+- Demo-web routes, safe links, unsafe/external links, and forms for deterministic discovery smoke coverage.
+- Smoke coverage for discovery completion, pages, links, forms, skipped links, screenshots, JSON report, and HTML report.
+
+### Changed
+
+- Package metadata has been updated to `0.12.0-alpha`.
+- Demo-web now includes stable `/pricing`, safe navigation links, skipped-link fixtures, and a safe newsletter form.
+
+### Security
+
+- Discovery does not submit forms, click arbitrary buttons, run payloads, perform destructive actions, crawl external domains by default, or use autonomous AI browser control.
+- Discovery records metadata and screenshots only; it does not store full HTML, cookies, local/session storage, auth headers, tokens, credentials, request bodies, or response bodies.
+
+### Known Limitations
+
+- Discovery is bounded alpha coverage, not exhaustive crawling.
+- Client-side routes that require arbitrary button clicks or form submission are not explored.
+- Discovery reports are not automatically used as AI analysis input in this release.
+
 ## [v0.11.0-alpha] - 2026-07-15
 
 ### Added

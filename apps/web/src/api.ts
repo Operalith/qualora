@@ -20,6 +20,10 @@ import type {
   CreateProjectInput,
   CredentialProfile,
   CredentialProfileInput,
+  DiscoveryMap,
+  DiscoveryReport,
+  DiscoveryRun,
+  DiscoveryRunInput,
   LoginInput,
   MeResponse,
   Project,
@@ -65,6 +69,10 @@ export function testPlanExecutionHTMLReportURL(executionID: string): string {
 
 export function authorizationCheckHTMLReportURL(runID: string): string {
   return `${API_BASE_URL}/api/v1/authorization-check-runs/${runID}/report.html`;
+}
+
+export function discoveryHTMLReportURL(runID: string): string {
+  return `${API_BASE_URL}/api/v1/discovery-runs/${runID}/report.html`;
 }
 
 export async function getSetupStatus(): Promise<SetupStatus> {
@@ -214,6 +222,30 @@ export async function getAuthorizationCheckRun(runID: string): Promise<Authoriza
 
 export async function getAuthorizationCheckReport(runID: string): Promise<AuthorizationCheckReport> {
   return request<AuthorizationCheckReport>(`/api/v1/authorization-check-runs/${runID}/report`);
+}
+
+export async function listDiscoveryRuns(projectID: string): Promise<DiscoveryRun[]> {
+  const response = await request<{ discovery_runs: DiscoveryRun[] }>(`/api/v1/projects/${projectID}/discovery-runs`);
+  return response.discovery_runs;
+}
+
+export async function startDiscoveryRun(projectID: string, input: DiscoveryRunInput): Promise<DiscoveryRun> {
+  return request<DiscoveryRun>(`/api/v1/projects/${projectID}/discovery-runs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getDiscoveryRun(runID: string): Promise<DiscoveryRun> {
+  return request<DiscoveryRun>(`/api/v1/discovery-runs/${runID}`);
+}
+
+export async function getDiscoveryMap(runID: string): Promise<DiscoveryMap> {
+  return request<DiscoveryMap>(`/api/v1/discovery-runs/${runID}/map`);
+}
+
+export async function getDiscoveryReport(runID: string): Promise<DiscoveryReport> {
+  return request<DiscoveryReport>(`/api/v1/discovery-runs/${runID}/report`);
 }
 
 export async function importAPISpec(projectID: string, input: APISpecImportInput): Promise<APISpecDetail> {

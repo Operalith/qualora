@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.11.0-alpha
-  description: API for first-run local admin setup, local session authentication, creating QA projects, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports, and downloading protected stored evidence objects.
+  version: 0.12.0-alpha
+  description: API for first-run local admin setup, local session authentication, creating QA projects, running safe application discovery, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
 security:
@@ -511,6 +511,104 @@ paths:
       responses:
         "200":
           description: HTML authorization report
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/discovery-runs:
+    get:
+      summary: List discovery runs for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Discovery run list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [discovery_runs]
+                properties:
+                  discovery_runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DiscoveryRun"
+    post:
+      summary: Start a safe application discovery run
+      description: Queues bounded deterministic discovery. Discovery follows safe links only, defaults to same-origin navigation, records skipped links, and never submits forms, clicks arbitrary buttons, performs destructive actions, or uses autonomous AI browser control.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscoveryRunRequest"
+      responses:
+        "201":
+          description: Created discovery run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryRun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/discovery-runs/{discovery_run_id}:
+    get:
+      summary: Get a discovery run
+      parameters:
+        - $ref: "#/components/parameters/DiscoveryRunID"
+      responses:
+        "200":
+          description: Discovery run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryRun"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/discovery-runs/{discovery_run_id}/map:
+    get:
+      summary: Get a discovery application map
+      parameters:
+        - $ref: "#/components/parameters/DiscoveryRunID"
+      responses:
+        "200":
+          description: Discovery map
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryMap"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/discovery-runs/{discovery_run_id}/report:
+    get:
+      summary: Get a structured discovery report
+      parameters:
+        - $ref: "#/components/parameters/DiscoveryRunID"
+      responses:
+        "200":
+          description: Discovery report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryReport"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/discovery-runs/{discovery_run_id}/report.html:
+    get:
+      summary: Get a self-contained HTML discovery report
+      parameters:
+        - $ref: "#/components/parameters/DiscoveryRunID"
+      responses:
+        "200":
+          description: HTML discovery report
           content:
             text/html:
               schema:
@@ -1153,6 +1251,13 @@ components:
       schema:
         type: string
         format: uuid
+    DiscoveryRunID:
+      name: discovery_run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     EvidenceID:
       name: evidence_id
       in: path
@@ -1197,7 +1302,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.11.0-alpha
+          example: 0.12.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -1826,6 +1931,248 @@ components:
         generated_at:
           type: string
           format: date-time
+    DiscoveryRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        start_url:
+          type: string
+          format: uri
+        credential_profile_id:
+          type: string
+          format: uuid
+        max_pages:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+        max_depth:
+          type: integer
+          minimum: 0
+          maximum: 5
+          default: 2
+        same_origin_only:
+          type: boolean
+          default: true
+    DiscoveryRun:
+      type: object
+      required: [id, project_id, status, start_url, max_pages, max_depth, same_origin_only, total_pages, total_links, total_forms, total_console_errors, total_failed_requests, total_findings, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        credential_profile_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, completed, failed, error]
+        start_url:
+          type: string
+        max_pages:
+          type: integer
+        max_depth:
+          type: integer
+        same_origin_only:
+          type: boolean
+        total_pages:
+          type: integer
+        total_links:
+          type: integer
+        total_forms:
+          type: integer
+        total_console_errors:
+          type: integer
+        total_failed_requests:
+          type: integer
+        total_findings:
+          type: integer
+        error_message:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DiscoveredPage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        discovery_run_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        normalized_url:
+          type: string
+        path:
+          type: string
+        title:
+          type: string
+        http_status:
+          type: integer
+        content_type:
+          type: string
+        body_text_length:
+          type: integer
+        load_duration_ms:
+          type: integer
+        depth:
+          type: integer
+        screenshot_evidence_id:
+          type: string
+          format: uuid
+        console_error_count:
+          type: integer
+        failed_request_count:
+          type: integer
+    DiscoveredLink:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        discovery_run_id:
+          type: string
+          format: uuid
+        source_page_id:
+          type: string
+          format: uuid
+        href:
+          type: string
+        normalized_url:
+          type: string
+        link_text:
+          type: string
+        same_origin:
+          type: boolean
+        skipped:
+          type: boolean
+        skip_reason:
+          type: string
+    DiscoveredForm:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        discovery_run_id:
+          type: string
+          format: uuid
+        page_id:
+          type: string
+          format: uuid
+        form_name:
+          type: string
+        form_action:
+          type: string
+        form_method:
+          type: string
+        field_count:
+          type: integer
+        password_field_count:
+          type: integer
+        submit_button_count:
+          type: integer
+        classification:
+          type: string
+        skipped_reason:
+          type: string
+        fields:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    DiscoverySummary:
+      type: object
+      properties:
+        total_pages:
+          type: integer
+        total_links:
+          type: integer
+        total_forms:
+          type: integer
+        total_console_errors:
+          type: integer
+        total_failed_requests:
+          type: integer
+        total_findings:
+          type: integer
+        skipped_links:
+          type: integer
+        external_links_skipped:
+          type: integer
+        unsafe_links_skipped:
+          type: integer
+        pages_with_screenshots:
+          type: integer
+    DiscoveryMap:
+      type: object
+      required: [run, project, summary, pages, links, forms, findings, evidence]
+      properties:
+        run:
+          $ref: "#/components/schemas/DiscoveryRun"
+        project:
+          $ref: "#/components/schemas/Project"
+        summary:
+          $ref: "#/components/schemas/DiscoverySummary"
+        pages:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiscoveredPage"
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiscoveredLink"
+        forms:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiscoveredForm"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+    DiscoveryReport:
+      allOf:
+        - $ref: "#/components/schemas/DiscoveryMap"
+        - type: object
+          properties:
+            generated_at:
+              type: string
+              format: date-time
+            settings:
+              type: object
+              additionalProperties: true
+            safety_notes:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            metadata:
+              type: object
+              additionalProperties: true
     APISpecImportRequest:
       type: object
       additionalProperties: false

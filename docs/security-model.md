@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.11.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.12.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -31,9 +31,35 @@ The browser worker routes Playwright requests through the host policy:
 - Blocked requests are recorded as browser observation evidence.
 - Blocked requests can produce an informational finding.
 
+## Application Discovery
+
+Application discovery in v0.12 is deterministic and safe by default. It is intended to build a lightweight application map, not to perform uncontrolled browser autonomy.
+
+Discovery execution rules:
+
+- Starts at the project `frontend_url` or a user-provided `start_url`.
+- Defaults to `same_origin_only=true`, `max_pages=20`, and `max_depth=2`.
+- Hard caps are `max_pages<=100` and `max_depth<=5`.
+- Every navigation must pass `allowed_hosts`; same-origin discovery must stay on the project frontend origin.
+- URL fragments are stripped and sensitive query parameter values are redacted before storage.
+- Duplicate normalized URLs are not revisited.
+- External, unsupported-scheme, non-HTML/download, and unsafe-looking links are skipped with recorded reasons.
+- Forms and fields are recorded as metadata only.
+- Screenshots and browser observation metadata may be stored as evidence.
+
+Discovery does not:
+
+- Submit forms.
+- Click arbitrary buttons.
+- Execute payloads.
+- Use autonomous AI browser control.
+- Perform destructive actions.
+- Crawl external domains by default.
+- Store full HTML, cookies, local/session storage, auth headers, tokens, credentials, request bodies, or response bodies.
+
 ## API Request Enforcement
 
-The API worker and v0.11 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
+The API worker and v0.12 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
 
 Default API behavior:
 
@@ -42,7 +68,7 @@ Default API behavior:
 - Safe OpenAPI methods only: `GET`, `HEAD`, and `OPTIONS`.
 - Unsafe methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are skipped.
 - Imported OpenAPI specs are parsed and classified before any API requests are executed.
-- Auth-required operations are skipped in v0.11.
+- Auth-required operations are skipped in v0.12.
 - Operations with required request bodies are skipped.
 - Path parameters are skipped unless a safe `example`, `default`, or `enum` value exists.
 - Required query parameters are sent only when a safe sample exists and the parameter name is not secret-like.
@@ -95,7 +121,7 @@ Login evidence stores screenshots when configured plus metadata such as login st
 
 ## Role-Aware Authorization Checks
 
-Authorization checks in v0.11 are explicit, deterministic, and conservative. They are intended for dedicated test accounts and test data only.
+Authorization checks in v0.12 are explicit, deterministic, and conservative. They are intended for dedicated test accounts and test data only.
 
 Credential profiles can include role metadata such as `admin`, `readonly`, `customer-a`, or `customer-b`. The role metadata is descriptive and project-scoped; it does not grant access inside Qualora.
 
@@ -122,11 +148,11 @@ Authorization checks do not:
 - Use autonomous AI browser control.
 - Send credentials, cookies, storage, auth headers, or tokens to AI.
 
-Authenticated API authorization testing is not fully supported in v0.11. API-style authorization checks are skipped unless a future safe design adds explicit authenticated API support.
+Authenticated API authorization testing is not fully supported in v0.12. API-style authorization checks are skipped unless a future safe design adds explicit authenticated API support.
 
 ## Web UI Exposure
 
-The v0.11.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, and authorization reports require a valid local session.
+The v0.12.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, discovery reports, and authorization reports require a valid local session.
 
 Sessions use an HTTP-only `qualora_session` cookie. Mutating protected API requests must include a CSRF token from the `qualora_csrf` cookie in the `X-Qualora-CSRF` header. Health, setup status, first-run admin setup, login, logout, and session introspection endpoints are intentionally public.
 
@@ -156,7 +182,7 @@ The Docker Compose default `QUALORA_ENCRYPTION_KEY` is an insecure development f
 
 AI is disabled until a provider is configured. Qualora works without AI.
 
-The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API/login/authorization metadata, API smoke result summaries, and job metadata.
+The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API/login/authorization metadata, API smoke result summaries, and job metadata. Discovery reports are not automatically sent to AI in v0.12; future AI planning integrations should use only sanitized discovery summaries, page paths/titles/statuses, form/link metadata, findings summaries, and evidence metadata.
 
 The AI input builder does not send by default:
 
@@ -176,7 +202,7 @@ The AI input builder does not send by default:
 
 Redaction is enabled by default and masks common bearer/basic auth values, API keys, passwords, access/refresh tokens, session IDs, cookies, and JWT-looking values. AI output is parsed as strict JSON and redacted before storage.
 
-AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.11 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution in v0.11 is deterministic and user-configured, not AI-generated.
+AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.12 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution and application discovery in v0.12 are deterministic and user-configured, not AI-generated.
 
 ## Non-Goals For This Alpha
 

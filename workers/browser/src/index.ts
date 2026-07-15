@@ -13,6 +13,20 @@ import Redis from "ioredis";
 import { Pool } from "pg";
 import { chromium, type Page } from "playwright";
 import {
+  buildDiscoveryFormFindings,
+  buildDiscoveryLinkFinding,
+  buildDiscoveryPageFindings,
+  classifyDiscoveryLink,
+  normalizeDiscoveryURL,
+  summarizeDiscoveryForm,
+  type DiscoveryLinkDecision,
+  type DiscoveryFormSummary,
+  type ExtractedForm,
+  type ExtractedFormField,
+  type DiscoveryLinkPolicy,
+  type DiscoveryPageFindingInput
+} from "./discovery";
+import {
   buildAuthorizationFindings,
   classifyAuthorizationOutcome,
   compareAuthorizationOutcome,
@@ -52,7 +66,12 @@ type AuthorizationCheckRunJob = {
   project_id: string;
 };
 
-type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob>;
+type DiscoveryRunJob = {
+  discovery_run_id: string;
+  project_id: string;
+};
+
+type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob & DiscoveryRunJob>;
 
 type Project = {
   id: string;
@@ -123,6 +142,18 @@ type AuthorizationCheckRunContext = {
   max_checks: number;
 };
 
+type DiscoveryRunContext = {
+  id: string;
+  project_id: string;
+  credential_profile_id: string;
+  status: string;
+  start_url: string;
+  max_pages: number;
+  max_depth: number;
+  same_origin_only: boolean;
+  project: Project;
+};
+
 type AuthorizationCheck = {
   id: string;
   project_id: string;
@@ -187,6 +218,7 @@ type EvidenceOwner = {
   runID?: string;
   executionID?: string;
   authorizationRunID?: string;
+  discoveryRunID?: string;
 };
 
 type FindingOwner = EvidenceOwner & {
@@ -261,7 +293,12 @@ async function main(): Promise<void> {
         log("invalid_job_payload", {});
         continue;
       }
-      if (job.authorization_check_run_id) {
+      if (job.discovery_run_id) {
+        await handleDiscoveryRunJob({
+          discovery_run_id: job.discovery_run_id,
+          project_id: job.project_id ?? ""
+        });
+      } else if (job.authorization_check_run_id) {
         await handleAuthorizationCheckRunJob({
           authorization_check_run_id: job.authorization_check_run_id,
           project_id: job.project_id ?? ""
@@ -450,6 +487,556 @@ async function handleAuthorizationCheckRunJob(job: AuthorizationCheckRunJob): Pr
   }
 }
 
+type DiscoveryVisitQueueItem = {
+  url: string;
+  depth: number;
+  sourcePageID: string;
+};
+
+type DiscoveryPageSnapshot = {
+  targetURL: string;
+  finalURL: string;
+  normalizedURL: string;
+  path: string;
+  title: string;
+  statusCode: number | null;
+  contentType: string;
+  bodyTextLength: number | null;
+  loadDurationMS: number | null;
+  loadError: string;
+  consoleErrors: BrowserResult["consoleErrors"];
+  failedRequests: BrowserResult["failedRequests"];
+  blockedRequests: BrowserResult["blockedRequests"];
+  screenshot: Buffer | null;
+  links: Array<{ href: string; text: string }>;
+  forms: ExtractedForm[];
+};
+
+type DiscoveryRunTotals = {
+  totalPages: number;
+  totalLinks: number;
+  totalForms: number;
+  totalConsoleErrors: number;
+  totalFailedRequests: number;
+  totalFindings: number;
+};
+
+async function handleDiscoveryRunJob(job: DiscoveryRunJob): Promise<void> {
+  log("discovery_run_started", { discovery_run_id: job.discovery_run_id, project_id: job.project_id });
+
+  try {
+    if (!job.discovery_run_id || !job.project_id) {
+      throw new Error("discovery run job is missing required IDs");
+    }
+    const run = await getDiscoveryRunContext(job.discovery_run_id, job.project_id);
+    const scopeCheck = await validateTargetURL(run.start_url, run.project.allowed_hosts, run.project.allow_private_targets);
+    if (!scopeCheck.ok) {
+      throw new Error(scopeCheck.reason);
+    }
+    await markDiscoveryRunRunning(run.id);
+    const totals = await runDiscovery(run);
+    await finishDiscoveryRun(run.id, "completed", "", totals);
+    log("discovery_run_completed", {
+      discovery_run_id: run.id,
+      pages: totals.totalPages,
+      links: totals.totalLinks,
+      forms: totals.totalForms,
+      findings: totals.totalFindings
+    });
+  } catch (error) {
+    const message = sanitizeText(error instanceof Error ? error.message : String(error));
+    if (job.discovery_run_id) {
+      await finishDiscoveryRun(job.discovery_run_id, "failed", message, {
+        totalPages: 0,
+        totalLinks: 0,
+        totalForms: 0,
+        totalConsoleErrors: 0,
+        totalFailedRequests: 0,
+        totalFindings: 0
+      }).catch(() => undefined);
+    }
+    log("discovery_run_failed", { discovery_run_id: job.discovery_run_id, error: message });
+  }
+}
+
+async function runDiscovery(run: DiscoveryRunContext): Promise<DiscoveryRunTotals> {
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox"]
+  });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: false,
+    viewport: { width: 1365, height: 768 }
+  });
+  const page = await context.newPage();
+  const signals = createBrowserSignals(page);
+  await installAllowedHostRoutes(page, run.project, signals);
+
+  const totals: DiscoveryRunTotals = {
+    totalPages: 0,
+    totalLinks: 0,
+    totalForms: 0,
+    totalConsoleErrors: 0,
+    totalFailedRequests: 0,
+    totalFindings: 0
+  };
+
+  try {
+    if (run.credential_profile_id) {
+      const profile = await getCredentialProfile(run.credential_profile_id, run.project.id);
+      const login = await executeLoginFlowOnPage(page, run.project, profile, signals, 30);
+      const loginEvidenceID = await insertEvidence({ discoveryRunID: run.id }, "login_observations", "inline://discovery-login-observations", {
+        credential_profile_id: profile.id,
+        credential_profile_name: profile.name,
+        role_name: profile.role_name,
+        subject_label: profile.subject_label,
+        login_url: login.loginURL,
+        final_url: login.finalURL,
+        page_title: login.pageTitle,
+        login_status: login.success ? "passed" : "failed",
+        success: login.success,
+        duration_ms: login.durationMS,
+        failure_reason: login.failureReason,
+        console_errors: login.consoleErrors,
+        failed_requests: login.failedRequests,
+        blocked_requests: login.blockedRequests
+      });
+      if (!login.success) {
+        await insertFinding({ discoveryRunID: run.id }, {
+          title: "Discovery login failed",
+          severity: login.failureCategory === "login_selector_missing" ? "medium" : "high",
+          category: login.failureCategory === "login_selector_missing" ? "missing_selector" : "login_failure",
+          confidence: "high",
+          description: [
+            `Summary: discovery could not complete the configured selector-based login: ${login.failureReason}`,
+            `Steps to reproduce: open ${login.loginURL} and run the configured credential profile login selectors.`
+          ].join("\n"),
+          recommendation: "Verify the credential profile selectors and dedicated test account before running authenticated discovery.",
+          evidenceIds: [loginEvidenceID]
+        });
+        totals.totalFindings += 1;
+        throw new Error(login.failureReason || "discovery login failed");
+      }
+    }
+
+    const visited = new Set<string>();
+    const queued = new Set<string>();
+    const queue: DiscoveryVisitQueueItem[] = [{ url: run.start_url, depth: 0, sourcePageID: "" }];
+    queued.add(normalizeDiscoveryURL(run.start_url));
+
+    while (queue.length > 0 && totals.totalPages < run.max_pages) {
+      const visit = queue.shift();
+      if (!visit) {
+        break;
+      }
+      const normalized = normalizeDiscoveryURL(visit.url);
+      if (visited.has(normalized)) {
+        continue;
+      }
+      visited.add(normalized);
+
+      const snapshot = await captureDiscoveryPage(page, run, visit.url, signals);
+      const screenshotEvidenceID = snapshot.screenshot ? await insertDiscoveryScreenshotEvidence(run, snapshot) : "";
+      const pageID = await insertDiscoveredPage(run, visit.depth, snapshot, screenshotEvidenceID);
+      const observationEvidenceID = await insertEvidence({ discoveryRunID: run.id }, "browser_observations", "inline://discovery-browser-observations", {
+        page_id: pageID,
+        target_url: snapshot.targetURL,
+        final_url: snapshot.finalURL,
+        normalized_url: snapshot.normalizedURL,
+        page_title: snapshot.title,
+        status_code: snapshot.statusCode,
+        content_type: snapshot.contentType,
+        body_text_length: snapshot.bodyTextLength,
+        load_duration_ms: snapshot.loadDurationMS,
+        load_error: snapshot.loadError,
+        console_error_count: snapshot.consoleErrors.length,
+        failed_request_count: snapshot.failedRequests.length,
+        blocked_request_count: snapshot.blockedRequests.length,
+        console_errors: snapshot.consoleErrors.slice(0, 20),
+        failed_requests: snapshot.failedRequests.slice(0, 20),
+        blocked_requests: snapshot.blockedRequests.slice(0, 20)
+      });
+      const pageEvidenceIDs = [screenshotEvidenceID, observationEvidenceID].filter(Boolean);
+
+      totals.totalPages += 1;
+      totals.totalConsoleErrors += snapshot.consoleErrors.length;
+      totals.totalFailedRequests += snapshot.failedRequests.length;
+
+      const pageFindingInput: DiscoveryPageFindingInput = {
+        url: snapshot.normalizedURL || snapshot.targetURL,
+        statusCode: snapshot.statusCode,
+        loadError: snapshot.loadError,
+        bodyTextLength: snapshot.bodyTextLength,
+        consoleErrorCount: snapshot.consoleErrors.length,
+        failedRequestCount: snapshot.failedRequests.length,
+        evidenceIds: pageEvidenceIDs
+      };
+      for (const finding of buildDiscoveryPageFindings(pageFindingInput)) {
+        await insertFinding({ discoveryRunID: run.id }, finding);
+        totals.totalFindings += 1;
+      }
+      if (visit.sourcePageID && snapshot.statusCode === 404) {
+        await insertFinding({ discoveryRunID: run.id }, {
+          title: "Broken internal link discovered",
+          severity: "medium",
+          category: "broken_internal_link",
+          confidence: "high",
+          description: [
+            `Summary: a discovered internal link resolved to ${snapshot.normalizedURL} and returned HTTP 404.`,
+            "Steps to reproduce: open the source page, follow the recorded link, and verify the target route exists."
+          ].join("\n"),
+          recommendation: "Update or remove the internal link that points to a missing page.",
+          evidenceIds: pageEvidenceIDs
+        });
+        totals.totalFindings += 1;
+      }
+
+      const policy: DiscoveryLinkPolicy = {
+        sourceURL: snapshot.finalURL || snapshot.targetURL,
+        frontendURL: run.project.frontend_url,
+        allowedHosts: run.project.allowed_hosts,
+        sameOriginOnly: run.same_origin_only
+      };
+      const decisions: DiscoveryLinkDecision[] = snapshot.links.map((link) => classifyDiscoveryLink(link.href, link.text, policy));
+      totals.totalLinks += decisions.length;
+      for (const decision of decisions) {
+        await insertDiscoveredLink(run.id, pageID, decision);
+        const finding = buildDiscoveryLinkFinding(decision, pageEvidenceIDs);
+        if (finding) {
+          await insertFinding({ discoveryRunID: run.id }, finding);
+          totals.totalFindings += 1;
+        }
+        if (!decision.skipped && visit.depth < run.max_depth && totals.totalPages + queue.length < run.max_pages) {
+          if (!visited.has(decision.normalizedURL) && !queued.has(decision.normalizedURL)) {
+            queue.push({ url: decision.normalizedURL, depth: visit.depth + 1, sourcePageID: pageID });
+            queued.add(decision.normalizedURL);
+          }
+        }
+      }
+
+      const forms = snapshot.forms.map(summarizeDiscoveryForm);
+      totals.totalForms += forms.length;
+      for (const form of forms) {
+        await insertDiscoveredForm(run.id, pageID, form);
+        for (const finding of buildDiscoveryFormFindings(form, snapshot.normalizedURL || snapshot.targetURL, pageEvidenceIDs)) {
+          await insertFinding({ discoveryRunID: run.id }, finding);
+          totals.totalFindings += 1;
+        }
+      }
+    }
+
+    return totals;
+  } finally {
+    await browser.close();
+  }
+}
+
+async function captureDiscoveryPage(page: Page, run: DiscoveryRunContext, targetURL: string, signals: BrowserSignals): Promise<DiscoveryPageSnapshot> {
+  const startedAt = Date.now();
+  const consoleStart = signals.consoleErrors.length;
+  const failedStart = signals.failedRequests.length;
+  const blockedStart = signals.blockedRequests.length;
+  let statusCode: number | null = null;
+  let contentType = "";
+  let finalURL = targetURL;
+  let title = "";
+  let bodyTextLength: number | null = null;
+  let loadError = "";
+
+  try {
+    const response = await page.goto(targetURL, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+    statusCode = response ? response.status() : null;
+    contentType = sanitizeText(response?.headers()["content-type"] ?? "");
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+  } catch (error) {
+    loadError = sanitizeText(error instanceof Error ? error.message : String(error));
+  }
+
+  const currentURL = page.url();
+  finalURL = sanitizeURL(currentURL.startsWith("http://") || currentURL.startsWith("https://") ? currentURL : targetURL);
+  title = sanitizeText(await page.title().catch(() => ""));
+  bodyTextLength = await page
+    .evaluate(() => (document.body?.innerText ?? "").trim().length)
+    .catch(() => null);
+  const links = isLikelyHTML(contentType) ? await extractDiscoveryLinks(page).catch(() => []) : [];
+  const forms = isLikelyHTML(contentType) ? await extractDiscoveryForms(page).catch(() => []) : [];
+  const screenshot = await captureScreenshot(page);
+  const normalizedURL = normalizeDiscoveryURL(finalURL || targetURL);
+  const parsed = new URL(normalizedURL);
+  return {
+    targetURL: sanitizeURL(targetURL),
+    finalURL,
+    normalizedURL,
+    path: sanitizeText(parsed.pathname || "/"),
+    title,
+    statusCode,
+    contentType,
+    bodyTextLength,
+    loadDurationMS: Date.now() - startedAt,
+    loadError,
+    consoleErrors: signals.consoleErrors.slice(consoleStart, consoleStart + 50),
+    failedRequests: signals.failedRequests.slice(failedStart, failedStart + 50),
+    blockedRequests: signals.blockedRequests.slice(blockedStart, blockedStart + 50),
+    screenshot,
+    links,
+    forms
+  };
+}
+
+async function extractDiscoveryLinks(page: Page): Promise<Array<{ href: string; text: string }>> {
+  return page.evaluate(() => {
+    const visible = (element: Element) => {
+      const style = window.getComputedStyle(element);
+      return style.visibility !== "hidden" && style.display !== "none" && element.getClientRects().length > 0;
+    };
+    return Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"))
+      .filter((anchor) => visible(anchor))
+      .slice(0, 250)
+      .map((anchor) => ({
+        href: anchor.getAttribute("href") || "",
+        text: (anchor.textContent || anchor.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim()
+      }));
+  });
+}
+
+async function extractDiscoveryForms(page: Page): Promise<ExtractedForm[]> {
+  return page.evaluate(() => {
+    const labelFor = (field: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): string => {
+      const id = field.getAttribute("id");
+      if (id) {
+        const explicit = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+        if (explicit?.textContent) {
+          return explicit.textContent.replace(/\s+/g, " ").trim();
+        }
+      }
+      const wrapping = field.closest("label");
+      if (wrapping?.textContent) {
+        return wrapping.textContent.replace(/\s+/g, " ").trim();
+      }
+      return field.getAttribute("aria-label") || "";
+    };
+    return Array.from(document.forms)
+      .slice(0, 50)
+      .map((form) => {
+        const fields = Array.from(form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea"))
+          .slice(0, 100)
+          .map((field): ExtractedFormField => {
+            const tag = field.tagName.toLowerCase();
+            const inputType = tag === "input" ? (field as HTMLInputElement).type || "text" : tag;
+            return {
+              field_name: field.getAttribute("name") || field.getAttribute("id") || "",
+              field_type: inputType,
+              placeholder: field.getAttribute("placeholder") || "",
+              label: labelFor(field),
+              required: field.hasAttribute("required")
+            };
+          });
+        return {
+          form_name: form.getAttribute("name") || form.getAttribute("id") || "",
+          form_action: form.getAttribute("action") || "",
+          form_method: form.getAttribute("method") || "get",
+          fields,
+          submit_button_count: form.querySelectorAll('button[type="submit"], input[type="submit"], button:not([type])').length
+        };
+      });
+  });
+}
+
+function isLikelyHTML(contentType: string): boolean {
+  if (!contentType) {
+    return true;
+  }
+  return contentType.toLowerCase().includes("text/html");
+}
+
+async function insertDiscoveryScreenshotEvidence(run: DiscoveryRunContext, snapshot: DiscoveryPageSnapshot): Promise<string> {
+  if (!snapshot.screenshot) {
+    return "";
+  }
+  const object = await storeScreenshot("discovery-runs", run.id, snapshot.screenshot);
+  return insertEvidence({ discoveryRunID: run.id }, "screenshot", object.uri, {
+    filename: object.filename,
+    key: object.key,
+    content_type: object.contentType,
+    size_bytes: object.sizeBytes,
+    created_at: object.createdAt,
+    storage: object.storage,
+    target_url: snapshot.targetURL,
+    final_url: snapshot.finalURL,
+    normalized_url: snapshot.normalizedURL,
+    page_title: snapshot.title,
+    status_code: snapshot.statusCode
+  });
+}
+
+async function insertDiscoveredPage(
+  run: DiscoveryRunContext,
+  depth: number,
+  snapshot: DiscoveryPageSnapshot,
+  screenshotEvidenceID: string
+): Promise<string> {
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO discovered_pages (
+       id, discovery_run_id, project_id, url, normalized_url, path, title, http_status,
+       content_type, body_text_length, load_duration_ms, depth, screenshot_evidence_id,
+       console_error_count, failed_request_count
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($13, '')::uuid, $14, $15)`,
+    [
+      id,
+      run.id,
+      run.project_id,
+      snapshot.finalURL || snapshot.targetURL,
+      snapshot.normalizedURL,
+      snapshot.path,
+      snapshot.title,
+      snapshot.statusCode,
+      snapshot.contentType,
+      snapshot.bodyTextLength,
+      snapshot.loadDurationMS,
+      depth,
+      screenshotEvidenceID,
+      snapshot.consoleErrors.length,
+      snapshot.failedRequests.length
+    ]
+  );
+  return id;
+}
+
+async function insertDiscoveredLink(runID: string, pageID: string, decision: DiscoveryLinkDecision): Promise<void> {
+  await pool.query(
+    `INSERT INTO discovered_links (
+       id, discovery_run_id, source_page_id, href, normalized_url, link_text, same_origin, skipped, skip_reason
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      randomUUID(),
+      runID,
+      pageID,
+      decision.href,
+      decision.normalizedURL,
+      decision.linkText,
+      decision.sameOrigin,
+      decision.skipped,
+      decision.skipReason
+    ]
+  );
+}
+
+async function insertDiscoveredForm(runID: string, pageID: string, form: DiscoveryFormSummary): Promise<void> {
+  const formID = randomUUID();
+  await pool.query(
+    `INSERT INTO discovered_forms (
+       id, discovery_run_id, page_id, form_name, form_action, form_method, field_count,
+       password_field_count, submit_button_count, classification, skipped_reason
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [
+      formID,
+      runID,
+      pageID,
+      form.form_name,
+      form.form_action,
+      form.form_method,
+      form.field_count,
+      form.password_field_count,
+      form.submit_button_count,
+      form.classification,
+      form.skipped_reason
+    ]
+  );
+  for (const field of form.fields) {
+    await pool.query(
+      `INSERT INTO discovered_form_fields (
+         id, form_id, field_name, field_type, placeholder, label, required
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [randomUUID(), formID, field.field_name, field.field_type, field.placeholder, field.label, field.required]
+    );
+  }
+}
+
+async function getDiscoveryRunContext(runID: string, projectID: string): Promise<DiscoveryRunContext> {
+  const result = await pool.query(
+    `SELECT d.id, d.project_id, d.credential_profile_id::text, d.status, d.start_url,
+            d.max_pages, d.max_depth, d.same_origin_only,
+            p.frontend_url, p.allowed_hosts, p.allow_private_targets
+     FROM discovery_runs d
+     JOIN projects p ON p.id = d.project_id
+     WHERE d.id = $1 AND p.id = $2`,
+    [runID, projectID]
+  );
+  if (result.rowCount !== 1) {
+    throw new Error("discovery run was not found");
+  }
+  const row = result.rows[0] as {
+    id: string;
+    project_id: string;
+    credential_profile_id: string | null;
+    status: string;
+    start_url: string;
+    max_pages: number;
+    max_depth: number;
+    same_origin_only: boolean;
+    frontend_url: string;
+    allowed_hosts: string[] | string;
+    allow_private_targets: boolean;
+  };
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    credential_profile_id: row.credential_profile_id ?? "",
+    status: row.status,
+    start_url: row.start_url,
+    max_pages: Number(row.max_pages || 20),
+    max_depth: Number(row.max_depth || 2),
+    same_origin_only: row.same_origin_only,
+    project: {
+      id: row.project_id,
+      frontend_url: row.frontend_url,
+      allowed_hosts: Array.isArray(row.allowed_hosts) ? row.allowed_hosts : JSON.parse(row.allowed_hosts),
+      allow_private_targets: row.allow_private_targets
+    }
+  };
+}
+
+async function markDiscoveryRunRunning(runID: string): Promise<void> {
+  await pool.query(
+    `UPDATE discovery_runs
+     SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
+     WHERE id = $1`,
+    [runID]
+  );
+}
+
+async function finishDiscoveryRun(runID: string, status: "completed" | "failed" | "error", errorMessage: string, totals: DiscoveryRunTotals): Promise<void> {
+  await pool.query(
+    `UPDATE discovery_runs
+     SET status = $2,
+         error_message = $3,
+         completed_at = now(),
+         total_pages = $4,
+         total_links = $5,
+         total_forms = $6,
+         total_console_errors = $7,
+         total_failed_requests = $8,
+         total_findings = $9,
+         updated_at = now()
+     WHERE id = $1`,
+    [
+      runID,
+      status,
+      errorMessage,
+      totals.totalPages,
+      totals.totalLinks,
+      totals.totalForms,
+      totals.totalConsoleErrors,
+      totals.totalFailedRequests,
+      totals.totalFindings
+    ]
+  );
+}
+
 async function getAuthorizationCheckRunContext(runID: string, projectID: string): Promise<AuthorizationCheckRunContext> {
   const result = await pool.query(
     `SELECT r.id, r.check_ids_json, r.max_checks,
@@ -562,7 +1149,7 @@ async function executeAuthorizationCheck(run: AuthorizationCheckRunContext, chec
   let targetURL = check.target_url || check.path || "";
 
   if (check.type !== "browser_url") {
-    const skipReason = "authenticated API authorization checks are not implemented in v0.11.0-alpha";
+    const skipReason = "authenticated API authorization checks are not implemented in v0.12.0-alpha";
     const evidenceID = await insertAuthorizationObservation(run, check, null, {
       target_url: targetURL,
       actual_outcome: "unknown",
@@ -2184,9 +2771,18 @@ async function captureScreenshot(page: Page): Promise<Buffer | null> {
 async function insertEvidence(owner: EvidenceOwner, type: string, uri: string, metadata: Record<string, unknown>): Promise<string> {
   const id = randomUUID();
   await pool.query(
-    `INSERT INTO evidence (id, run_id, test_plan_execution_id, authorization_check_run_id, type, uri, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [id, owner.runID ?? null, owner.executionID ?? null, owner.authorizationRunID ?? null, type, uri, JSON.stringify(metadata)]
+    `INSERT INTO evidence (id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, type, uri, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      id,
+      owner.runID ?? null,
+      owner.executionID ?? null,
+      owner.authorizationRunID ?? null,
+      owner.discoveryRunID ?? null,
+      type,
+      uri,
+      JSON.stringify(metadata)
+    ]
   );
   return id;
 }
@@ -2195,15 +2791,16 @@ async function insertFinding(owner: FindingOwner, finding: FindingInput): Promis
   const id = randomUUID();
   await pool.query(
     `INSERT INTO findings (
-       id, run_id, test_plan_execution_id, authorization_check_run_id, scenario_execution_id, step_execution_id,
+       id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, scenario_execution_id, step_execution_id,
        title, severity, category, confidence, description, recommendation, evidence_ids
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [
       id,
       owner.runID ?? null,
       owner.executionID ?? null,
       owner.authorizationRunID ?? null,
+      owner.discoveryRunID ?? null,
       owner.scenarioExecutionID ?? null,
       owner.stepExecutionID ?? null,
       finding.title,
@@ -2230,7 +2827,7 @@ async function ensureS3Bucket(): Promise<void> {
   }
 }
 
-async function storeScreenshot(ownerKind: "runs" | "test-plan-executions" | "authorization-check-runs", ownerID: string, screenshot: Buffer): Promise<StoredEvidenceObject> {
+async function storeScreenshot(ownerKind: "runs" | "test-plan-executions" | "authorization-check-runs" | "discovery-runs", ownerID: string, screenshot: Buffer): Promise<StoredEvidenceObject> {
   const filename = `${Date.now()}-${randomUUID()}.png`;
   const key = `${ownerKind}/${ownerID}/screenshots/${filename}`;
   const createdAt = new Date().toISOString();

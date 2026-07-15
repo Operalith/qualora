@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.11.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, human-friendly reports, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
+Qualora v0.12.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, human-friendly reports, safe deterministic application discovery, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,7 +10,7 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
@@ -21,6 +21,7 @@ qualora-api
         |       +--> Playwright Chromium smoke test
         |       +--> Deterministic selector-based login checks
         |       +--> Authenticated browser smoke test
+        |       +--> Safe deterministic application discovery
         |       +--> Explicit role-aware authorization checks
         |       +--> Approved safe test plan execution
         |       +--> MinIO/S3 screenshot evidence
@@ -68,9 +69,15 @@ Current endpoints:
 - `DELETE /api/v1/authorization-checks/{authorization_check_id}`
 - `GET /api/v1/projects/{project_id}/authorization-check-runs`
 - `POST /api/v1/projects/{project_id}/authorization-check-runs`
+- `GET /api/v1/projects/{project_id}/discovery-runs`
+- `POST /api/v1/projects/{project_id}/discovery-runs`
 - `GET /api/v1/authorization-check-runs/{authorization_check_run_id}`
 - `GET /api/v1/authorization-check-runs/{authorization_check_run_id}/report`
 - `GET /api/v1/authorization-check-runs/{authorization_check_run_id}/report.html`
+- `GET /api/v1/discovery-runs/{discovery_run_id}`
+- `GET /api/v1/discovery-runs/{discovery_run_id}/map`
+- `GET /api/v1/discovery-runs/{discovery_run_id}/report`
+- `GET /api/v1/discovery-runs/{discovery_run_id}/report.html`
 - `POST /api/v1/projects/{project_id}/ai-test-plans`
 - `GET /api/v1/projects/{project_id}/test-plans`
 - `POST /api/v1/projects/{project_id}/api-specs`
@@ -123,6 +130,7 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - Credential profile creation, listing, editing, deletion, default selection, login testing, and authenticated browser smoke actions.
 - Login summary and login observation metadata in run reports.
 - Authorization check creation, listing, enable/disable, deletion, run history, JSON report display, HTML report links, findings, and evidence display.
+- Application discovery start form, run list, application map page, JSON/HTML report links, pages, skipped links, forms, findings, and evidence display.
 
 On a fresh database it shows a first-run local admin setup screen. After setup, project data, credential profiles, AI providers, runs, reports, evidence, API specs, test plans, and authorization reports require the local admin session. The UI is still alpha and should be exposed only in trusted local/self-hosted environments.
 
@@ -133,6 +141,8 @@ The Node.js browser worker consumes Redis browser jobs and runs a Playwright smo
 For credential-profile runs, the worker decrypts the project-scoped username/password with `QUALORA_ENCRYPTION_KEY`, opens only the configured login URL, fills only the configured username/password selectors, clicks only the configured submit selector, and evaluates configured success/failure criteria. Authenticated smoke then visits one configured same-origin target path.
 
 For role-aware authorization runs, the worker logs in with the configured actor credential profile, navigates only to the configured same-origin authorization target, classifies the outcome as allowed, denied, or unknown, and records screenshot/observation evidence plus deterministic findings when the observed outcome does not match the expected outcome. It does not use AI, does not crawl, does not submit arbitrary forms, and does not expose cookies, storage, auth headers, tokens, usernames, or passwords in evidence.
+
+For application discovery runs, the worker performs bounded deterministic navigation from the project frontend or requested start URL. It defaults to same-origin only, enforces `allowed_hosts`, strips fragments, redacts sensitive query values, avoids duplicate visits, records pages/links/forms/fields, stores screenshot evidence, and creates findings for obvious load, console, network, skipped-link, and form issues. It never submits forms, clicks arbitrary buttons, runs payloads, performs destructive actions, or uses AI browser control.
 
 The same worker also consumes safe test plan execution jobs. It executes only persisted mapped actions from the supported DSL:
 
@@ -208,7 +218,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.11.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.12.0-alpha`.
 
 ### PostgreSQL
 

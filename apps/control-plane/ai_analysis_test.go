@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -73,6 +74,69 @@ func TestBuildSafeAIInputStripsSecretsBodiesAndQueryValues(t *testing.T) {
 	}
 	if strings.Contains(rendered, "?") || strings.Contains(rendered, "#frag") {
 		t.Fatalf("expected URL query and fragment to be stripped, got:\n%s", rendered)
+	}
+}
+
+func TestBuildSafeDiscoveryAIInputStripsSecretsAndKeepsMapSummary(t *testing.T) {
+	status := 200
+	report := &DiscoveryReport{
+		Run: DiscoveryRun{
+			ID:             "discovery-run-id",
+			ProjectID:      "project-id",
+			Status:         StatusCompleted,
+			StartURL:       "https://example.com/?token=should-not-pass",
+			MaxPages:       20,
+			MaxDepth:       2,
+			SameOriginOnly: true,
+		},
+		Project: Project{ID: "project-id", Name: "Example"},
+		Summary: DiscoverySummary{TotalPages: 1, TotalLinks: 1, TotalForms: 1},
+		Pages: []DiscoveredPage{{
+			Path:                 "/dashboard",
+			NormalizedURL:        "https://example.com/dashboard?token=should-not-pass",
+			Title:                "Dashboard",
+			HTTPStatus:           &status,
+			ConsoleErrorCount:    0,
+			FailedRequestCount:   0,
+			ScreenshotEvidenceID: "evidence-id",
+		}},
+		Links: []DiscoveredLink{{
+			NormalizedURL: "https://example.com/logout?session=should-not-pass",
+			LinkText:      "Logout",
+			Skipped:       true,
+			SkipReason:    "unsafe_link_skipped",
+		}},
+		Forms: []DiscoveredForm{{
+			FormAction:         "/login",
+			FormMethod:         "post",
+			FieldCount:         2,
+			PasswordFieldCount: 1,
+			Classification:     "password_form",
+			Fields: []DiscoveredFormField{{
+				FieldName: "password",
+				FieldType: "password",
+				Label:     "Password",
+				Required:  true,
+			}},
+		}},
+		Evidence: []Evidence{{
+			Type: "screenshot",
+			Metadata: map[string]any{
+				"key":    "discovery-runs/run/screenshots/file.png",
+				"cookie": "should-not-pass",
+			},
+		}},
+	}
+
+	input := BuildSafeDiscoveryAIInput(report)
+	rendered := fmt.Sprintf("%v", input)
+	for _, leaked := range []string{"should-not-pass", "cookie"} {
+		if strings.Contains(rendered, leaked) {
+			t.Fatalf("safe discovery AI input leaked %q in:\n%s", leaked, rendered)
+		}
+	}
+	if !strings.Contains(rendered, "unsafe_link_skipped") || !strings.Contains(rendered, "password_form") {
+		t.Fatalf("safe discovery AI input missed expected map metadata:\n%s", rendered)
 	}
 }
 

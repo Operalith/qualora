@@ -295,6 +295,7 @@ ORDER BY created_at ASC
 func (s *Store) ListFindingsForAuthorizationCheckRun(ctx context.Context, runID string) ([]Finding, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT f.id, f.run_id::text, f.test_plan_execution_id::text, f.authorization_check_run_id::text,
+	f.discovery_run_id::text,
 	f.scenario_execution_id::text, f.step_execution_id::text,
 	f.title, f.severity, f.category, f.confidence, f.description, f.recommendation, f.evidence_ids, f.created_at
 FROM findings f
@@ -323,6 +324,7 @@ ORDER BY f.created_at ASC
 func (s *Store) ListEvidenceForAuthorizationCheckRun(ctx context.Context, runID string) ([]Evidence, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT id, run_id::text, test_plan_execution_id::text, authorization_check_run_id::text,
+	discovery_run_id::text,
 	type, uri, metadata, created_at
 FROM evidence
 WHERE authorization_check_run_id = $1

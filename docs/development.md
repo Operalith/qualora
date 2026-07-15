@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.11.0-alpha.
+This document covers local development for Qualora v0.12.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; starts browser, login check, authenticated browser smoke, authorization, and safe API smoke runs; polls to completion; runs AI analysis; generates AI test plans; previews and executes a safe browser test plan; prints JSON/HTML report, API spec, credential profile, authorization, test-plan, and execution URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; starts browser, login check, authenticated browser smoke, application discovery, authorization, and safe API smoke runs; polls to completion; runs AI analysis; generates AI test plans; previews and executes a safe browser test plan; prints JSON/HTML report, discovery map, API spec, credential profile, authorization, test-plan, and execution URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -107,6 +107,7 @@ The smoke script runs:
 - Credential profile creation against local `demo-web` login selectors.
 - Deterministic login check against local `demo-web`.
 - Authenticated browser smoke against local `demo-web` `/dashboard`.
+- Application discovery against local `demo-web`, including pages, links, forms, skipped unsafe/external links, screenshots, JSON report, and HTML report.
 - Role credential profile creation and explicit authorization checks against local `demo-web` `/admin` and customer invoice routes.
 - Password and raw username redaction checks for credential, report, and AI paths.
 - Browser smoke against the local `demo-web` Compose service.
@@ -141,7 +142,7 @@ For private or local targets, create projects manually with `allow_private_targe
 
 ## AI Provider Development
 
-The v0.11 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.12 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -179,11 +180,22 @@ The login check path is deterministic:
 - Authenticated browser smoke visits one relative same-origin target path after login.
 - Cookies, local storage, session storage, auth headers, tokens, and browser storage are not exposed in evidence.
 
+## Application Discovery Development
+
+Application discovery runs are queued on the browser worker. Keep the crawl deterministic and bounded:
+
+- Defaults are `max_pages=20`, `max_depth=2`, and `same_origin_only=true`.
+- The API caps discovery at `max_pages<=100` and `max_depth<=5`.
+- Navigation must pass `allowed_hosts`; same-origin discovery must stay on the project frontend origin.
+- Discovery follows safe links only and records skip reasons for external, unsafe-looking, unsupported-scheme, and non-HTML links.
+- Discovery records forms and fields but must never submit forms or click arbitrary buttons.
+- Discovery evidence may include screenshots and browser observations, but must not store full HTML, cookies, local/session storage, auth headers, tokens, credentials, request bodies, or response bodies.
+
 ## Safe API Smoke Development
 
 Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
 
-The v0.11 API executor:
+The v0.12 API executor:
 
 - Supports OpenAPI 3.x JSON/YAML.
 - Executes only `GET`, `HEAD`, and `OPTIONS`.

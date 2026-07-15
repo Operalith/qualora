@@ -36,6 +36,11 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (url.pathname === "/pricing") {
+    writePage(response, "Qualora Demo Pricing", "Demo pricing", "Simple pricing content for deterministic application discovery.");
+    return;
+  }
+
   if (url.pathname === "/login" && request.method === "GET") {
     writeLoginPage(response, "");
     return;
@@ -85,6 +90,21 @@ const server = http.createServer((request, response) => {
       return;
     }
     writePage(response, "Qualora Demo Admin", "Admin console", "Administrative settings for role-aware authorization checks.");
+    return;
+  }
+
+  if (url.pathname === "/logout") {
+    response.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "set-cookie": "qualora_demo_session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/"
+    });
+    response.end("<!doctype html><html><body><h1>Signed out</h1></body></html>");
+    return;
+  }
+
+  if (url.pathname === "/delete-account") {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end("<!doctype html><html><body><h1>Dangerous demo action</h1><p>Discovery must skip this route.</p></body></html>");
     return;
   }
 
@@ -178,12 +198,24 @@ function writePage(response, title, heading, body) {
       <a href="/">Home</a>
       <a href="/status">Status</a>
       <a href="/about">About</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/login">Login</a>
       <a href="/dashboard">Dashboard</a>
       <a href="/admin">Admin</a>
       <a href="/reports">Reports</a>
+      <a href="/logout">Logout</a>
+      <a href="/delete-account">Delete account</a>
+      <a href="https://example.com">External example</a>
     </nav>
     <h1>${escapeHTML(heading)}</h1>
     <p>${escapeHTML(body)}</p>
+    <form method="get" action="/status" aria-label="Newsletter signup">
+      <label>
+        Newsletter email
+        <input id="newsletter-email" name="newsletter_email" type="email" placeholder="person@example.test" required>
+      </label>
+      <button type="submit">Subscribe</button>
+    </form>
   </main>
   <script src="/app.js"></script>
 </body>

@@ -137,7 +137,7 @@ Delivered:
 
 ## v0.11.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - First-run local admin setup.
 - Single local admin role.
@@ -148,7 +148,21 @@ Current alpha scope:
 - Smoke validation for setup, login, logout, protected endpoints, and existing browser/API/AI/test-plan/authorization flows.
 - Honest documentation for local-only alpha authentication limitations.
 
-## Phase 12: Run And Worker Hardening
+## v0.12.0-alpha
+
+Current alpha scope:
+
+- Safe deterministic application discovery run model and API.
+- Persistent application map tables for pages, links, forms, and fields.
+- Browser-worker discovery execution with same-origin defaults, allowed-host enforcement, sensitive query redaction, duplicate avoidance, and crawl limits.
+- Screenshot and browser observation evidence for discovered pages.
+- Deterministic discovery findings for page load failures, 404/5xx responses, console errors, failed requests, empty pages, broken internal links, skipped unsafe/external links, forms without labels, and password forms.
+- Web UI discovery section on project details plus discovery report/map page.
+- JSON and self-contained HTML discovery reports.
+- Demo-web routes, safe/unsafe/external links, and forms for deterministic smoke validation.
+- Smoke validation for discovery completion, pages, links, forms, skipped links, screenshots, JSON report, and HTML report.
+
+## Phase 13: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -161,14 +175,14 @@ Current alpha scope:
 - Move AI analysis to an async analyzer worker.
 - Move AI-assisted test planning to an async analyzer worker.
 
-## Phase 13: Deeper API Checks
+## Phase 14: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 14: Passive Security Checks
+## Phase 15: Passive Security Checks
 
 - Passive security headers.
 - Cookie flag checks.

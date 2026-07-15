@@ -165,6 +165,7 @@ func (s *Store) GetTestPlanExecutionReport(ctx context.Context, id string) (*Tes
 func (s *Store) ListFindingsForTestPlanExecution(ctx context.Context, executionID string) ([]Finding, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT id, run_id::text, test_plan_execution_id::text, authorization_check_run_id::text,
+	discovery_run_id::text,
 	scenario_execution_id::text, step_execution_id::text,
 	title, severity, category, confidence, description, recommendation, evidence_ids, created_at
 FROM findings
@@ -193,6 +194,7 @@ ORDER BY created_at ASC
 func (s *Store) ListEvidenceForTestPlanExecution(ctx context.Context, executionID string) ([]Evidence, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT id, run_id::text, test_plan_execution_id::text, authorization_check_run_id::text,
+	discovery_run_id::text,
 	type, uri, metadata, created_at
 FROM evidence
 WHERE test_plan_execution_id = $1

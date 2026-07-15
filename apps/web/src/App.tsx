@@ -12,11 +12,13 @@ import {
   deleteAPISpec,
   deleteCredentialProfile,
   deleteTestPlan,
+  discoveryHTMLReportURL,
   evidenceDownloadURL,
   executeTestPlan,
   generateAITestPlan,
   getAuthorizationCheckReport,
   getAPISpec,
+  getDiscoveryReport,
   getProject,
   getReport,
   getRun,
@@ -30,6 +32,7 @@ import {
   listAuthorizationChecks,
   listAPISpecs,
   listCredentialProfiles,
+  listDiscoveryRuns,
   listProjects,
   listRuns,
   listTestPlanExecutions,
@@ -44,6 +47,7 @@ import {
   startAPISmokeRun,
   startAuthenticatedBrowserSmokeRun,
   startBrowserSmokeRun,
+  startDiscoveryRun,
   startRun,
   testCredentialProfileLogin,
   testPlanExportURL,
@@ -72,6 +76,9 @@ import type {
   CreateProjectInput,
   CredentialProfile,
   CredentialProfileInput,
+  DiscoveryReport,
+  DiscoveryRun,
+  DiscoveryRunInput,
   Evidence,
   LoginInput,
   Project,
@@ -99,6 +106,7 @@ type Route =
   | { name: "test-plan"; id: string }
   | { name: "test-plan-execution"; id: string }
   | { name: "authorization-check-run"; id: string }
+  | { name: "discovery-run"; id: string }
   | { name: "run"; id: string };
 
 type LoadState<T> = {
@@ -117,7 +125,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.11.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.12.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -230,7 +238,7 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
       <aside className="sidebar">
         <a className="brand" href="#/">
           <span>Qualora</span>
-          <small>{version}</small>
+          <small>{formatVersionBadge(version)}</small>
         </a>
         <nav>
           <a className={route.name === "dashboard" ? "active" : ""} href="#/">
@@ -308,6 +316,7 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
         )}
         {route.name === "test-plan-execution" && <TestPlanExecutionPage executionID={route.id} />}
         {route.name === "authorization-check-run" && <AuthorizationCheckRunPage runID={route.id} />}
+        {route.name === "discovery-run" && <DiscoveryRunPage runID={route.id} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
       </main>
     </div>
@@ -320,7 +329,7 @@ function AuthFrame({ version, title, subtitle, children }: { version: string; ti
       <section className="auth-panel">
         <a className="auth-brand" href="#/">
           <span>Qualora</span>
-          <small>{version}</small>
+          <small>{formatVersionBadge(version)}</small>
         </a>
         <h1>{title}</h1>
         <p className="muted">{subtitle}</p>
@@ -423,6 +432,11 @@ function LoginPage({ version, message, onSubmit }: { version: string; message: s
       </form>
     </AuthFrame>
   );
+}
+
+function formatVersionBadge(version: string): string {
+  const normalized = version.trim().replace(/^v/i, "");
+  return `Qualora v${normalized}`;
 }
 
 function Dashboard({
@@ -948,6 +962,7 @@ function ProjectPage({
   const [credentialProfiles, setCredentialProfiles] = useState<LoadState<CredentialProfile[]>>({ data: [], loading: true, error: "" });
   const [authorizationChecks, setAuthorizationChecks] = useState<LoadState<AuthorizationCheck[]>>({ data: [], loading: true, error: "" });
   const [authorizationRuns, setAuthorizationRuns] = useState<LoadState<AuthorizationCheckRun[]>>({ data: [], loading: true, error: "" });
+  const [discoveryRuns, setDiscoveryRuns] = useState<LoadState<DiscoveryRun[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
   const [starting, setStarting] = useState("");
 
@@ -958,9 +973,20 @@ function ProjectPage({
     setCredentialProfiles((current) => ({ ...current, loading: true, error: "" }));
     setAuthorizationChecks((current) => ({ ...current, loading: true, error: "" }));
     setAuthorizationRuns((current) => ({ ...current, loading: true, error: "" }));
+    setDiscoveryRuns((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
-      const [nextProject, nextRuns, nextProviders, nextTestPlans, nextAPISpecs, nextCredentialProfiles, nextAuthorizationChecks, nextAuthorizationRuns] = await Promise.all([
+      const [
+        nextProject,
+        nextRuns,
+        nextProviders,
+        nextTestPlans,
+        nextAPISpecs,
+        nextCredentialProfiles,
+        nextAuthorizationChecks,
+        nextAuthorizationRuns,
+        nextDiscoveryRuns
+      ] = await Promise.all([
         cachedProject ? Promise.resolve(cachedProject) : getProject(projectID),
         listRuns(projectID),
         listAIProviders(),
@@ -968,7 +994,8 @@ function ProjectPage({
         listAPISpecs(projectID),
         listCredentialProfiles(projectID),
         listAuthorizationChecks(projectID),
-        listAuthorizationCheckRuns(projectID)
+        listAuthorizationCheckRuns(projectID),
+        listDiscoveryRuns(projectID)
       ]);
       setProject(nextProject);
       setRuns({ data: nextRuns, loading: false, error: "" });
@@ -978,6 +1005,7 @@ function ProjectPage({
       setCredentialProfiles({ data: nextCredentialProfiles, loading: false, error: "" });
       setAuthorizationChecks({ data: nextAuthorizationChecks, loading: false, error: "" });
       setAuthorizationRuns({ data: nextAuthorizationRuns, loading: false, error: "" });
+      setDiscoveryRuns({ data: nextDiscoveryRuns, loading: false, error: "" });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
@@ -987,6 +1015,7 @@ function ProjectPage({
       setCredentialProfiles((current) => ({ ...current, loading: false, error: message }));
       setAuthorizationChecks((current) => ({ ...current, loading: false, error: message }));
       setAuthorizationRuns((current) => ({ ...current, loading: false, error: message }));
+      setDiscoveryRuns((current) => ({ ...current, loading: false, error: message }));
     }
   }, [cachedProject, projectID]);
 
@@ -1058,6 +1087,23 @@ function ProjectPage({
     }
   }
 
+  async function startProjectDiscovery(input: DiscoveryRunInput) {
+    if (!project) {
+      return;
+    }
+    setStarting("discovery");
+    setError("");
+    try {
+      const run = await startDiscoveryRun(project.id, input);
+      await refresh();
+      window.location.hash = `#/discovery-runs/${run.id}`;
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : String(startError));
+    } finally {
+      setStarting("");
+    }
+  }
+
   return (
     <div className="grid">
       <section>
@@ -1089,6 +1135,32 @@ function ProjectPage({
           <Field label="Allowed Hosts" value={project.allowed_hosts.join(", ")} />
           <Field label="Private Targets" value={project.allow_private_targets ? "Allowed" : "Blocked by default"} />
           <Field label="Created" value={formatDate(project.created_at)} />
+        </div>
+      </section>
+
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>Application Discovery</h2>
+            <p>Safely crawls same-origin pages, collects links/forms/browser signals, and builds an application map.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="Discovery does not submit forms or perform destructive actions. Unsafe, external, unsupported, and non-HTML links are skipped."
+        />
+        <DiscoveryRunForm
+          project={project}
+          profiles={credentialProfiles.data}
+          disabled={starting !== ""}
+          onStart={(input) => void startProjectDiscovery(input)}
+        />
+        <div className="section-split">
+          {discoveryRuns.error && <Notice tone="danger" message={discoveryRuns.error} />}
+          {discoveryRuns.loading ? <SkeletonRows /> : <DiscoveryRunTable runs={discoveryRuns.data} />}
         </div>
       </section>
 
@@ -1231,6 +1303,141 @@ function ProjectPage({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function DiscoveryRunForm({
+  project,
+  profiles,
+  disabled,
+  onStart
+}: {
+  project: Project;
+  profiles: CredentialProfile[];
+  disabled: boolean;
+  onStart: (input: DiscoveryRunInput) => void;
+}) {
+  const [form, setForm] = useState<Required<Pick<DiscoveryRunInput, "start_url" | "credential_profile_id" | "max_pages" | "max_depth" | "same_origin_only">>>({
+    start_url: project.frontend_url || "",
+    credential_profile_id: "",
+    max_pages: 20,
+    max_depth: 2,
+    same_origin_only: true
+  });
+
+  useEffect(() => {
+    setForm((current) => ({ ...current, start_url: project.frontend_url || current.start_url }));
+  }, [project.frontend_url]);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onStart({
+      start_url: form.start_url.trim() || undefined,
+      credential_profile_id: form.credential_profile_id || undefined,
+      max_pages: Number(form.max_pages || 20),
+      max_depth: Number(form.max_depth || 2),
+      same_origin_only: form.same_origin_only
+    });
+  }
+
+  return (
+    <form className="project-form compact-form" onSubmit={submit}>
+      <label>
+        Start URL
+        <input value={form.start_url} onChange={(event) => setForm({ ...form, start_url: event.target.value })} />
+      </label>
+      <label>
+        Credential Profile
+        <select
+          value={form.credential_profile_id}
+          onChange={(event) => setForm({ ...form, credential_profile_id: event.target.value })}
+        >
+          <option value="">Unauthenticated</option>
+          {profiles.map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {credentialProfileLabel(profile)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Max Pages
+        <input
+          type="number"
+          min={1}
+          max={100}
+          value={form.max_pages}
+          onChange={(event) => setForm({ ...form, max_pages: Number(event.target.value) })}
+        />
+      </label>
+      <label>
+        Max Depth
+        <input
+          type="number"
+          min={0}
+          max={5}
+          value={form.max_depth}
+          onChange={(event) => setForm({ ...form, max_depth: Number(event.target.value) })}
+        />
+      </label>
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={form.same_origin_only}
+          onChange={(event) => setForm({ ...form, same_origin_only: event.target.checked })}
+        />
+        Same origin only
+      </label>
+      <div className="form-actions">
+        <button type="submit" disabled={disabled || !project.frontend_url}>
+          {disabled ? "Starting" : "Start discovery"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function DiscoveryRunTable({ runs }: { runs: DiscoveryRun[] }) {
+  if (runs.length === 0) {
+    return <EmptyState title="No discovery runs" body="Start discovery to build a persistent application map." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Start URL</th>
+            <th>Pages</th>
+            <th>Links</th>
+            <th>Forms</th>
+            <th>Findings</th>
+            <th>Created</th>
+            <th>Report</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td>
+                <StatusBadge status={run.status} />
+              </td>
+              <td>
+                <code>{run.start_url}</code>
+              </td>
+              <td>{run.total_pages}</td>
+              <td>{run.total_links}</td>
+              <td>{run.total_forms}</td>
+              <td>{run.total_findings}</td>
+              <td>{formatDate(run.created_at)}</td>
+              <td>
+                <a href={`#/discovery-runs/${run.id}`}>Open</a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -3064,6 +3271,232 @@ function ProjectForm({ onCreated }: { onCreated: (project: Project) => void }) {
   );
 }
 
+function DiscoveryRunPage({ runID }: { runID: string }) {
+  const [report, setReport] = useState<DiscoveryReport | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setReport(await getDiscoveryReport(runID));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [runID]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!report || !isActiveRunStatus(report.run.status)) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => window.clearInterval(timer);
+  }, [refresh, report]);
+
+  if (error) {
+    return <Notice tone="danger" message={error} />;
+  }
+  if (loading && !report) {
+    return <SkeletonRows />;
+  }
+  if (!report) {
+    return <Notice tone="danger" message="Discovery report could not be loaded." />;
+  }
+
+  const skippedLinks = report.links.filter((link) => link.skipped);
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>{report.project.name}</h2>
+            <p>
+              <StatusBadge status={report.run.status} /> <span className="muted">Discovery run {report.run.id}</span>
+            </p>
+          </div>
+          <div className="button-row">
+            <a className="button secondary-link" href={`#/projects/${report.project.id}`}>
+              Project
+            </a>
+            <a className="button secondary-link" href={`${API_BASE_URL}/api/v1/discovery-runs/${report.run.id}/report`} target="_blank" rel="noreferrer">
+              JSON Report
+            </a>
+            <a className="button" href={discoveryHTMLReportURL(report.run.id)} target="_blank" rel="noreferrer">
+              HTML Report
+            </a>
+          </div>
+        </div>
+        {report.run.error_message && <Notice tone="danger" message={report.run.error_message} />}
+        <div className="summary-grid">
+          <Metric label="Pages" value={report.summary.total_pages} />
+          <Metric label="Links" value={report.summary.total_links} />
+          <Metric label="Forms" value={report.summary.total_forms} />
+          <Metric label="Findings" value={report.summary.total_findings} tone="critical" />
+          <Metric label="Console Errors" value={report.summary.total_console_errors} tone="medium" />
+          <Metric label="Failed Requests" value={report.summary.total_failed_requests} tone="medium" />
+        </div>
+        <div className="detail-grid compact">
+          <Field label="Start URL" value={report.run.start_url} />
+          <Field label="Max Pages" value={String(report.run.max_pages)} />
+          <Field label="Max Depth" value={String(report.run.max_depth)} />
+          <Field label="Same Origin Only" value={report.run.same_origin_only ? "Yes" : "No"} />
+          <Field label="Created" value={formatDate(report.run.created_at)} />
+          <Field label="Generated" value={formatDate(report.generated_at)} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Safety Scope</h2>
+        <Notice
+          tone="info"
+          message="Discovery is deterministic and safe by default: it follows safe links, skips unsafe/external links, and never submits forms or runs AI browser control."
+        />
+      </section>
+
+      <section>
+        <h2>Pages</h2>
+        <DiscoveryPagesTable report={report} />
+      </section>
+
+      <section>
+        <h2>Skipped Links</h2>
+        <DiscoveryLinksTable links={skippedLinks} pages={report.pages} />
+      </section>
+
+      <section>
+        <h2>Forms</h2>
+        <DiscoveryFormsTable report={report} />
+      </section>
+
+      <section>
+        <h2>Findings</h2>
+        <FindingTable findings={report.findings} />
+      </section>
+
+      <section>
+        <h2>Evidence</h2>
+        <EvidenceTable evidence={report.evidence} />
+      </section>
+    </div>
+  );
+}
+
+function DiscoveryPagesTable({ report }: { report: DiscoveryReport }) {
+  if (report.pages.length === 0) {
+    return <EmptyState title="No pages" body="The discovery worker has not recorded pages yet." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Depth</th>
+            <th>Status</th>
+            <th>Title</th>
+            <th>URL</th>
+            <th>Signals</th>
+            <th>Screenshot</th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.pages.map((page) => (
+            <tr key={page.id}>
+              <td>{page.depth}</td>
+              <td>{page.http_status ?? "n/a"}</td>
+              <td>{page.title || "Untitled"}</td>
+              <td>
+                <code>{page.normalized_url}</code>
+              </td>
+              <td>
+                {page.console_error_count} console, {page.failed_request_count} network
+              </td>
+              <td>{page.screenshot_evidence_id ? <a href={evidenceDownloadURL(page.screenshot_evidence_id)}>Open</a> : "None"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DiscoveryLinksTable({ links, pages }: { links: DiscoveryReport["links"]; pages: DiscoveryReport["pages"] }) {
+  if (links.length === 0) {
+    return <EmptyState title="No skipped links" body="Discovery did not record skipped links for this run." />;
+  }
+  const pageByID = new Map(pages.map((page) => [page.id, page]));
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Reason</th>
+            <th>Source</th>
+            <th>Text</th>
+            <th>Href</th>
+          </tr>
+        </thead>
+        <tbody>
+          {links.map((link) => (
+            <tr key={link.id}>
+              <td>{link.skip_reason}</td>
+              <td>{pageByID.get(link.source_page_id)?.path || shortID(link.source_page_id)}</td>
+              <td>{link.link_text || ""}</td>
+              <td>
+                <code>{link.normalized_url || link.href}</code>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DiscoveryFormsTable({ report }: { report: DiscoveryReport }) {
+  if (report.forms.length === 0) {
+    return <EmptyState title="No forms" body="Discovery did not find visible forms." />;
+  }
+  const pageByID = new Map(report.pages.map((page) => [page.id, page]));
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Page</th>
+            <th>Method</th>
+            <th>Action</th>
+            <th>Fields</th>
+            <th>Password Fields</th>
+            <th>Classification</th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.forms.map((form) => (
+            <tr key={form.id}>
+              <td>{pageByID.get(form.page_id)?.path || shortID(form.page_id)}</td>
+              <td>{form.form_method || "get"}</td>
+              <td>
+                <code>{form.form_action || ""}</code>
+              </td>
+              <td>{form.field_count}</td>
+              <td>{form.password_field_count}</td>
+              <td>{form.classification || ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function AuthorizationCheckRunPage({ runID }: { runID: string }) {
   const [report, setReport] = useState<AuthorizationCheckReport | undefined>();
   const [loading, setLoading] = useState(true);
@@ -3603,6 +4036,40 @@ function FindingsTable({ report }: { report: Report }) {
   );
 }
 
+function FindingTable({ findings }: { findings: Report["findings"] }) {
+  if (findings.length === 0) {
+    return <EmptyState title="No findings" body="This report did not record findings." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Title</th>
+            <th>Category</th>
+            <th>Description</th>
+            <th>Recommendation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {findings.map((finding) => (
+            <tr key={finding.id}>
+              <td>
+                <span className={`severity ${finding.severity}`}>{finding.severity}</span>
+              </td>
+              <td>{finding.title}</td>
+              <td>{finding.category}</td>
+              <td>{finding.description}</td>
+              <td>{finding.recommendation}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function EvidenceTable({ evidence }: { evidence: Evidence[] }) {
   if (evidence.length === 0) {
     return <EmptyState title="No evidence" body="This run did not record evidence metadata." />;
@@ -3842,6 +4309,9 @@ function parseHash(hash: string): Route {
   if (parts[0] === "authorization-check-runs" && parts[1]) {
     return { name: "authorization-check-run", id: parts[1] };
   }
+  if (parts[0] === "discovery-runs" && parts[1]) {
+    return { name: "discovery-run", id: parts[1] };
+  }
   return { name: "dashboard" };
 }
 
@@ -3867,6 +4337,8 @@ function hashForRoute(route: Route): string {
       return `/test-plan-executions/${route.id}`;
     case "authorization-check-run":
       return `/authorization-check-runs/${route.id}`;
+    case "discovery-run":
+      return `/discovery-runs/${route.id}`;
     case "run":
       return `/runs/${route.id}`;
   }
@@ -3894,6 +4366,8 @@ function titleForRoute(route: Route): string {
       return "Plan Execution";
     case "authorization-check-run":
       return "Authorization Report";
+    case "discovery-run":
+      return "Discovery Report";
     case "run":
       return "Run Report";
   }

@@ -50,6 +50,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/credential-profiles/", a.handleCredentialProfileSubroutes)
 	mux.HandleFunc("/api/v1/authorization-checks/", a.handleAuthorizationCheckSubroutes)
 	mux.HandleFunc("/api/v1/authorization-check-runs/", a.handleAuthorizationCheckRunSubroutes)
+	mux.HandleFunc("/api/v1/discovery-runs/", a.handleDiscoveryRunSubroutes)
 	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, a.withAuth(mux))))
 }
 
@@ -210,6 +211,17 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 			a.createAuthorizationCheckRun(w, r, parts[0])
 		case http.MethodGet:
 			a.listAuthorizationCheckRuns(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "discovery-runs" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createDiscoveryRun(w, r, parts[0])
+		case http.MethodGet:
+			a.listDiscoveryRuns(w, r, parts[0])
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
 		}

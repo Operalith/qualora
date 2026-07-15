@@ -25,6 +25,7 @@ const (
 	RunTypeAPISmoke                  = "api_smoke"
 	RunTypeLoginCheck                = "login_check"
 	RunTypeAuthenticatedBrowserSmoke = "authenticated_browser_smoke"
+	RunTypeAppDiscovery              = "app_discovery"
 )
 
 const (
@@ -156,6 +157,7 @@ type Finding struct {
 	RunID               string    `json:"run_id,omitempty"`
 	TestPlanExecutionID string    `json:"test_plan_execution_id,omitempty"`
 	AuthorizationRunID  string    `json:"authorization_check_run_id,omitempty"`
+	DiscoveryRunID      string    `json:"discovery_run_id,omitempty"`
 	ScenarioExecutionID string    `json:"scenario_execution_id,omitempty"`
 	StepExecutionID     string    `json:"step_execution_id,omitempty"`
 	Title               string    `json:"title"`
@@ -173,6 +175,7 @@ type Evidence struct {
 	RunID               string         `json:"run_id,omitempty"`
 	TestPlanExecutionID string         `json:"test_plan_execution_id,omitempty"`
 	AuthorizationRunID  string         `json:"authorization_check_run_id,omitempty"`
+	DiscoveryRunID      string         `json:"discovery_run_id,omitempty"`
 	Type                string         `json:"type"`
 	URI                 string         `json:"uri"`
 	Metadata            map[string]any `json:"metadata"`
@@ -203,6 +206,136 @@ type ReportSummary struct {
 	Medium        int `json:"medium"`
 	Low           int `json:"low"`
 	Info          int `json:"info"`
+}
+
+type DiscoveryRunRequest struct {
+	StartURL            string `json:"start_url,omitempty"`
+	CredentialProfileID string `json:"credential_profile_id,omitempty"`
+	MaxPages            int    `json:"max_pages,omitempty"`
+	MaxDepth            int    `json:"max_depth,omitempty"`
+	SameOriginOnly      *bool  `json:"same_origin_only,omitempty"`
+}
+
+type DiscoveryRun struct {
+	ID                  string     `json:"id"`
+	ProjectID           string     `json:"project_id"`
+	CredentialProfileID string     `json:"credential_profile_id,omitempty"`
+	Status              string     `json:"status"`
+	StartURL            string     `json:"start_url"`
+	MaxPages            int        `json:"max_pages"`
+	MaxDepth            int        `json:"max_depth"`
+	SameOriginOnly      bool       `json:"same_origin_only"`
+	StartedAt           *time.Time `json:"started_at,omitempty"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+	TotalPages          int        `json:"total_pages"`
+	TotalLinks          int        `json:"total_links"`
+	TotalForms          int        `json:"total_forms"`
+	TotalConsoleErrors  int        `json:"total_console_errors"`
+	TotalFailedRequests int        `json:"total_failed_requests"`
+	TotalFindings       int        `json:"total_findings"`
+	ErrorMessage        string     `json:"error_message,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+}
+
+type DiscoveredPage struct {
+	ID                   string    `json:"id"`
+	DiscoveryRunID       string    `json:"discovery_run_id"`
+	ProjectID            string    `json:"project_id"`
+	URL                  string    `json:"url"`
+	NormalizedURL        string    `json:"normalized_url"`
+	Path                 string    `json:"path"`
+	Title                string    `json:"title,omitempty"`
+	HTTPStatus           *int      `json:"http_status,omitempty"`
+	ContentType          string    `json:"content_type,omitempty"`
+	BodyTextLength       *int      `json:"body_text_length,omitempty"`
+	LoadDurationMS       *int      `json:"load_duration_ms,omitempty"`
+	Depth                int       `json:"depth"`
+	ScreenshotEvidenceID string    `json:"screenshot_evidence_id,omitempty"`
+	ConsoleErrorCount    int       `json:"console_error_count"`
+	FailedRequestCount   int       `json:"failed_request_count"`
+	DiscoveredAt         time.Time `json:"discovered_at"`
+	CreatedAt            time.Time `json:"created_at"`
+}
+
+type DiscoveredLink struct {
+	ID             string    `json:"id"`
+	DiscoveryRunID string    `json:"discovery_run_id"`
+	SourcePageID   string    `json:"source_page_id"`
+	Href           string    `json:"href"`
+	NormalizedURL  string    `json:"normalized_url,omitempty"`
+	LinkText       string    `json:"link_text,omitempty"`
+	SameOrigin     bool      `json:"same_origin"`
+	Skipped        bool      `json:"skipped"`
+	SkipReason     string    `json:"skip_reason,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type DiscoveredForm struct {
+	ID                 string                `json:"id"`
+	DiscoveryRunID     string                `json:"discovery_run_id"`
+	PageID             string                `json:"page_id"`
+	FormName           string                `json:"form_name,omitempty"`
+	FormAction         string                `json:"form_action,omitempty"`
+	FormMethod         string                `json:"form_method,omitempty"`
+	FieldCount         int                   `json:"field_count"`
+	PasswordFieldCount int                   `json:"password_field_count"`
+	SubmitButtonCount  int                   `json:"submit_button_count"`
+	Classification     string                `json:"classification,omitempty"`
+	SkippedReason      string                `json:"skipped_reason,omitempty"`
+	Fields             []DiscoveredFormField `json:"fields,omitempty"`
+	CreatedAt          time.Time             `json:"created_at"`
+}
+
+type DiscoveredFormField struct {
+	ID          string    `json:"id"`
+	FormID      string    `json:"form_id"`
+	FieldName   string    `json:"field_name,omitempty"`
+	FieldType   string    `json:"field_type,omitempty"`
+	Placeholder string    `json:"placeholder,omitempty"`
+	Label       string    `json:"label,omitempty"`
+	Required    bool      `json:"required"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type DiscoverySummary struct {
+	TotalPages           int `json:"total_pages"`
+	TotalLinks           int `json:"total_links"`
+	TotalForms           int `json:"total_forms"`
+	TotalConsoleErrors   int `json:"total_console_errors"`
+	TotalFailedRequests  int `json:"total_failed_requests"`
+	TotalFindings        int `json:"total_findings"`
+	SkippedLinks         int `json:"skipped_links"`
+	ExternalLinksSkipped int `json:"external_links_skipped"`
+	UnsafeLinksSkipped   int `json:"unsafe_links_skipped"`
+	PagesWithScreenshots int `json:"pages_with_screenshots"`
+}
+
+type DiscoveryMap struct {
+	Run      DiscoveryRun     `json:"run"`
+	Project  Project          `json:"project"`
+	Summary  DiscoverySummary `json:"summary"`
+	Pages    []DiscoveredPage `json:"pages"`
+	Links    []DiscoveredLink `json:"links"`
+	Forms    []DiscoveredForm `json:"forms"`
+	Findings []Finding        `json:"findings"`
+	Evidence []Evidence       `json:"evidence"`
+}
+
+type DiscoveryReport struct {
+	GeneratedAt time.Time        `json:"generated_at"`
+	Run         DiscoveryRun     `json:"run"`
+	Project     Project          `json:"project"`
+	Settings    map[string]any   `json:"settings"`
+	Summary     DiscoverySummary `json:"summary"`
+	Pages       []DiscoveredPage `json:"pages"`
+	Links       []DiscoveredLink `json:"links"`
+	Forms       []DiscoveredForm `json:"forms"`
+	Findings    []Finding        `json:"findings"`
+	Evidence    []Evidence       `json:"evidence"`
+	SafetyNotes []string         `json:"safety_notes"`
+	Limitations []string         `json:"limitations"`
+	Metadata    map[string]any   `json:"metadata"`
 }
 
 type AIProvider struct {
