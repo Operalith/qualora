@@ -36,4 +36,4 @@ npm run build
 npm run dev
 ```
 
-The worker consumes Redis jobs from `RUN_QUEUE` and `TEST_PLAN_EXECUTION_QUEUE` and writes output directly to PostgreSQL for this MVP. Authorization check run jobs are carried on the browser run queue in v0.10.
+The worker consumes Redis jobs from `RUN_QUEUE` and `TEST_PLAN_EXECUTION_QUEUE` and writes output directly to PostgreSQL for this MVP. Authorization check run jobs are carried on the browser run queue in v0.11.

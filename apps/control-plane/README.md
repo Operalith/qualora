@@ -9,6 +9,7 @@ Responsibilities:
 - Policy validation.
 - Worker job scheduling.
 - Metadata persistence.
+- Local first-run admin setup and session authentication.
 - JSON and HTML report access.
 - Stored evidence object access by evidence ID.
 - Optional AI provider management.
@@ -43,8 +44,20 @@ The service expects PostgreSQL and Redis. Defaults are suitable for local develo
 - `EVIDENCE_DIR=/tmp/qualora-evidence`
 - `CORS_ALLOWED_ORIGINS=http://localhost:3000`
 - `QUALORA_ENCRYPTION_KEY=qualora-insecure-dev-key-change-me`
+- `QUALORA_SESSION_TTL_HOURS=12`
+- `QUALORA_COOKIE_SECURE=false`
+- `QUALORA_AUTH_DISABLED=false`
 
-Current report endpoints:
+Public endpoints:
+
+- `GET /healthz`
+- `GET /api/v1/setup/status`
+- `POST /api/v1/setup/admin`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+
+Current protected report and workflow endpoints include:
 
 - `GET /api/v1/runs/{run_id}/report`
 - `GET /api/v1/runs/{run_id}/report.html`
@@ -84,4 +97,6 @@ Current report endpoints:
 - `GET /api/v1/test-plan-executions/{execution_id}/report`
 - `GET /api/v1/test-plan-executions/{execution_id}/report.html`
 
-The default encryption key is for local development only. Set a strong `QUALORA_ENCRYPTION_KEY` before storing real AI provider credentials or credential profiles.
+After setup, project, credential, AI provider, evidence, report, API spec, authorization, and test-plan endpoints require a local admin session. Mutating protected requests must send `X-Qualora-CSRF` with the value from the `qualora_csrf` cookie.
+
+The default encryption key is for local development only. Set a strong `QUALORA_ENCRYPTION_KEY` before storing real AI provider credentials or credential profiles. `QUALORA_AUTH_DISABLED=true` is a local development/debugging escape hatch only.

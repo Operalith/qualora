@@ -16,11 +16,16 @@ import type {
   AuthorizationCheckRun,
   AuthorizationCheckRunInput,
   AuthenticatedBrowserSmokeInput,
+  AuthResponse,
   CreateProjectInput,
   CredentialProfile,
   CredentialProfileInput,
+  LoginInput,
+  MeResponse,
   Project,
   Report,
+  SetupAdminInput,
+  SetupStatus,
   TestPlan,
   TestPlanExecution,
   TestPlanExecutionDetail,
@@ -60,6 +65,34 @@ export function testPlanExecutionHTMLReportURL(executionID: string): string {
 
 export function authorizationCheckHTMLReportURL(runID: string): string {
   return `${API_BASE_URL}/api/v1/authorization-check-runs/${runID}/report.html`;
+}
+
+export async function getSetupStatus(): Promise<SetupStatus> {
+  return request<SetupStatus>("/api/v1/setup/status");
+}
+
+export async function setupAdmin(input: SetupAdminInput): Promise<AuthResponse> {
+  return request<AuthResponse>("/api/v1/setup/admin", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function login(input: LoginInput): Promise<AuthResponse> {
+  return request<AuthResponse>("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function logout(): Promise<void> {
+  await request<{ logged_out: boolean }>("/api/v1/auth/logout", {
+    method: "POST"
+  });
+}
+
+export async function me(): Promise<MeResponse> {
+  return request<MeResponse>("/api/v1/auth/me");
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -322,11 +355,15 @@ export async function getTestPlanExecutionReport(executionID: string): Promise<T
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method || "GET").toUpperCase();
+  const csrfToken = csrfTokenFromCookie();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       Accept: "application/json",
       ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(requiresCSRF(method) && csrfToken ? { "X-Qualora-CSRF": csrfToken } : {}),
       ...init.headers
     }
   });
@@ -334,9 +371,24 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const payload = text ? JSON.parse(text) : {};
   if (!response.ok) {
     const message = payload?.error?.message || `${response.status} ${response.statusText}`;
+    if (response.status === 401) {
+      window.dispatchEvent(new CustomEvent("qualora:unauthorized"));
+    }
     throw new Error(message);
   }
   return payload as T;
+}
+
+function requiresCSRF(method: string): boolean {
+  return !["GET", "HEAD", "OPTIONS"].includes(method);
+}
+
+function csrfTokenFromCookie(): string {
+  const entry = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("qualora_csrf="));
+  return entry ? decodeURIComponent(entry.slice("qualora_csrf=".length)) : "";
 }
 
 function normalizeBaseURL(value: string): string {

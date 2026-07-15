@@ -8,6 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
+| v0.11.0-alpha | Best-effort alpha support |
 | v0.10.0-alpha | Best-effort alpha support |
 | v0.9.0-alpha | Best-effort alpha support |
 | v0.8.0-alpha | Best-effort alpha support |
@@ -36,7 +37,7 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.10.0-alpha API and web UI do not include Qualora user authentication. Expose them only in trusted local or self-hosted environments, or put them behind an external access-control layer.
+The v0.11.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
 
 See [docs/security-model.md](docs/security-model.md) for the current alpha safety model.
 
@@ -54,6 +55,9 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - AI-assisted test planning must use sanitized project/run/report metadata, with redaction enabled by default.
 - AI-generated test plans must remain reviewable suggestions and must not be executed automatically.
 - Credential profile username/password values must be encrypted at rest and never returned raw by API responses.
+- Local admin passwords must be hashed strongly and never returned by API responses.
+- Session tokens must be stored hashed, delivered only as HTTP-only cookies, and never logged or returned in JSON.
+- Mutating protected API requests must require CSRF validation.
 - Deterministic login checks must only use configured selectors on the configured login form.
 - Authenticated browser smoke must not expose cookies, session storage, local storage, authorization headers, tokens, or raw credentials.
 - Role-aware authorization checks must be explicit, deterministic, read-only, same-origin or allowed-host enforced, and limited to one configured target navigation after selector-based login.

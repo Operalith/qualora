@@ -10,7 +10,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.10.0-alpha` Docker Compose MVP working.
+- Keep the `v0.11.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
@@ -22,6 +22,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Project-scoped encrypted credential profiles and deterministic selector-based login checks.
 - Authenticated browser smoke runs for one configured same-origin target path.
 - Explicit role-aware authorization checks for configured browser URL targets.
+- Local first-run admin setup and session-protected API/web UI access.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
 - Redis for queues and short-lived run state.
@@ -48,7 +49,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Prefer simple, explicit code over framework-heavy abstractions.
 - Do not introduce paid SaaS assumptions.
 - Do not add Kubernetes-only concepts before the Docker Compose path works.
-- Keep the web UI focused on alpha workflows; do not add complex design systems, auth, teams, billing, or SaaS assumptions without an explicit request.
+- Keep the web UI focused on alpha workflows; do not add complex design systems, multi-user management, teams, billing, or SaaS assumptions without an explicit request.
 - Do not introduce Temporal, OWASP ZAP, arbitrary login automation, or active security scanning in the MVP without an explicit request.
 - Do not introduce autonomous AI browser control or native non-OpenAI-compatible provider SDKs without an explicit request.
 - Do not execute AI-generated test plan steps automatically or as free-form model instructions.
@@ -68,6 +69,9 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 ## Security And Safety Rules
 
 - Never log test credentials, tokens, cookies, authorization headers, or secret values.
+- Never log or return local admin passwords, password hashes, session tokens, CSRF tokens, credential profile secrets, or AI provider secrets.
+- Local auth must remain simple unless explicitly expanded: one admin role, first-run setup, HTTP-only session cookie, CSRF protection for mutating protected API requests.
+- Do not add SSO/OIDC/SAML, password reset, enterprise RBAC, teams, or multi-tenancy without an explicit request.
 - Redact secrets in errors, traces, reports, and debug output.
 - All browser, API, and security checks must enforce project allowed hosts.
 - Security checks are passive and non-destructive by default.

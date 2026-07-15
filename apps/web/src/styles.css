@@ -157,6 +157,43 @@ button.secondary:hover,
   padding: 28px;
 }
 
+.auth-shell {
+  align-items: center;
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.auth-panel {
+  justify-self: center;
+  max-width: 460px;
+  width: 100%;
+}
+
+.auth-brand {
+  color: var(--brand);
+  display: block;
+  margin-bottom: 22px;
+}
+
+.auth-brand span {
+  display: block;
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.auth-brand small {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
 .topbar,
 .section-heading {
   align-items: flex-start;
@@ -167,6 +204,30 @@ button.secondary:hover,
 
 .topbar {
   margin-bottom: 20px;
+}
+
+.topbar-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.current-user {
+  color: var(--text);
+  min-width: 0;
+  text-align: right;
+}
+
+.current-user span,
+.current-user small {
+  display: block;
+}
+
+.current-user small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .eyebrow {

@@ -252,7 +252,7 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
       <div class="metric"><span>Skipped</span><strong>{{ .SkippedOperations }}</strong></div>
     </div>
     {{ end }}
-    <p class="subtle">Qualora v0.9 executes only safe read-only API operations. Request bodies, response bodies, auth headers, cookies, and tokens are not stored.</p>
+    <p class="subtle">Qualora executes only safe read-only API operations in this alpha. Request bodies, response bodies, auth headers, cookies, and tokens are not stored.</p>
     <table>
       <thead>
         <tr><th>Status</th><th>Method</th><th>Path</th><th>HTTP</th><th>Duration</th><th>Content Type</th><th>Reason/Error</th></tr>

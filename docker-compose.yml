@@ -19,6 +19,9 @@ services:
       S3_FORCE_PATH_STYLE: "true"
       EVIDENCE_DIR: /var/lib/qualora/evidence
       QUALORA_ENCRYPTION_KEY: ${QUALORA_ENCRYPTION_KEY:-qualora-insecure-dev-key-change-me}
+      QUALORA_SESSION_TTL_HOURS: ${QUALORA_SESSION_TTL_HOURS:-12}
+      QUALORA_COOKIE_SECURE: ${QUALORA_COOKIE_SECURE:-false}
+      QUALORA_AUTH_DISABLED: ${QUALORA_AUTH_DISABLED:-false}
       CORS_ALLOWED_ORIGINS: http://localhost:${QUALORA_WEB_PORT:-3000}
     volumes:
       - qualora_evidence:/var/lib/qualora/evidence

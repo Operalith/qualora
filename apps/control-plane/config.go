@@ -23,6 +23,9 @@ type Config struct {
 	S3ForcePath        bool
 	EncryptionKey      string
 	CORSOrigins        []string
+	SessionTTL         time.Duration
+	CookieSecure       bool
+	AuthDisabled       bool
 	ShutdownTimeout    time.Duration
 }
 
@@ -44,6 +47,9 @@ func LoadConfig() Config {
 		S3ForcePath:        boolEnv("S3_FORCE_PATH_STYLE", true),
 		EncryptionKey:      env("QUALORA_ENCRYPTION_KEY", "qualora-insecure-dev-key-change-me"),
 		CORSOrigins:        csvEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
+		SessionTTL:         time.Duration(intEnv("QUALORA_SESSION_TTL_HOURS", 12)) * time.Hour,
+		CookieSecure:       boolEnv("QUALORA_COOKIE_SECURE", false),
+		AuthDisabled:       boolEnv("QUALORA_AUTH_DISABLED", false),
 		ShutdownTimeout:    10 * time.Second,
 	}
 }
@@ -75,4 +81,22 @@ func boolEnv(key string, fallback bool) bool {
 		return fallback
 	}
 	return value == "1" || value == "true" || value == "yes"
+}
+
+func intEnv(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	var parsed int
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return fallback
+		}
+		parsed = parsed*10 + int(r-'0')
+	}
+	if parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }

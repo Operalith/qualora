@@ -4,11 +4,14 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.10.0-alpha` adds explicit role-aware authorization checks on top of credential profiles. Qualora remains deterministic and useful without AI: browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
+`v0.11.0-alpha` adds local first-run admin setup and session-based authentication for the self-hosted API and web UI. Qualora remains deterministic and useful without AI: browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
 
 ## Current Alpha Capabilities
 
 - Run locally with Docker Compose.
+- Complete first-run local admin setup.
+- Protect project data, credential profiles, AI configuration, reports, evidence, runs, API specs, test plans, and authorization reports behind local authentication.
+- Use HTTP-only session cookies with CSRF protection for mutating API requests.
 - Create QA projects through an API.
 - Create QA projects through a minimal web UI.
 - Start runs that can include browser and API jobs.
@@ -57,7 +60,7 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, credential_profiles, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
@@ -108,6 +111,8 @@ Open the web UI:
 http://localhost:3000
 ```
 
+On a fresh database, the web UI opens a first-run setup screen for the local admin account before showing project data. The smoke script performs the same setup automatically for demo environments.
+
 Run the smoke tests:
 
 ```bash
@@ -138,10 +143,42 @@ QUALORA_API_URL=http://localhost:18080 QUALORA_API_BASE_URL=http://localhost:180
 
 ## API Examples
 
+The API is protected after first-run setup. For curl-based local testing, create or log in to the local admin account and reuse the cookie jar. Mutating requests must include the CSRF token.
+
+```bash
+COOKIE_JAR=/tmp/qualora.cookies
+
+curl -s -c "$COOKIE_JAR" http://localhost:8080/api/v1/setup/status | python3 -m json.tool
+
+curl -s -c "$COOKIE_JAR" http://localhost:8080/api/v1/setup/admin \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "email": "admin@qualora.local",
+    "display_name": "Qualora Admin",
+    "password": "change-me-to-a-long-local-password",
+    "confirm_password": "change-me-to-a-long-local-password"
+  }' | python3 -m json.tool
+
+CSRF=$(python3 - "$COOKIE_JAR" <<'PY'
+import http.cookiejar, sys
+jar = http.cookiejar.MozillaCookieJar(sys.argv[1])
+jar.load(ignore_discard=True, ignore_expires=True)
+for cookie in jar:
+    if cookie.name == "qualora_csrf":
+        print(cookie.value)
+        break
+PY
+)
+```
+
+If setup is already complete, call `POST /api/v1/auth/login` with the same cookie jar and then refresh `CSRF` from the cookie jar. Use `-b "$COOKIE_JAR"` for protected `GET` requests, and use `-b "$COOKIE_JAR" -c "$COOKIE_JAR" -H "X-Qualora-CSRF: ${CSRF}"` for protected `POST`, `PUT`, and `DELETE` requests.
+
 Create a browser project:
 
 ```bash
 curl -s http://localhost:8080/api/v1/projects \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "Example Web App",
@@ -158,6 +195,8 @@ Create an API/OpenAPI project:
 
 ```bash
 curl -s http://localhost:8080/api/v1/projects \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "Example API",
@@ -207,6 +246,8 @@ Create a project and save its ID:
 
 ```bash
 PROJECT_ID=$(curl -s http://localhost:8080/api/v1/projects \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "Example App",
@@ -406,7 +447,7 @@ open "http://localhost:8080/api/v1/test-plan-executions/${EXECUTION_ID}/report.h
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.10.0-alpha`:
+Supported provider type in `v0.11.0-alpha`:
 
 - `openai-compatible`
 
@@ -426,7 +467,7 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.10.0-alpha`, a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks and role-aware authorization checks are separate deterministic browser-worker paths and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.11.0-alpha`, a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks and role-aware authorization checks are separate deterministic browser-worker paths and are not AI-controlled.
 
 ## Report Example
 
@@ -521,7 +562,7 @@ The alpha is safe by default:
 - Login automation is not autonomous and never uses AI browser control.
 - Secrets, credentials, cookies, and authorization headers must not be logged.
 - Screenshots and reports should be treated as sensitive evidence artifacts.
-- The web UI has no authentication yet and is intended for trusted local/self-hosted alpha environments only.
+- The web UI and API require local admin authentication after first-run setup, but this alpha is still intended for trusted local/self-hosted environments only.
 - AI is disabled until a provider is configured.
 - AI prompts are built from sanitized report data only.
 - Redaction is enabled by default.
@@ -536,7 +577,8 @@ See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.
 
 ## Current Limitations
 
-- No Qualora user authentication or authorization.
+- Local authentication is limited to one admin role and is not production-hardened identity management.
+- No user management UI, password reset flow, SSO/OIDC/SAML, multi-user RBAC, teams, or multi-tenancy.
 - Web UI is alpha and intentionally minimal.
 - AI provider management, AI analysis, AI-assisted test planning, and safe test plan execution are alpha and optional.
 - Only OpenAI-compatible chat completion providers are supported.
@@ -577,6 +619,7 @@ Near-term work:
 - Move AI analysis to an async worker path.
 - Move AI test planning to an async analyzer worker path.
 - Harden safe test plan execution status/retry handling.
+- Add audit logging, login rate limiting, and local auth hardening.
 - Expand OpenAPI validation.
 - Add passive security checks.
 

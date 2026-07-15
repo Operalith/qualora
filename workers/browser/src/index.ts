@@ -562,7 +562,7 @@ async function executeAuthorizationCheck(run: AuthorizationCheckRunContext, chec
   let targetURL = check.target_url || check.path || "";
 
   if (check.type !== "browser_url") {
-    const skipReason = "authenticated API authorization checks are not implemented in v0.10.0-alpha";
+    const skipReason = "authenticated API authorization checks are not implemented in v0.11.0-alpha";
     const evidenceID = await insertAuthorizationObservation(run, check, null, {
       target_url: targetURL,
       actual_outcome: "unknown",

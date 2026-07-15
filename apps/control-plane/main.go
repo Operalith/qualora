@@ -41,7 +41,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := NewApp(NewStore(db), queue, NewEvidenceStore(cfg), secretBox, NewOpenAICompatibleClient(), logger, cfg.CORSOrigins)
+	app := NewApp(NewStore(db), queue, NewEvidenceStore(cfg), secretBox, NewOpenAICompatibleClient(), logger, cfg.CORSOrigins, AuthConfig{
+		SessionTTL:   cfg.SessionTTL,
+		CookieSecure: cfg.CookieSecure,
+		AuthDisabled: cfg.AuthDisabled,
+	})
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           app.Routes(),

@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.10.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with a minimal web UI, human-friendly reports, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
+Qualora v0.11.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, human-friendly reports, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,7 +10,7 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: projects, credential_profiles, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
@@ -38,11 +38,16 @@ qualora-api
 
 ### `qualora-api`
 
-The Go control plane exposes the HTTP API, validates project scope, persists metadata, creates per-run jobs, queues worker jobs, and renders JSON/HTML reports.
+The Go control plane exposes the HTTP API, validates project scope, persists metadata, creates per-run jobs, queues worker jobs, renders JSON/HTML reports, and enforces local session authentication for protected API routes.
 
 Current endpoints:
 
 - `GET /healthz`
+- `GET /api/v1/setup/status`
+- `POST /api/v1/setup/admin`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
 - `POST /api/v1/projects`
 - `GET /api/v1/projects`
 - `GET /api/v1/projects/{project_id}`
@@ -119,7 +124,7 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - Login summary and login observation metadata in run reports.
 - Authorization check creation, listing, enable/disable, deletion, run history, JSON report display, HTML report links, findings, and evidence display.
 
-It has no authentication in this alpha and should be exposed only in trusted local/self-hosted environments.
+On a fresh database it shows a first-run local admin setup screen. After setup, project data, credential profiles, AI providers, runs, reports, evidence, API specs, test plans, and authorization reports require the local admin session. The UI is still alpha and should be exposed only in trusted local/self-hosted environments.
 
 ### `qualora-worker-browser`
 
@@ -163,7 +168,7 @@ Login evidence is stored as `login_observations` metadata plus screenshots when 
 
 ### Safe API Smoke Execution
 
-The v0.9 spec-driven API smoke flow runs in the Go control plane. It imports OpenAPI 3.x specs from project-scoped URLs or inline JSON/YAML, stores discovered operations, classifies safe operations, and persists skip reasons before any API test execution.
+The imported-spec API smoke flow runs in the Go control plane. It imports OpenAPI 3.x specs from project-scoped URLs or inline JSON/YAML, stores discovered operations, classifies safe operations, and persists skip reasons before any API test execution.
 
 Safe by default means:
 
@@ -197,10 +202,20 @@ It does not perform authenticated API checks, request body generation, schema fu
 
 This worker remains available for legacy project-level API jobs. New imported-spec API smoke runs use the control-plane executor so operation discovery and result rows are first-class API/UI concepts.
 
+### Local Authentication
+
+Qualora stores one local admin user and session records in PostgreSQL for this alpha. Passwords are hashed with Argon2id. Sessions use an HTTP-only `qualora_session` cookie plus a separate `qualora_csrf` cookie that must match the `X-Qualora-CSRF` header for mutating protected API requests.
+
+Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
+
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.11.0-alpha`.
+
 ### PostgreSQL
 
 PostgreSQL stores durable metadata:
 
+- `local_users`
+- `user_sessions`
 - `projects`
 - `credential_profiles`
 - `test_runs`
@@ -256,7 +271,7 @@ Provider records store:
 - Safe-send toggles for screenshots, HTML, and network bodies.
 - Redaction setting, enabled by default.
 
-For v0.9, AI analysis and AI test planning run synchronously in the control plane. The database models are separated so both paths can move to a dedicated analyzer worker later.
+For this alpha, AI analysis and AI test planning run synchronously in the control plane. The database models are separated so both paths can move to a dedicated analyzer worker later.
 
 The safe AI input builder includes only sanitized report data such as run status, summary counts, finding titles/summaries, safe evidence metadata, browser/API/login metadata, API smoke result summaries, and job metadata. It strips or redacts URL queries, cookies, authorization values, usernames, tokens, passwords, API keys, session IDs, JWT-looking strings, full response bodies, full HTML, and secret-looking fields. Screenshots, HTML, request bodies, response bodies, browser storage, auth headers, cookies, and network bodies are not sent by default.
 

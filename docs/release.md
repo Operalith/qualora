@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.10.0-alpha is the tenth public alpha release. It adds role metadata on credential profiles, explicit browser URL authorization checks, authorization run JSON/HTML reports, web UI authorization workflows, and deterministic demo role coverage while keeping AI optional and test execution conservative.
+Qualora v0.11.0-alpha is the eleventh public alpha release. It adds local first-run admin setup, session-based protection for the API and web UI, CSRF protection for mutating API requests, and smoke coverage for setup/login/logout/protected-route behavior while keeping the existing deterministic QA workflows intact.
 
 ## Pre-Release Checklist
 
@@ -22,6 +22,13 @@ Confirm:
 
 - The API returns `{"status":"ok"}` from `/healthz`.
 - The web UI is reachable at `http://localhost:3000`.
+- A fresh database requires first-run admin setup before project data is visible.
+- Setup creates a local admin user and does not return the password or password hash.
+- A second setup attempt is rejected after the admin user exists.
+- Login succeeds with the local admin account and sets HTTP-only session plus CSRF cookies.
+- `/api/v1/auth/me` reports the authenticated admin session.
+- Protected endpoints reject unauthenticated requests.
+- Logout clears the session and protected endpoints are rejected afterward.
 - The smoke script starts the local `demo-web`, `demo-api`, and `fake-llm` smoke services.
 - The smoke script creates browser and API projects.
 - The smoke script creates a demo credential profile.
@@ -61,17 +68,17 @@ Confirm:
 - JSON report URLs work.
 - HTML report URLs work and render a self-contained report.
 - Screenshot evidence uses an `s3://qualora-evidence/...` URI when MinIO is healthy.
-- Documentation does not claim unsupported Qualora authentication, authenticated API testing, arbitrary login automation, active security scanning, destructive API testing, schema fuzzing, trace export, autonomous AI browser control, automatic/free-form execution of generated test plans, native Anthropic/Gemini support, or full browser/API test coverage.
+- Documentation does not claim unsupported multi-user management, password reset, SSO/OIDC/SAML, enterprise RBAC, multi-tenancy, authenticated API testing, arbitrary login automation, active security scanning, destructive API testing, schema fuzzing, trace export, autonomous AI browser control, automatic/free-form execution of generated test plans, native Anthropic/Gemini support, or full browser/API test coverage.
 
 ## Tagging
 
 ```bash
 git status --short
 git add .
-git commit -m "feat: add role-aware authorization checks for v0.10.0-alpha"
-git tag -a v0.10.0-alpha -m "v0.10.0-alpha"
+git commit -m "feat: add local auth for v0.11.0-alpha"
+git tag -a v0.11.0-alpha -m "v0.11.0-alpha"
 git push origin main
-git push origin v0.10.0-alpha
+git push origin v0.11.0-alpha
 ```
 
 ## GitHub Release
@@ -79,7 +86,7 @@ git push origin v0.10.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.10.0-alpha
+Qualora v0.11.0-alpha
 ```
 
-Use [release-notes/v0.10.0-alpha.md](release-notes/v0.10.0-alpha.md) as the release body.
+Use [release-notes/v0.11.0-alpha.md](release-notes/v0.11.0-alpha.md) as the release body.

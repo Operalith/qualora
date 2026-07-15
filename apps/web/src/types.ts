@@ -12,6 +12,46 @@ export type Project = {
   updated_at: string;
 };
 
+export type SetupStatus = {
+  setup_required: boolean;
+  version: string;
+};
+
+export type AuthUser = {
+  id: string;
+  email: string;
+  display_name: string;
+  role: "admin";
+  last_login_at?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SetupAdminInput = {
+  display_name: string;
+  email: string;
+  password: string;
+  confirm_password: string;
+};
+
+export type LoginInput = {
+  email: string;
+  password: string;
+};
+
+export type AuthResponse = {
+  user: AuthUser;
+  expires_at: string;
+  csrf_token?: string;
+  setup_status?: string;
+};
+
+export type MeResponse = {
+  authenticated: boolean;
+  user?: AuthUser;
+  expires_at?: string;
+};
+
 export type CreateProjectInput = {
   name: string;
   frontend_url: string;

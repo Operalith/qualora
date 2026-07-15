@@ -4,6 +4,35 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.11.0-alpha] - 2026-07-15
+
+### Added
+
+- First-run local admin setup with `GET /api/v1/setup/status` and `POST /api/v1/setup/admin`.
+- Local admin login, logout, and current-user endpoints.
+- Argon2id password hashing and database-backed session records with hashed session/CSRF tokens.
+- HTTP-only session cookie plus CSRF cookie/header protection for mutating authenticated API requests.
+- Authentication middleware protecting projects, runs, reports, evidence downloads, AI providers, credential profiles, API specs, test plans, and authorization checks.
+- Web UI setup, login, current-user, and logout states.
+- Smoke coverage for setup, login, logout, protected endpoint rejection before login, authenticated smoke flow, and protected authorization report/evidence access.
+
+### Changed
+
+- The API and web UI are no longer openly usable after first-run setup; health and setup/auth endpoints remain public.
+- Package metadata has been updated to `0.11.0-alpha`.
+
+### Security
+
+- Password hashes and session tokens are never returned by API responses.
+- Session token hashes, not raw tokens, are stored in PostgreSQL.
+- Evidence and HTML/JSON reports require authentication.
+
+### Known Limitations
+
+- One local `admin` role only.
+- No multi-tenancy, SSO/OIDC/SAML, user-management UI, or advanced RBAC yet.
+- Rate limiting and audit logging are not implemented in v0.11.
+
 ## [v0.10.0-alpha] - 2026-07-15
 
 ### Added

@@ -1,14 +1,17 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.10.0-alpha
-  description: API for creating QA projects, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading reports, and downloading stored evidence objects.
+  version: 0.11.0-alpha
+  description: API for first-run local admin setup, local session authentication, creating QA projects, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
+security:
+  - QualoraSession: []
 paths:
   /healthz:
     get:
       summary: Health check
+      security: []
       responses:
         "200":
           description: Service is healthy
@@ -23,6 +26,86 @@ paths:
                     example: ok
         "503":
           $ref: "#/components/responses/Error"
+  /api/v1/setup/status:
+    get:
+      summary: Get first-run setup status
+      security: []
+      responses:
+        "200":
+          description: Setup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupStatus"
+  /api/v1/setup/admin:
+    post:
+      summary: Create the first local admin
+      description: Public only while no local user exists. Creates an admin and sets session/CSRF cookies.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupAdminRequest"
+      responses:
+        "201":
+          description: Created admin session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/auth/login:
+    post:
+      summary: Log in with the local admin account
+      description: Sets an HTTP-only session cookie and a CSRF cookie. Mutating API requests must include the CSRF cookie value in `X-Qualora-CSRF`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/v1/auth/logout:
+    post:
+      summary: Log out current session
+      description: Revokes the current session when present and clears auth cookies.
+      security: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [logged_out]
+                properties:
+                  logged_out:
+                    type: boolean
+  /api/v1/auth/me:
+    get:
+      summary: Get current authenticated user
+      security: []
+      responses:
+        "200":
+          description: Current auth state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
   /api/v1/projects:
     post:
       summary: Create a project
@@ -1021,6 +1104,12 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 components:
+  securitySchemes:
+    QualoraSession:
+      type: apiKey
+      in: cookie
+      name: qualora_session
+      description: HTTP-only local admin session cookie. Mutating requests also require `X-Qualora-CSRF` with the CSRF cookie value.
   parameters:
     ProjectID:
       name: project_id
@@ -1100,6 +1189,97 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    SetupStatus:
+      type: object
+      required: [setup_required, version]
+      properties:
+        setup_required:
+          type: boolean
+        version:
+          type: string
+          example: 0.11.0-alpha
+    SetupAdminRequest:
+      type: object
+      additionalProperties: false
+      required: [email, display_name, password]
+      properties:
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        password:
+          type: string
+          format: password
+          minLength: 12
+        confirm_password:
+          type: string
+          format: password
+          minLength: 12
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    AuthUser:
+      type: object
+      required: [id, email, display_name, role, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [admin]
+        last_login_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AuthResponse:
+      type: object
+      required: [user, expires_at]
+      properties:
+        user:
+          $ref: "#/components/schemas/AuthUser"
+        expires_at:
+          type: string
+          format: date-time
+        csrf_token:
+          type: string
+          description: Also set as the `qualora_csrf` cookie for browser clients.
+        setup_status:
+          type: string
+          example: completed
+    MeResponse:
+      type: object
+      required: [authenticated]
+      properties:
+        authenticated:
+          type: boolean
+        user:
+          $ref: "#/components/schemas/AuthUser"
+        expires_at:
+          type: string
+          format: date-time
     CreateProjectRequest:
       type: object
       additionalProperties: false
@@ -1131,7 +1311,7 @@ components:
         destructive_actions:
           type: boolean
           default: false
-          description: Destructive actions are off by default and are not used by safe test plan execution in v0.7.0-alpha.
+          description: Destructive actions are off by default and are not used by safe API smoke or safe test plan execution in this alpha.
         allow_private_targets:
           type: boolean
           default: false

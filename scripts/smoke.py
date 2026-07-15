@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import time
+import http.cookiejar
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -34,6 +35,11 @@ DEMO_API_HEALTH_URL = os.environ.get("DEMO_API_HEALTH_URL", "http://localhost:18
 FAKE_LLM_BASE_URL = os.environ.get("QUALORA_FAKE_LLM_URL", "http://fake-llm:8080/v1")
 FAKE_LLM_HEALTH_URL = os.environ.get("FAKE_LLM_HEALTH_URL", "http://localhost:18083/health")
 TIMEOUT_SECONDS = int(os.environ.get("QUALORA_SMOKE_TIMEOUT_SECONDS", "120"))
+QUALORA_ADMIN_EMAIL = os.environ.get("QUALORA_ADMIN_EMAIL", "admin@qualora.local")
+QUALORA_ADMIN_PASSWORD = os.environ.get("QUALORA_ADMIN_PASSWORD", "qualora-admin-password")
+QUALORA_ADMIN_NAME = os.environ.get("QUALORA_ADMIN_NAME", "Qualora Admin")
+COOKIE_JAR = http.cookiejar.CookieJar()
+OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(COOKIE_JAR))
 
 
 def request(method, path, payload=None):
@@ -42,6 +48,9 @@ def request(method, path, payload=None):
     if payload is not None:
         body = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
+    csrf = csrf_token()
+    if method.upper() not in ("GET", "HEAD", "OPTIONS") and csrf:
+        headers["X-Qualora-CSRF"] = csrf
 
     req = urllib.request.Request(
         f"{API_URL}{path}",
@@ -50,7 +59,7 @@ def request(method, path, payload=None):
         method=method,
     )
     try:
-        with urllib.request.urlopen(req, timeout=20) as response:
+        with OPENER.open(req, timeout=20) as response:
             text = response.read().decode("utf-8")
             return json.loads(text) if text else {}
     except urllib.error.HTTPError as exc:
@@ -61,7 +70,7 @@ def request(method, path, payload=None):
 def fetch_text(path):
     req = urllib.request.Request(f"{API_URL}{path}", headers={"Accept": "text/html"}, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=20) as response:
+        with OPENER.open(req, timeout=20) as response:
             return response.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         text = exc.read().decode("utf-8")
@@ -71,11 +80,96 @@ def fetch_text(path):
 def fetch_binary(path):
     req = urllib.request.Request(f"{API_URL}{path}", headers={"Accept": "*/*"}, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=20) as response:
+        with OPENER.open(req, timeout=20) as response:
             return response.headers, response.read()
     except urllib.error.HTTPError as exc:
         text = exc.read().decode("utf-8")
         raise RuntimeError(f"GET {path} failed with HTTP {exc.code}: {text}") from exc
+
+
+def public_request(method, path, payload=None):
+    body = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(f"{API_URL}{path}", data=body, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=20) as response:
+        text = response.read().decode("utf-8")
+        return json.loads(text) if text else {}
+
+
+def expect_http_error(method, path, status):
+    try:
+        public_request(method, path)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8")
+        if exc.code != status:
+            raise RuntimeError(f"{method} {path} returned HTTP {exc.code}, expected {status}: {body}") from exc
+        return body
+    raise RuntimeError(f"{method} {path} unexpectedly succeeded; expected HTTP {status}")
+
+
+def csrf_token():
+    for cookie in COOKIE_JAR:
+        if cookie.name == "qualora_csrf":
+            return cookie.value
+    return ""
+
+
+def login_admin():
+    logged_in = request("POST", "/api/v1/auth/login", {"email": QUALORA_ADMIN_EMAIL, "password": QUALORA_ADMIN_PASSWORD})
+    if logged_in.get("user", {}).get("email") != QUALORA_ADMIN_EMAIL:
+        raise RuntimeError(f"login response did not include sanitized admin user: {logged_in}")
+    if not csrf_token():
+        raise RuntimeError("login did not set a CSRF cookie")
+    print(f"logged in as {logged_in['user']['email']}")
+    return logged_in
+
+
+def setup_and_login():
+    status = public_request("GET", "/api/v1/setup/status")
+    print(f"setup status: {json.dumps(status, indent=2)}")
+    if "0.11.0-alpha" not in status.get("version", ""):
+        raise RuntimeError(f"unexpected setup status version: {status}")
+    expect_http_error("GET", "/api/v1/projects", 401)
+    print("protected endpoint rejects unauthenticated requests")
+
+    if status.get("setup_required"):
+        created = request(
+            "POST",
+            "/api/v1/setup/admin",
+            {
+                "display_name": QUALORA_ADMIN_NAME,
+                "email": QUALORA_ADMIN_EMAIL,
+                "password": QUALORA_ADMIN_PASSWORD,
+                "confirm_password": QUALORA_ADMIN_PASSWORD,
+            },
+        )
+        print(f"created first admin: {created['user']['email']}")
+        if created["user"].get("password_hash") or created.get("password"):
+            raise RuntimeError("setup response exposed password material")
+        second = expect_http_error("POST", "/api/v1/setup/admin", 409)
+        if "setup_complete" not in second:
+            raise RuntimeError(f"second setup call did not report setup_complete: {second}")
+    else:
+        login_admin()
+
+    me_response = request("GET", "/api/v1/auth/me")
+    if not me_response.get("authenticated") or me_response.get("user", {}).get("email") != QUALORA_ADMIN_EMAIL:
+        raise RuntimeError(f"auth/me did not report the admin session: {me_response}")
+    protected = request("GET", "/api/v1/projects")
+    if "projects" not in protected:
+        raise RuntimeError(f"protected endpoint did not work after login: {protected}")
+
+    request("POST", "/api/v1/auth/logout", {})
+    logged_out = request("GET", "/api/v1/auth/me")
+    if logged_out.get("authenticated"):
+        raise RuntimeError(f"auth/me stayed authenticated after logout: {logged_out}")
+    expect_http_error("GET", "/api/v1/projects", 401)
+    print("logout cleared the session and protected endpoints reject again")
+
+    login_admin()
 
 
 def wait_for_url(url, timeout_seconds=30):
@@ -671,6 +765,9 @@ def run_authorization_checks(project, checks):
     if "screenshot" not in types or "authorization_observations" not in types:
         raise RuntimeError(f"authorization report missed expected evidence types: {types}")
     screenshot = next(item for item in evidence if item.get("type") == "screenshot")
+    expect_http_error("GET", f"/api/v1/authorization-check-runs/{run_id}/report", 401)
+    expect_http_error("GET", f"/api/v1/evidence/{screenshot['id']}", 401)
+    print("authorization report and evidence reject unauthenticated requests")
     headers, body = fetch_binary(f"/api/v1/evidence/{screenshot['id']}")
     if "image/png" not in headers.get("content-type", "") or not body.startswith(b"\x89PNG"):
         raise RuntimeError("authorization screenshot evidence was not downloadable PNG data")
@@ -688,6 +785,8 @@ def run_authorization_checks(project, checks):
 
 def main():
     print(f"Web UI: {WEB_URL}")
+    wait_for_url(f"{API_URL}/healthz")
+    setup_and_login()
 
     print("== AI provider smoke ==")
     wait_for_url(FAKE_LLM_HEALTH_URL)

@@ -34,7 +34,7 @@ type parsedOpenAPISpec struct {
 
 func ParseOpenAPISpec(raw string, sourceURL string, apiBaseURL string) (*parsedOpenAPISpec, error) {
 	if len([]byte(raw)) > maxStoredSpecBytes {
-		return nil, fmt.Errorf("OpenAPI document is too large for the v0.9 alpha import limit")
+		return nil, fmt.Errorf("OpenAPI document is too large for the current alpha import limit")
 	}
 
 	doc, err := decodeOpenAPIDocument(raw)
@@ -43,7 +43,7 @@ func ParseOpenAPISpec(raw string, sourceURL string, apiBaseURL string) (*parsedO
 	}
 	version := stringField(doc, "openapi")
 	if !strings.HasPrefix(version, "3.") {
-		return nil, fmt.Errorf("only OpenAPI 3.x documents are supported in v0.9 alpha")
+		return nil, fmt.Errorf("only OpenAPI 3.x documents are supported in this alpha")
 	}
 	paths := mapField(doc, "paths")
 	if len(paths) == 0 {
@@ -132,7 +132,7 @@ func classifyOperation(pathName string, method string, pathItem map[string]any, 
 	apiOperation.RequiresAuthentication = &requiresAuth
 
 	if _, ok := openAPISafeMethods[method]; !ok {
-		apiOperation.SkipReason = fmt.Sprintf("method %s is not read-only in v0.9", method)
+		apiOperation.SkipReason = fmt.Sprintf("method %s is not read-only in this alpha", method)
 		return apiOperation
 	}
 	if openAPISensitivePathPattern.MatchString(pathName) {

@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   API_BASE_URL,
   authorizationCheckHTMLReportURL,
@@ -19,6 +20,7 @@ import {
   getProject,
   getReport,
   getRun,
+  getSetupStatus,
   getTestPlan,
   getTestPlanExecutionReport,
   htmlReportURL,
@@ -32,8 +34,12 @@ import {
   listRuns,
   listTestPlanExecutions,
   listTestPlans,
+  login as loginUser,
+  logout,
+  me,
   previewTestPlanExecution,
   runAIAnalysis,
+  setupAdmin,
   startAuthorizationCheckRun,
   startAPISmokeRun,
   startAuthenticatedBrowserSmokeRun,
@@ -58,6 +64,7 @@ import type {
   AIProviderInput,
   AIProviderTestResult,
   AITestPlanInput,
+  AuthUser,
   AuthorizationCheck,
   AuthorizationCheckInput,
   AuthorizationCheckReport,
@@ -66,9 +73,11 @@ import type {
   CredentialProfile,
   CredentialProfileInput,
   Evidence,
+  LoginInput,
   Project,
   Report,
   RunJob,
+  SetupAdminInput,
   TestPlan,
   TestPlanExecution,
   TestPlanExecutionPreview,
@@ -102,6 +111,78 @@ const emptyProjects: LoadState<Project[]> = { data: [], loading: true, error: ""
 const emptyRuns: LoadState<TestRun[]> = { data: [], loading: true, error: "" };
 
 export default function App() {
+  const [auth, setAuth] = useState<{
+    loading: boolean;
+    setupRequired: boolean;
+    user: AuthUser | null;
+    version: string;
+    error: string;
+  }>({ loading: true, setupRequired: false, user: null, version: "0.11.0-alpha", error: "" });
+
+  const loadAuthState = useCallback(async () => {
+    setAuth((current) => ({ ...current, loading: true, error: "" }));
+    try {
+      const setup = await getSetupStatus();
+      if (setup.setup_required) {
+        setAuth({ loading: false, setupRequired: true, user: null, version: setup.version, error: "" });
+        return;
+      }
+      const current = await me();
+      setAuth({
+        loading: false,
+        setupRequired: false,
+        user: current.authenticated && current.user ? current.user : null,
+        version: setup.version,
+        error: ""
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAuth((current) => ({ ...current, loading: false, user: null, error: message }));
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAuthState();
+  }, [loadAuthState]);
+
+  useEffect(() => {
+    const listener = () => {
+      setAuth((current) => ({ ...current, user: null, setupRequired: false, error: "Your session expired. Please log in again." }));
+    };
+    window.addEventListener("qualora:unauthorized", listener);
+    return () => window.removeEventListener("qualora:unauthorized", listener);
+  }, []);
+
+  const completeSetup = async (input: SetupAdminInput) => {
+    const response = await setupAdmin(input);
+    setAuth({ loading: false, setupRequired: false, user: response.user, version: auth.version, error: "" });
+  };
+
+  const completeLogin = async (input: LoginInput) => {
+    const response = await loginUser(input);
+    setAuth({ loading: false, setupRequired: false, user: response.user, version: auth.version, error: "" });
+  };
+
+  const completeLogout = async () => {
+    await logout();
+    setAuth((current) => ({ ...current, user: null, setupRequired: false, error: "" }));
+    window.location.hash = "#/";
+  };
+
+  if (auth.loading) {
+    return <AuthFrame version={auth.version} title="Loading Qualora" subtitle="Checking local authentication state." />;
+  }
+  if (auth.setupRequired) {
+    return <SetupPage version={auth.version} error={auth.error} onSubmit={completeSetup} />;
+  }
+  if (!auth.user) {
+    return <LoginPage version={auth.version} message={auth.error} onSubmit={completeLogin} />;
+  }
+
+  return <AuthenticatedApp user={auth.user} version={auth.version} onLogout={completeLogout} />;
+}
+
+function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version: string; onLogout: () => Promise<void> }) {
   const [route, setRoute] = useHashRoute();
   const [projects, setProjects] = useState<LoadState<Project[]>>(emptyProjects);
   const [runs, setRuns] = useState<LoadState<TestRun[]>>(emptyRuns);
@@ -149,7 +230,7 @@ export default function App() {
       <aside className="sidebar">
         <a className="brand" href="#/">
           <span>Qualora</span>
-          <small>v0.10.0-alpha</small>
+          <small>{version}</small>
         </a>
         <nav>
           <a className={route.name === "dashboard" ? "active" : ""} href="#/">
@@ -183,9 +264,18 @@ export default function App() {
             <p className="eyebrow">Self-hosted QA</p>
             <h1>{titleForRoute(route)}</h1>
           </div>
-          <button type="button" className="secondary" onClick={() => void refresh()}>
-            Refresh
-          </button>
+          <div className="topbar-actions">
+            <div className="current-user">
+              <span>{user.display_name}</span>
+              <small>{user.email}</small>
+            </div>
+            <button type="button" className="secondary" onClick={() => void refresh()}>
+              Refresh
+            </button>
+            <button type="button" className="secondary" onClick={() => void onLogout()}>
+              Log out
+            </button>
+          </div>
         </header>
 
         {(projects.error || runs.error) && <Notice tone="danger" message={projects.error || runs.error} />}
@@ -221,6 +311,117 @@ export default function App() {
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
       </main>
     </div>
+  );
+}
+
+function AuthFrame({ version, title, subtitle, children }: { version: string; title: string; subtitle: string; children?: ReactNode }) {
+  return (
+    <main className="auth-shell">
+      <section className="auth-panel">
+        <a className="auth-brand" href="#/">
+          <span>Qualora</span>
+          <small>{version}</small>
+        </a>
+        <h1>{title}</h1>
+        <p className="muted">{subtitle}</p>
+        {children}
+      </section>
+    </main>
+  );
+}
+
+function SetupPage({ version, error, onSubmit }: { version: string; error: string; onSubmit: (input: SetupAdminInput) => Promise<void> }) {
+  const [form, setForm] = useState<SetupAdminInput>({
+    display_name: "Qualora Admin",
+    email: "admin@qualora.local",
+    password: "",
+    confirm_password: ""
+  });
+  const [message, setMessage] = useState(error);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setMessage("");
+    try {
+      await onSubmit(form);
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <AuthFrame version={version} title="Create Admin" subtitle="Complete first-run setup for this self-hosted Qualora instance.">
+      {message && <Notice tone="danger" message={message} />}
+      <form className="auth-form" onSubmit={(event) => void submit(event)}>
+        <label>
+          Display name
+          <input value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} required />
+        </label>
+        <label>
+          Email
+          <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required />
+        </label>
+        <label>
+          Password
+          <input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} minLength={12} required />
+        </label>
+        <label>
+          Confirm password
+          <input
+            type="password"
+            value={form.confirm_password}
+            onChange={(event) => setForm({ ...form, confirm_password: event.target.value })}
+            minLength={12}
+            required
+          />
+        </label>
+        <button type="submit" disabled={submitting}>
+          {submitting ? "Creating" : "Create admin"}
+        </button>
+      </form>
+    </AuthFrame>
+  );
+}
+
+function LoginPage({ version, message, onSubmit }: { version: string; message: string; onSubmit: (input: LoginInput) => Promise<void> }) {
+  const [form, setForm] = useState<LoginInput>({ email: "admin@qualora.local", password: "" });
+  const [error, setError] = useState(message);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      await onSubmit(form);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <AuthFrame version={version} title="Log In" subtitle="Use the local admin account for this Qualora instance.">
+      {error && <Notice tone="danger" message={error} />}
+      <form className="auth-form" onSubmit={(event) => void submit(event)}>
+        <label>
+          Email
+          <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required />
+        </label>
+        <label>
+          Password
+          <input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
+        </label>
+        <button type="submit" disabled={submitting}>
+          {submitting ? "Logging in" : "Log in"}
+        </button>
+      </form>
+    </AuthFrame>
   );
 }
 
@@ -456,7 +657,7 @@ function AIProvidersPage() {
         </div>
         <Notice
           tone="info"
-          message="This alpha build has no authentication. Only configure provider credentials in trusted local/self-hosted environments."
+          message="AI provider credentials are protected by local admin authentication and encrypted at rest, but this alpha is still intended for trusted self-hosted environments."
         />
         {providers.error && <Notice tone="danger" message={providers.error} />}
         {error && <Notice tone="danger" message={error} />}

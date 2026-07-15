@@ -1,10 +1,12 @@
 # Qualora Web
 
-Minimal React/Vite web UI for Qualora v0.10.0-alpha.
+Minimal React/Vite web UI for Qualora v0.11.0-alpha.
 
 The UI supports:
 
 - Listing projects.
+- First-run local admin setup.
+- Local admin login, session refresh, and logout.
 - Creating projects.
 - Viewing project details and project runs.
 - Importing OpenAPI specs for projects.
@@ -53,7 +55,7 @@ QUALORA_API_BASE_URL=http://localhost:8080 docker compose up -d --build qualora-
 
 ## Current Limitations
 
-- No authentication or authorization.
+- Local authentication is intentionally minimal: one admin role, no password reset, no user management UI, no SSO/OIDC/SAML, and no multi-tenancy.
 - Intended for trusted local/self-hosted alpha environments only.
 - AI provider credentials should only be configured in trusted environments.
 - AI-assisted test plans are suggestions and are never executed automatically.
@@ -61,6 +63,6 @@ QUALORA_API_BASE_URL=http://localhost:8080 docker compose up -d --build qualora-
 - Safe API smoke execution is read-only and skips mutating, authenticated, ambiguous, request-body, unresolved-parameter, and sensitive operations.
 - Credential profiles are intended for trusted local/self-hosted test accounts and never return raw credentials.
 - Authenticated browser smoke is limited to one configured login form and one same-origin target path.
-- Authorization checks are explicit, read-only, and limited to deterministic browser URL checks in v0.10.
+- Authorization checks are explicit, read-only, and limited to deterministic browser URL checks in v0.11.
 - Evidence preview/download is limited to evidence records known to Qualora.
 - No advanced filtering, pagination, or project editing yet.

@@ -56,6 +56,71 @@ type Project struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
+type SetupStatusResponse struct {
+	SetupRequired bool   `json:"setup_required"`
+	Version       string `json:"version"`
+}
+
+type SetupAdminRequest struct {
+	Email           string `json:"email"`
+	DisplayName     string `json:"display_name"`
+	Password        string `json:"password"`
+	ConfirmPassword string `json:"confirm_password,omitempty"`
+}
+
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type LocalUser struct {
+	ID           string     `json:"id"`
+	Email        string     `json:"email"`
+	DisplayName  string     `json:"display_name"`
+	PasswordHash string     `json:"-"`
+	Role         string     `json:"role"`
+	IsActive     bool       `json:"is_active"`
+	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+type AuthUser struct {
+	ID          string     `json:"id"`
+	Email       string     `json:"email"`
+	DisplayName string     `json:"display_name"`
+	Role        string     `json:"role"`
+	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+type UserSession struct {
+	ID            string     `json:"id"`
+	UserID        string     `json:"user_id"`
+	TokenHash     string     `json:"-"`
+	CSRFTokenHash string     `json:"-"`
+	UserAgent     string     `json:"user_agent,omitempty"`
+	IPAddress     string     `json:"ip_address,omitempty"`
+	ExpiresAt     time.Time  `json:"expires_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	LastSeenAt    time.Time  `json:"last_seen_at"`
+	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
+}
+
+type AuthResponse struct {
+	User        AuthUser  `json:"user"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	CSRFToken   string    `json:"csrf_token,omitempty"`
+	SetupStatus string    `json:"setup_status,omitempty"`
+}
+
+type MeResponse struct {
+	Authenticated bool       `json:"authenticated"`
+	User          *AuthUser  `json:"user,omitempty"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+}
+
 type TestRun struct {
 	ID                  string     `json:"id"`
 	ProjectID           string     `json:"project_id"`

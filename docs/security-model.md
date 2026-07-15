@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.10.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.11.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -33,7 +33,7 @@ The browser worker routes Playwright requests through the host policy:
 
 ## API Request Enforcement
 
-The API worker and v0.10 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
+The API worker and v0.11 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
 
 Default API behavior:
 
@@ -42,7 +42,7 @@ Default API behavior:
 - Safe OpenAPI methods only: `GET`, `HEAD`, and `OPTIONS`.
 - Unsafe methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are skipped.
 - Imported OpenAPI specs are parsed and classified before any API requests are executed.
-- Auth-required operations are skipped in v0.10.
+- Auth-required operations are skipped in v0.11.
 - Operations with required request bodies are skipped.
 - Path parameters are skipped unless a safe `example`, `default`, or `enum` value exists.
 - Required query parameters are sent only when a safe sample exists and the parameter name is not secret-like.
@@ -95,7 +95,7 @@ Login evidence stores screenshots when configured plus metadata such as login st
 
 ## Role-Aware Authorization Checks
 
-Authorization checks in v0.10 are explicit, deterministic, and conservative. They are intended for dedicated test accounts and test data only.
+Authorization checks in v0.11 are explicit, deterministic, and conservative. They are intended for dedicated test accounts and test data only.
 
 Credential profiles can include role metadata such as `admin`, `readonly`, `customer-a`, or `customer-b`. The role metadata is descriptive and project-scoped; it does not grant access inside Qualora.
 
@@ -122,19 +122,23 @@ Authorization checks do not:
 - Use autonomous AI browser control.
 - Send credentials, cookies, storage, auth headers, or tokens to AI.
 
-Authenticated API authorization testing is not fully supported in v0.10. API-style authorization checks are skipped unless a future safe design adds explicit authenticated API support.
+Authenticated API authorization testing is not fully supported in v0.11. API-style authorization checks are skipped unless a future safe design adds explicit authenticated API support.
 
 ## Web UI Exposure
 
-The v0.10.0-alpha web UI has no authentication or authorization. It can create projects, manage credential profiles, create/run authorization checks, test deterministic logins, start browser/API/authenticated smoke runs, import API specs, start safe API smoke runs, configure AI providers, run AI analysis, generate AI-assisted test plans, preview/start safe test plan executions, and display report/evidence metadata through the control-plane API.
+The v0.11.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, and authorization reports require a valid local session.
 
-Use it only in trusted local or self-hosted environments. Do not expose `qualora-web` or `qualora-api` directly to untrusted networks without adding an external access-control layer.
+Sessions use an HTTP-only `qualora_session` cookie. Mutating protected API requests must include a CSRF token from the `qualora_csrf` cookie in the `X-Qualora-CSRF` header. Health, setup status, first-run admin setup, login, logout, and session introspection endpoints are intentionally public.
+
+This alpha still provides only one local admin role. It does not include user management, password reset, login rate limiting, audit logging, SSO/OIDC/SAML, enterprise RBAC, teams, or multi-tenancy. Use it only in trusted local or self-hosted environments. Do not expose `qualora-web` or `qualora-api` directly to untrusted networks without additional network controls.
 
 ## Secret Handling
 
 Current safeguards:
 
 - API request logs do not include request bodies or query strings.
+- Local admin passwords are hashed with Argon2id and are never returned by API responses.
+- Session tokens are stored hashed and are never returned in JSON responses.
 - Worker logs redact common token, password, secret, cookie, and authorization patterns.
 - Credential profile username/password values are encrypted at rest and never returned raw.
 - Authorization check evidence stores role/profile labels and outcomes, not passwords, raw usernames, cookies, local/session storage, authorization headers, or tokens.
@@ -172,7 +176,7 @@ The AI input builder does not send by default:
 
 Redaction is enabled by default and masks common bearer/basic auth values, API keys, passwords, access/refresh tokens, session IDs, cookies, and JWT-looking values. AI output is parsed as strict JSON and redacted before storage.
 
-AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.10 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution in v0.10 is deterministic and user-configured, not AI-generated.
+AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.11 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution in v0.11 is deterministic and user-configured, not AI-generated.
 
 ## Non-Goals For This Alpha
 
@@ -194,9 +198,9 @@ AI-assisted test planning uses the same sanitized input path, plus optional user
 - Browser screenshots can contain sensitive application data.
 - API response metadata can reveal endpoint names and status behavior.
 - MinIO uses local development credentials in Docker Compose.
-- There is no API or web UI authentication in this alpha, so bind the API and UI only in trusted local environments.
-- Screenshot preview/download through the control-plane API is available for stored evidence records and can expose sensitive application state to anyone with API access.
-- Anyone with API/UI access can configure or use AI providers because this alpha has no authentication.
+- Local authentication is intentionally minimal: one admin role, no user management UI, no password reset, no rate limiting, and no audit log yet.
+- Screenshot preview/download through the control-plane API is available for stored evidence records and can expose sensitive application state to the local admin.
+- Anyone with the local admin session can configure or use AI providers.
 - AI analysis and AI test plan quality depend on the configured provider and the sanitized evidence available in the report.
 
 See [../SECURITY.md](../SECURITY.md) for vulnerability reporting.

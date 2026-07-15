@@ -22,15 +22,21 @@ type App struct {
 	aiClient      *OpenAICompatibleClient
 	logger        *slog.Logger
 	corsOrigins   []string
+	auth          AuthConfig
 }
 
-func NewApp(store *Store, queue *Queue, evidenceStore *EvidenceStore, secretBox *SecretBox, aiClient *OpenAICompatibleClient, logger *slog.Logger, corsOrigins []string) *App {
-	return &App{store: store, queue: queue, evidenceStore: evidenceStore, secretBox: secretBox, aiClient: aiClient, logger: logger, corsOrigins: corsOrigins}
+func NewApp(store *Store, queue *Queue, evidenceStore *EvidenceStore, secretBox *SecretBox, aiClient *OpenAICompatibleClient, logger *slog.Logger, corsOrigins []string, auth AuthConfig) *App {
+	return &App{store: store, queue: queue, evidenceStore: evidenceStore, secretBox: secretBox, aiClient: aiClient, logger: logger, corsOrigins: corsOrigins, auth: auth}
 }
 
 func (a *App) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", a.handleHealth)
+	mux.HandleFunc("/api/v1/setup/status", a.handleSetupStatus)
+	mux.HandleFunc("/api/v1/setup/admin", a.handleSetupAdmin)
+	mux.HandleFunc("/api/v1/auth/login", a.handleLogin)
+	mux.HandleFunc("/api/v1/auth/logout", a.handleLogout)
+	mux.HandleFunc("/api/v1/auth/me", a.handleMe)
 	mux.HandleFunc("/api/v1/projects", a.handleProjects)
 	mux.HandleFunc("/api/v1/projects/", a.handleProjectSubroutes)
 	mux.HandleFunc("/api/v1/runs", a.handleRuns)
@@ -44,7 +50,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/credential-profiles/", a.handleCredentialProfileSubroutes)
 	mux.HandleFunc("/api/v1/authorization-checks/", a.handleAuthorizationCheckSubroutes)
 	mux.HandleFunc("/api/v1/authorization-check-runs/", a.handleAuthorizationCheckRunSubroutes)
-	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, mux)))
+	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, a.withAuth(mux))))
 }
 
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -1205,7 +1211,8 @@ func withCORS(allowedOrigins []string, next http.Handler) http.Handler {
 				w.Header().Add("Vary", "Origin")
 			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, X-Qualora-CSRF")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Max-Age", "600")
 		}
 

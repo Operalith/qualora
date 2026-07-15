@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.10.0-alpha.
+This document covers local development for Qualora v0.11.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; starts browser, login check, authenticated browser smoke, authorization, and safe API smoke runs; polls to completion; runs AI analysis; generates AI test plans; previews and executes a safe browser test plan; prints JSON/HTML report, API spec, credential profile, authorization, test-plan, and execution URLs; validates HTML report export; validates API result rows; validates skipped unsafe API operations; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; starts browser, login check, authenticated browser smoke, authorization, and safe API smoke runs; polls to completion; runs AI analysis; generates AI test plans; previews and executes a safe browser test plan; prints JSON/HTML report, API spec, credential profile, authorization, test-plan, and execution URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -102,6 +102,7 @@ make smoke
 
 The smoke script runs:
 
+- First-run local admin setup, login, logout, `/auth/me`, CSRF, and protected endpoint checks.
 - AI provider creation and provider-test against local `fake-llm`.
 - Credential profile creation against local `demo-web` login selectors.
 - Deterministic login check against local `demo-web`.
@@ -140,19 +141,26 @@ For private or local targets, create projects manually with `allow_private_targe
 
 ## AI Provider Development
 
-The v0.10 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.11 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
 ```text
 QUALORA_ENCRYPTION_KEY=qualora-insecure-dev-key-change-me
+QUALORA_SESSION_TTL_HOURS=12
+QUALORA_COOKIE_SECURE=false
+QUALORA_AUTH_DISABLED=false
 QUALORA_FAKE_LLM_URL=http://fake-llm:8080/v1
+QUALORA_ADMIN_EMAIL=admin@qualora.local
+QUALORA_ADMIN_PASSWORD=qualora-admin-password
 QUALORA_DEMO_USERNAME=demo@example.com
 QUALORA_DEMO_PASSWORD=demo-password
 FAKE_LLM_HEALTH_URL=http://localhost:18083/health
 ```
 
 The default Compose encryption key is intentionally insecure and only for local development. Set a strong `QUALORA_ENCRYPTION_KEY` before storing real provider credentials or credential profiles.
+
+`QUALORA_AUTH_DISABLED=true` is available only as a local escape hatch for development/debugging. Do not use it for shared self-hosted environments. The default is authenticated.
 
 AI-assisted test plans are reviewable suggestions and are never executed automatically. Qualora can execute only explicitly approved, deterministic safe DSL steps after a preview. It does not send screenshots/full HTML/raw traces/full network bodies to AI by default, and it redacts secret-looking values before prompt construction and storage.
 
@@ -175,7 +183,7 @@ The login check path is deterministic:
 
 Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
 
-The v0.10 API executor:
+The v0.11 API executor:
 
 - Supports OpenAPI 3.x JSON/YAML.
 - Executes only `GET`, `HEAD`, and `OPTIONS`.
