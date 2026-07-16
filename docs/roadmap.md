@@ -150,7 +150,7 @@ Delivered:
 
 ## v0.12.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Safe deterministic application discovery run model and API.
 - Persistent application map tables for pages, links, forms, and fields.
@@ -162,7 +162,19 @@ Current alpha scope:
 - Demo-web routes, safe/unsafe/external links, and forms for deterministic smoke validation.
 - Smoke validation for discovery completion, pages, links, forms, skipped links, screenshots, JSON report, and HTML report.
 
-## Phase 13: Run And Worker Hardening
+## v0.13.0-alpha
+
+Current alpha scope:
+
+- Discovery-aware AI test plan generation from sanitized application maps.
+- Safe executable test plan mode with optional deterministic DSL candidates.
+- Test plan source metadata, discovery run links, and persisted executable coverage.
+- Safe QA Run API that can reuse/latest/create discovery, generate an AI plan, preview safe execution, optionally execute the approved safe DSL path, and serve JSON/HTML reports.
+- Web UI project and discovery report actions for generating discovery-aware plans and starting Safe QA Runs.
+- Safe QA Run report page with discovery, plan, preview, optional execution, findings, evidence, and safety metadata.
+- Smoke validation for discovery-aware planning, Safe QA Run preview, Safe QA Run execution, reports, password redaction, and existing browser/API/AI/test-plan flows.
+
+## Phase 14: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -175,14 +187,14 @@ Current alpha scope:
 - Move AI analysis to an async analyzer worker.
 - Move AI-assisted test planning to an async analyzer worker.
 
-## Phase 14: Deeper API Checks
+## Phase 15: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 15: Passive Security Checks
+## Phase 16: Passive Security Checks
 
 - Passive security headers.
 - Cookie flag checks.

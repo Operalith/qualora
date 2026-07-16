@@ -9,6 +9,8 @@ import (
 const (
 	defaultMaxTestPlanScenarios = 10
 	maxTestPlanScenarios        = 30
+	defaultMaxDiscoveryPages    = 20
+	maxDiscoveryPages           = 100
 )
 
 var allowedFocusAreas = map[string]bool{
@@ -77,14 +79,17 @@ func AITestPlanSystemPrompt() string {
 	return strings.Join([]string{
 		"You are Qualora's AI test planning assistant.",
 		"Create reviewable software QA test plans only.",
-		"Use only the provided project and run data.",
+		"Use only the provided project, run, and discovery-map data.",
 		"Do not invent discovered pages, credentials, private APIs, user roles, database access, or evidence.",
+		"When discovery_map is present, base page-navigation scenarios only on pages and links included in that map.",
+		"Never suggest credential use, login, arbitrary form submission, destructive actions, active scanning, fuzzing, exploit payloads, or autonomous browser control.",
 		"Clearly mark assumptions when data is insufficient.",
 		"Prefer safe, non-destructive tests.",
 		"Do not generate active exploit payloads or destructive security steps.",
 		"Passive security checks are allowed.",
 		"Authorization tests may be suggested only at a conceptual reviewable level unless roles or accounts appear in the input.",
-		"Generated plans are suggestions and must not be executed automatically.",
+		"If execution_mode is safe_executable, prefer these exact deterministic browser DSL actions only: goto, assert_title_contains, assert_url_contains, assert_text_visible, assert_element_visible, assert_link_exists, check_link_status, capture_screenshot, collect_browser_signals, wait_for_load_state, assert_no_console_errors, assert_no_failed_requests.",
+		"Generated plans are suggestions and must not be executed automatically without an explicit Qualora execution request.",
 		"Return strict JSON only.",
 		`Use this JSON shape exactly: {"title":"string","summary":"string","assumptions":["string"],"coverage_goals":["string"],"scenarios":[{"id":"string","name":"string","type":"smoke|functional|negative|accessibility|performance|security-passive|authorization|api|visual|regression","priority":"low|medium|high|critical","risk":"low|medium|high|critical","description":"string","preconditions":["string"],"steps":[{"order":1,"action":"string","target":"string","data":"string","expected_result":"string"}],"assertions":["string"],"test_data_needed":["string"],"automation_candidate":true,"destructive":false,"requires_authentication":false,"related_findings":["string"],"tags":["string"]}],"suggested_next_instrumentation":["string"],"limitations":["string"]}.`,
 	}, " ")
@@ -93,7 +98,25 @@ func AITestPlanSystemPrompt() string {
 func NormalizeAITestPlanRequest(input AITestPlanRequest) (AITestPlanRequest, error) {
 	input.ProviderID = strings.TrimSpace(input.ProviderID)
 	input.RunID = strings.TrimSpace(input.RunID)
+	input.DiscoveryRunID = strings.TrimSpace(input.DiscoveryRunID)
+	input.ExecutionMode = strings.ToLower(strings.TrimSpace(input.ExecutionMode))
 	input.ProductContext = strings.TrimSpace(sanitizeText(RedactSecrets(limitString(input.ProductContext, 4000))))
+	if input.IncludeDiscoveryMap == nil {
+		value := true
+		input.IncludeDiscoveryMap = &value
+	}
+	if input.ExecutionMode == "" {
+		input.ExecutionMode = AITestPlanExecutionModeReviewOnly
+	}
+	if input.ExecutionMode != AITestPlanExecutionModeReviewOnly && input.ExecutionMode != AITestPlanExecutionModeSafeExecutable {
+		return input, fmt.Errorf("execution_mode must be review_only or safe_executable")
+	}
+	if input.MaxPagesFromDiscovery == 0 {
+		input.MaxPagesFromDiscovery = defaultMaxDiscoveryPages
+	}
+	if input.MaxPagesFromDiscovery < 1 || input.MaxPagesFromDiscovery > maxDiscoveryPages {
+		return input, fmt.Errorf("max_pages_from_discovery must be between 1 and 100")
+	}
 	if input.MaxScenarios == 0 {
 		input.MaxScenarios = defaultMaxTestPlanScenarios
 	}
@@ -125,8 +148,8 @@ func NormalizeAITestPlanRequest(input AITestPlanRequest) (AITestPlanRequest, err
 	return input, nil
 }
 
-func BuildAITestPlanUserPrompt(project Project, report *Report, input AITestPlanRequest) (string, error) {
-	safeInput := BuildSafeTestPlanInput(project, report, input)
+func BuildAITestPlanUserPrompt(project Project, report *Report, discoveryReport *DiscoveryReport, input AITestPlanRequest) (string, error) {
+	safeInput := BuildSafeTestPlanInput(project, report, discoveryReport, input)
 	raw, err := json.MarshalIndent(safeInput, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal safe AI test plan input: %w", err)
@@ -134,7 +157,7 @@ func BuildAITestPlanUserPrompt(project Project, report *Report, input AITestPlan
 	return "Create a reviewable Qualora AI test plan from this sanitized JSON input:\n" + string(raw), nil
 }
 
-func BuildSafeTestPlanInput(project Project, report *Report, input AITestPlanRequest) map[string]any {
+func BuildSafeTestPlanInput(project Project, report *Report, discoveryReport *DiscoveryReport, input AITestPlanRequest) map[string]any {
 	payload := map[string]any{
 		"project": map[string]any{
 			"id":            project.ID,
@@ -144,9 +167,19 @@ func BuildSafeTestPlanInput(project Project, report *Report, input AITestPlanReq
 			"openapi_url":   project.OpenAPIURL,
 			"allowed_hosts": project.AllowedHosts,
 		},
-		"product_context": input.ProductContext,
-		"focus_areas":     input.FocusAreas,
-		"max_scenarios":   input.MaxScenarios,
+		"product_context":          input.ProductContext,
+		"focus_areas":              input.FocusAreas,
+		"max_scenarios":            input.MaxScenarios,
+		"execution_mode":           input.ExecutionMode,
+		"include_discovery_map":    input.IncludeDiscoveryMap != nil && *input.IncludeDiscoveryMap,
+		"max_pages_from_discovery": input.MaxPagesFromDiscovery,
+		"safe_execution_contract": map[string]any{
+			"actions":                       safeExecutionActions(),
+			"forms_submitted":               false,
+			"destructive_actions":           false,
+			"autonomous_ai_browser_control": false,
+			"execution_is_allowed_only_after_explicit_user_request": true,
+		},
 	}
 	if report != nil {
 		payload["run_report"] = BuildSafeAIInput(report)
@@ -162,7 +195,100 @@ func BuildSafeTestPlanInput(project Project, report *Report, input AITestPlanReq
 			}
 		}
 	}
+	if discoveryReport != nil && input.IncludeDiscoveryMap != nil && *input.IncludeDiscoveryMap {
+		payload["discovery_map"] = BuildSafeDiscoveryTestPlanInput(discoveryReport, input.MaxPagesFromDiscovery)
+	}
 	return sanitizeValue(payload).(map[string]any)
+}
+
+func BuildSafeDiscoveryTestPlanInput(report *DiscoveryReport, maxPages int) map[string]any {
+	if maxPages <= 0 {
+		maxPages = defaultMaxDiscoveryPages
+	}
+	if maxPages > maxDiscoveryPages {
+		maxPages = maxDiscoveryPages
+	}
+	pages := report.Pages
+	if len(pages) > maxPages {
+		pages = pages[:maxPages]
+	}
+	input := BuildSafeDiscoveryAIInput(&DiscoveryReport{
+		Run:         report.Run,
+		Project:     report.Project,
+		Settings:    report.Settings,
+		Summary:     report.Summary,
+		Pages:       pages,
+		Links:       report.Links,
+		Forms:       report.Forms,
+		Findings:    report.Findings,
+		Evidence:    report.Evidence,
+		SafetyNotes: report.SafetyNotes,
+		Limitations: report.Limitations,
+		Metadata:    report.Metadata,
+	})
+	input["input_limits"] = map[string]any{
+		"max_pages_from_discovery": maxPages,
+		"included_pages":           len(pages),
+		"total_discovered_pages":   len(report.Pages),
+	}
+	return sanitizeValue(input).(map[string]any)
+}
+
+func safeExecutionActions() []string {
+	return []string{
+		"goto",
+		"assert_title_contains",
+		"assert_url_contains",
+		"assert_text_visible",
+		"assert_element_visible",
+		"assert_link_exists",
+		"check_link_status",
+		"capture_screenshot",
+		"collect_browser_signals",
+		"wait_for_load_state",
+		"assert_no_console_errors",
+		"assert_no_failed_requests",
+	}
+}
+
+func TagDiscoveryGeneratedTestPlan(payload *TestPlanPayload, discoveryRunID string, executionMode string) {
+	if payload == nil {
+		return
+	}
+	for index := range payload.Scenarios {
+		payload.Scenarios[index].Tags = appendUniqueTags(payload.Scenarios[index].Tags, "generated_from_discovery")
+		if discoveryRunID != "" {
+			payload.Scenarios[index].Tags = appendUniqueTags(payload.Scenarios[index].Tags, "discovery_run:"+discoveryRunID)
+		}
+		if executionMode == AITestPlanExecutionModeSafeExecutable {
+			payload.Scenarios[index].Tags = appendUniqueTags(payload.Scenarios[index].Tags, "safe_executable_candidate")
+		}
+	}
+}
+
+func appendUniqueTags(tags []string, values ...string) []string {
+	seen := map[string]bool{}
+	output := make([]string, 0, len(tags)+len(values))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" || seen[tag] {
+			continue
+		}
+		output = append(output, tag)
+		seen[tag] = true
+	}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		output = append(output, value)
+		seen[value] = true
+	}
+	if len(output) > 20 {
+		return output[:20]
+	}
+	return output
 }
 
 func ParseTestPlanPayload(raw string, maxScenarios int) (*TestPlanPayload, map[string]any, error) {

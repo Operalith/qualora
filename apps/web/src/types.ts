@@ -499,6 +499,8 @@ export type TestPlan = {
   id: string;
   project_id: string;
   run_id?: string;
+  discovery_run_id?: string;
+  source_type?: string;
   provider_id?: string;
   provider_name?: string;
   model: string;
@@ -508,6 +510,7 @@ export type TestPlan = {
   plan_json: TestPlanPayload;
   risk_level: "low" | "medium" | "high" | "critical" | "";
   total_scenarios: number;
+  execution_coverage: TestPlanExecutableCoverage;
   error_message?: string;
   created_at: string;
   updated_at: string;
@@ -525,9 +528,25 @@ export type TestPlanRef = {
 export type AITestPlanInput = {
   provider_id?: string;
   run_id?: string;
+  discovery_run_id?: string;
+  use_latest_discovery?: boolean;
+  include_discovery_map?: boolean;
+  execution_mode?: "review_only" | "safe_executable";
+  max_pages_from_discovery?: number;
   product_context?: string;
   focus_areas: string[];
   max_scenarios: number;
+};
+
+export type TestPlanExecutableCoverage = {
+  total_scenarios: number;
+  executable_scenarios: number;
+  skipped_scenarios: number;
+  total_steps: number;
+  executable_steps: number;
+  skipped_steps: number;
+  unsafe_skipped_steps: number;
+  unsupported_skipped_steps: number;
 };
 
 export type TestPlanExecutionRequest = {
@@ -649,6 +668,53 @@ export type TestPlanExecutionReport = {
   findings: Finding[];
   evidence: Evidence[];
   safety_summary: TestPlanExecutionSafetyReport;
+  generated_at: string;
+};
+
+export type QARunInput = {
+  mode?: "safe";
+  start_url?: string;
+  credential_profile_id?: string;
+  max_pages?: number;
+  max_depth?: number;
+  max_scenarios?: number;
+  execute?: boolean;
+  use_existing_discovery_run_id?: string;
+  use_latest_discovery?: boolean;
+  provider_id?: string;
+  product_context?: string;
+  focus_areas?: string[];
+};
+
+export type QARun = {
+  id: string;
+  project_id: string;
+  status: "queued" | "running_discovery" | "generating_plan" | "previewing_execution" | "executing_plan" | "completed" | "failed" | "error" | string;
+  mode: "safe" | string;
+  discovery_run_id?: string;
+  test_plan_id?: string;
+  test_plan_execution_id?: string;
+  credential_profile_id?: string;
+  error_message?: string;
+  summary: Record<string, unknown>;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QARunReport = {
+  run: QARun;
+  project: Project;
+  discovery_run?: DiscoveryRun;
+  discovery_summary?: DiscoverySummary;
+  test_plan?: TestPlan;
+  execution_preview?: TestPlanExecutionPreview;
+  execution_report?: TestPlanExecutionReport;
+  findings: Finding[];
+  evidence: Evidence[];
+  safety_notes: string[];
+  limitations: string[];
   generated_at: string;
 };
 

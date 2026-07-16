@@ -27,6 +27,9 @@ import type {
   LoginInput,
   MeResponse,
   Project,
+  QARun,
+  QARunInput,
+  QARunReport,
   Report,
   SetupAdminInput,
   SetupStatus,
@@ -73,6 +76,10 @@ export function authorizationCheckHTMLReportURL(runID: string): string {
 
 export function discoveryHTMLReportURL(runID: string): string {
   return `${API_BASE_URL}/api/v1/discovery-runs/${runID}/report.html`;
+}
+
+export function qaRunHTMLReportURL(runID: string): string {
+  return `${API_BASE_URL}/api/v1/qa-runs/${runID}/report.html`;
 }
 
 export async function getSetupStatus(): Promise<SetupStatus> {
@@ -246,6 +253,32 @@ export async function getDiscoveryMap(runID: string): Promise<DiscoveryMap> {
 
 export async function getDiscoveryReport(runID: string): Promise<DiscoveryReport> {
   return request<DiscoveryReport>(`/api/v1/discovery-runs/${runID}/report`);
+}
+
+export async function listQARuns(projectID: string): Promise<QARun[]> {
+  const response = await request<{ qa_runs: QARun[] }>(`/api/v1/projects/${projectID}/qa-runs`);
+  return response.qa_runs;
+}
+
+export async function startQARun(projectID: string, input: QARunInput): Promise<QARun> {
+  return request<QARun>(`/api/v1/projects/${projectID}/qa-runs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getQARun(runID: string): Promise<QARun> {
+  return request<QARun>(`/api/v1/qa-runs/${runID}`);
+}
+
+export async function executeQARun(runID: string): Promise<QARun> {
+  return request<QARun>(`/api/v1/qa-runs/${runID}/execute`, {
+    method: "POST"
+  });
+}
+
+export async function getQARunReport(runID: string): Promise<QARunReport> {
+  return request<QARunReport>(`/api/v1/qa-runs/${runID}/report`);
 }
 
 export async function importAPISpec(projectID: string, input: APISpecImportInput): Promise<APISpecDetail> {

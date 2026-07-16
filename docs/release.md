@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.12.0-alpha is the twelfth public alpha release. It adds safe deterministic application discovery and persistent application maps while keeping local auth, browser/API smoke, credential profiles, authorization checks, AI analysis, AI test planning, and safe plan execution intact.
+Qualora v0.13.0-alpha is the thirteenth public alpha release. It adds discovery-aware AI test generation and Safe QA Runs while keeping local auth, browser/API smoke, credential profiles, authorization checks, application discovery, AI analysis, and approved safe plan execution intact.
 
 ## Pre-Release Checklist
 
@@ -45,6 +45,14 @@ Confirm:
 - Discovery records skipped unsafe and external links.
 - Discovery pages include screenshot evidence IDs and downloadable screenshot evidence.
 - Discovery HTML report includes the application discovery summary, pages, skipped links, forms, findings, and safety notes.
+- Discovery-aware AI test plan generation completes from the completed discovery run.
+- Discovery-generated test plans include `source_type=discovery`, `discovery_run_id`, and safe execution coverage metadata.
+- Safe QA Run preview completes without automatically executing browser actions.
+- Safe QA Run preview report includes discovery, generated plan, safe execution preview, coverage, and safety notes.
+- Explicit Safe QA Run execution starts only after `POST /api/v1/qa-runs/{qa_run_id}/execute` or `execute=true`.
+- Safe QA Run execution reaches `completed`.
+- Safe QA Run JSON and HTML reports include the linked execution report when execution has run.
+- Safe QA Run reports do not contain demo passwords, cookies, tokens, browser storage, auth headers, full HTML, request bodies, or response bodies.
 - Login and authenticated smoke JSON reports include `login_summary` and `login_observations`.
 - Login and authenticated smoke HTML reports include the login summary.
 - Login and authenticated smoke reports do not contain the demo password.
@@ -69,6 +77,7 @@ Confirm:
 - HTML reports include an AI Analysis section when analysis has been generated.
 - JSON and HTML reports include related test plan references when a plan was generated from a run.
 - AI analysis and AI-assisted test planning still work for authenticated browser smoke reports without sending credentials.
+- AI test planning from discovery uses sanitized application map data only and does not send screenshots/full HTML/cookies/browser storage/auth headers/tokens/credentials.
 - API reports include `api_observations`, `openapi_summary`, `api_request` evidence, `api_summary`, and `api_results`.
 - JSON report URLs work.
 - HTML report URLs work and render a self-contained report.
@@ -80,10 +89,10 @@ Confirm:
 ```bash
 git status --short
 git add .
-git commit -m "feat: add application discovery for v0.12.0-alpha"
-git tag -a v0.12.0-alpha -m "v0.12.0-alpha"
+git commit -m "feat: add discovery-aware safe QA runs for v0.13.0-alpha"
+git tag -a v0.13.0-alpha -m "v0.13.0-alpha"
 git push origin main
-git push origin v0.12.0-alpha
+git push origin v0.13.0-alpha
 ```
 
 ## GitHub Release
@@ -91,7 +100,7 @@ git push origin v0.12.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.12.0-alpha
+Qualora v0.13.0-alpha
 ```
 
-Use [release-notes/v0.12.0-alpha.md](release-notes/v0.12.0-alpha.md) as the release body.
+Use [release-notes/v0.13.0-alpha.md](release-notes/v0.13.0-alpha.md) as the release body.

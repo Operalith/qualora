@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.12.0-alpha` adds safe deterministic application discovery and a persistent application map. Qualora remains useful without AI: discovery, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
+`v0.13.0-alpha` adds discovery-aware AI test plan generation and a one-click Safe QA Run workflow. Qualora remains useful without AI: discovery, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
 
 ## Current Alpha Capabilities
 
@@ -50,11 +50,15 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Run AI analysis for completed runs using sanitized report data.
 - Show AI analysis in the web UI, JSON report, and HTML report when available.
 - Generate AI-assisted test plans from sanitized project/run/report metadata.
+- Generate discovery-aware AI-assisted test plans from sanitized application maps.
 - View, delete, and export AI test plans in the web UI.
 - Link AI test plans back into JSON and HTML run reports when they were generated from a run.
+- Preview executable coverage for generated test plans.
 - Preview which AI test plan steps are safely executable.
 - Execute only approved, supported, same-origin, non-destructive browser DSL steps from a test plan.
 - Persist test plan execution scenarios, steps, skip reasons, findings, evidence, JSON reports, and self-contained HTML reports.
+- Start Safe QA Runs that reuse or create discovery, generate a discovery-aware plan, preview safe execution, and optionally run the approved safe DSL path.
+- View Safe QA Run JSON/HTML reports with discovery, plan, preview, execution, and safety metadata.
 
 ## Architecture
 
@@ -64,7 +68,7 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
@@ -132,6 +136,8 @@ The smoke target includes:
 - Application discovery against `demo-web`, including discovered pages/forms, skipped unsafe/external links, screenshots, JSON report, and HTML report.
 - OpenAPI import and safe API smoke against a local `demo-api` service started by the Makefile.
 - AI provider smoke against a local fake OpenAI-compatible provider.
+- Discovery-aware AI test plan generation from the application map.
+- Safe QA Run preview and explicit execution against the approved safe browser DSL.
 - Safe test plan execution smoke against the local `demo-web` service.
 
 Stop the stack:
@@ -219,6 +225,8 @@ Import an OpenAPI spec for a project:
 
 ```bash
 API_SPEC_ID=$(curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/api-specs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "Demo API",
@@ -230,21 +238,26 @@ API_SPEC_ID=$(curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/api-s
 List discovered operations and skip reasons:
 
 ```bash
-curl -s "http://localhost:8080/api/v1/api-specs/${API_SPEC_ID}/operations" | python3 -m json.tool
+curl -s "http://localhost:8080/api/v1/api-specs/${API_SPEC_ID}/operations" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
 ```
 
 Run a safe API smoke test from the imported spec:
 
 ```bash
 API_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/api-specs/${API_SPEC_ID}/api-smoke-runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 ```
 
 Fetch API smoke results:
 
 ```bash
-curl -s "http://localhost:8080/api/v1/runs/${API_RUN_ID}/api-results" | python3 -m json.tool
-curl -s "http://localhost:8080/api/v1/runs/${API_RUN_ID}/report" | python3 -m json.tool
+curl -s "http://localhost:8080/api/v1/runs/${API_RUN_ID}/api-results" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
+curl -s "http://localhost:8080/api/v1/runs/${API_RUN_ID}/report" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
 open "http://localhost:8080/api/v1/runs/${API_RUN_ID}/report.html"
 ```
 
@@ -268,6 +281,8 @@ Start a run:
 
 ```bash
 RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 ```
 
@@ -275,6 +290,8 @@ Start only a browser smoke run:
 
 ```bash
 RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/browser-smoke-runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 ```
 
@@ -301,6 +318,8 @@ Create a credential profile for deterministic login:
 
 ```bash
 CREDENTIAL_PROFILE_ID=$(curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/credential-profiles" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "Demo Login",
@@ -325,6 +344,8 @@ Test the configured login flow:
 
 ```bash
 LOGIN_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/credential-profiles/${CREDENTIAL_PROFILE_ID}/test-login" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 ```
@@ -333,6 +354,8 @@ Run authenticated browser smoke after login:
 
 ```bash
 AUTH_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/authenticated-browser-smoke-runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "credential_profile_id": "'"${CREDENTIAL_PROFILE_ID}"'",
@@ -346,6 +369,8 @@ Create and run an explicit role-aware authorization check:
 
 ```bash
 AUTHZ_CHECK_ID=$(curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/authorization-checks" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "Readonly denied admin route",
@@ -358,11 +383,14 @@ AUTHZ_CHECK_ID=$(curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/au
   }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
 AUTHZ_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/authorization-check-runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{"check_ids":["'"${AUTHZ_CHECK_ID}"'"],"max_checks":10}' \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 
-curl -s "http://localhost:8080/api/v1/authorization-check-runs/${AUTHZ_RUN_ID}/report" | python3 -m json.tool
+curl -s "http://localhost:8080/api/v1/authorization-check-runs/${AUTHZ_RUN_ID}/report" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
 open "http://localhost:8080/api/v1/authorization-check-runs/${AUTHZ_RUN_ID}/report.html"
 ```
 
@@ -371,7 +399,8 @@ Authorization checks are explicit and conservative. They log in with the configu
 Fetch the report:
 
 ```bash
-curl -s "http://localhost:8080/api/v1/runs/${RUN_ID}/report" | python3 -m json.tool
+curl -s "http://localhost:8080/api/v1/runs/${RUN_ID}/report" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
 ```
 
 Open the HTML report:
@@ -383,13 +412,16 @@ open "http://localhost:8080/api/v1/runs/${RUN_ID}/report.html"
 Download screenshot evidence by ID:
 
 ```bash
-curl -L "http://localhost:8080/api/v1/evidence/${EVIDENCE_ID}" -o screenshot.png
+curl -L "http://localhost:8080/api/v1/evidence/${EVIDENCE_ID}" \
+  -b "$COOKIE_JAR" -o screenshot.png
 ```
 
 Configure a fake/local OpenAI-compatible provider:
 
 ```bash
 curl -s http://localhost:8080/api/v1/ai/providers \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "Local Fake LLM",
@@ -413,6 +445,8 @@ Run AI analysis for an existing completed run:
 
 ```bash
 curl -s -X POST "http://localhost:8080/api/v1/runs/${RUN_ID}/ai-analysis" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{}' | python3 -m json.tool
 ```
@@ -420,27 +454,37 @@ curl -s -X POST "http://localhost:8080/api/v1/runs/${RUN_ID}/ai-analysis" \
 Generate an AI-assisted test plan for a project:
 
 ```bash
-curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/ai-test-plans" \
+TEST_PLAN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/ai-test-plans" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "run_id": "'"${RUN_ID}"'",
+    "discovery_run_id": "'"${DISCOVERY_RUN_ID}"'",
+    "include_discovery_map": true,
+    "execution_mode": "safe_executable",
+    "max_pages_from_discovery": 20,
     "product_context": "Public checkout and account settings are high-priority flows. Do not include secrets here.",
     "focus_areas": ["smoke", "functional", "api", "regression"],
     "max_scenarios": 10
-  }' | python3 -m json.tool
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 ```
 
 List and export test plans:
 
 ```bash
-curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/test-plans" | python3 -m json.tool
-curl -s "http://localhost:8080/api/v1/test-plans/${TEST_PLAN_ID}/export.json" | python3 -m json.tool
+curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/test-plans" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
+curl -s "http://localhost:8080/api/v1/test-plans/${TEST_PLAN_ID}/export.json" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
 ```
 
 Preview the safe execution mapping for a test plan:
 
 ```bash
 curl -s -X POST "http://localhost:8080/api/v1/test-plans/${TEST_PLAN_ID}/executions" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "max_scenarios": 5,
@@ -453,6 +497,8 @@ Start an approved safe execution:
 
 ```bash
 EXECUTION_ID=$(curl -s -X POST "http://localhost:8080/api/v1/test-plans/${TEST_PLAN_ID}/executions" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
   -H 'Content-Type: application/json' \
   -d '{
     "max_scenarios": 5,
@@ -464,15 +510,49 @@ EXECUTION_ID=$(curl -s -X POST "http://localhost:8080/api/v1/test-plans/${TEST_P
 Fetch the safe execution report:
 
 ```bash
-curl -s "http://localhost:8080/api/v1/test-plan-executions/${EXECUTION_ID}/report" | python3 -m json.tool
+curl -s "http://localhost:8080/api/v1/test-plan-executions/${EXECUTION_ID}/report" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
 open "http://localhost:8080/api/v1/test-plan-executions/${EXECUTION_ID}/report.html"
+```
+
+Start a Safe QA Run preview from discovery:
+
+```bash
+QA_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/qa-runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "discovery_run_id": "'"${DISCOVERY_RUN_ID}"'",
+    "execution_mode": "preview",
+    "use_latest_discovery": false,
+    "execute": false,
+    "max_pages": 20,
+    "max_scenarios": 5,
+    "max_steps_per_scenario": 10,
+    "focus_areas": ["smoke", "navigation", "regression"]
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -s "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/report" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
+open "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/report.html"
+```
+
+Execute a previewed Safe QA Run only after reviewing the generated plan and safe execution preview:
+
+```bash
+curl -s -X POST "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/execute" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{}' | python3 -m json.tool
 ```
 
 ## AI Providers
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.12.0-alpha`:
+Supported provider type in `v0.13.0-alpha`:
 
 - `openai-compatible`
 
@@ -492,7 +572,7 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.12.0-alpha`, a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, and application discovery are deterministic browser-worker paths and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.13.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, and application discovery are deterministic browser-worker paths and are not AI-controlled.
 
 ## Report Example
 

@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.12.0-alpha.
+This document covers local development for Qualora v0.13.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; starts browser, login check, authenticated browser smoke, application discovery, authorization, and safe API smoke runs; polls to completion; runs AI analysis; generates AI test plans; previews and executes a safe browser test plan; prints JSON/HTML report, discovery map, API spec, credential profile, authorization, test-plan, and execution URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; starts browser, login check, authenticated browser smoke, application discovery, authorization, and safe API smoke runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; starts Safe QA Run preview and explicit execution flows; prints JSON/HTML report, discovery map, API spec, credential profile, authorization, test-plan, execution, and Safe QA Run URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -113,7 +113,9 @@ The smoke script runs:
 - Browser smoke against the local `demo-web` Compose service.
 - AI analysis for the completed browser smoke run.
 - AI test plan generation/export validation for the browser smoke run.
+- Discovery-aware AI test plan generation/export validation from the completed application map.
 - Safe test plan execution preview and run validation for the browser smoke project.
+- Safe QA Run preview and explicit execution validation.
 - OpenAPI import and safe API smoke against the local `demo-api` Compose service.
 - Operation discovery validation, including skipped POST/DELETE/auth-required operations.
 - Deterministic `/broken` API finding validation.
@@ -142,7 +144,7 @@ For private or local targets, create projects manually with `allow_private_targe
 
 ## AI Provider Development
 
-The v0.12 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.13 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -163,7 +165,7 @@ The default Compose encryption key is intentionally insecure and only for local 
 
 `QUALORA_AUTH_DISABLED=true` is available only as a local escape hatch for development/debugging. Do not use it for shared self-hosted environments. The default is authenticated.
 
-AI-assisted test plans are reviewable suggestions and are never executed automatically. Qualora can execute only explicitly approved, deterministic safe DSL steps after a preview. It does not send screenshots/full HTML/raw traces/full network bodies to AI by default, and it redacts secret-looking values before prompt construction and storage.
+AI-assisted test plans are reviewable suggestions and are never executed automatically. Qualora can include a sanitized discovery map when the user requests discovery-aware planning, but it still executes only explicitly approved, deterministic safe DSL steps after a preview. It does not send screenshots/full HTML/raw traces/full network bodies/cookies/browser storage/auth headers/credentials to AI by default, and it redacts secret-looking values before prompt construction and storage.
 
 Safe test plan execution currently supports only browser actions that stay on the project frontend origin: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`.
 
@@ -191,11 +193,24 @@ Application discovery runs are queued on the browser worker. Keep the crawl dete
 - Discovery records forms and fields but must never submit forms or click arbitrary buttons.
 - Discovery evidence may include screenshots and browser observations, but must not store full HTML, cookies, local/session storage, auth headers, tokens, credentials, request bodies, or response bodies.
 
+## Safe QA Run Development
+
+Safe QA Runs are an orchestration layer over discovery, AI test planning, and approved safe test plan execution. Keep the workflow reviewable and deterministic:
+
+- The API may reuse a completed discovery run, use the latest completed discovery run, or start a bounded discovery run.
+- AI planning input must use sanitized project/report/discovery metadata only.
+- Discovery-aware plans should be tagged with `source_type=discovery` and persist `discovery_run_id`.
+- Safe executable coverage should be computed and stored from the deterministic preview.
+- `execute=false` must stop after preview so a user can review the plan and skipped reasons.
+- `execute=true` or `POST /api/v1/qa-runs/{qa_run_id}/execute` may start only the persisted safe DSL execution path.
+- Reports should link discovery, test plan, preview, optional execution report, and safety notes without exposing secrets.
+- Do not add autonomous AI browser control, arbitrary clicking, form submission, broad crawling, payloads, active scans, or destructive actions to this workflow.
+
 ## Safe API Smoke Development
 
 Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
 
-The v0.12 API executor:
+The v0.13 API executor:
 
 - Supports OpenAPI 3.x JSON/YAML.
 - Executes only `GET`, `HEAD`, and `OPTIONS`.

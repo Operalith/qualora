@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.12.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, human-friendly reports, safe deterministic application discovery, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, AI-assisted test plan suggestions, and approved safe execution of supported test plan steps.
+Qualora v0.13.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, human-friendly reports, safe deterministic application discovery, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,7 +10,7 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
@@ -78,6 +78,12 @@ Current endpoints:
 - `GET /api/v1/discovery-runs/{discovery_run_id}/map`
 - `GET /api/v1/discovery-runs/{discovery_run_id}/report`
 - `GET /api/v1/discovery-runs/{discovery_run_id}/report.html`
+- `GET /api/v1/projects/{project_id}/qa-runs`
+- `POST /api/v1/projects/{project_id}/qa-runs`
+- `GET /api/v1/qa-runs/{qa_run_id}`
+- `POST /api/v1/qa-runs/{qa_run_id}/execute`
+- `GET /api/v1/qa-runs/{qa_run_id}/report`
+- `GET /api/v1/qa-runs/{qa_run_id}/report.html`
 - `POST /api/v1/projects/{project_id}/ai-test-plans`
 - `GET /api/v1/projects/{project_id}/test-plans`
 - `POST /api/v1/projects/{project_id}/api-specs`
@@ -131,6 +137,8 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - Login summary and login observation metadata in run reports.
 - Authorization check creation, listing, enable/disable, deletion, run history, JSON report display, HTML report links, findings, and evidence display.
 - Application discovery start form, run list, application map page, JSON/HTML report links, pages, skipped links, forms, findings, and evidence display.
+- Discovery-aware AI test plan generation controls and safe executable coverage display.
+- Safe QA Run preview/execution controls and Safe QA Run JSON/HTML report pages.
 
 On a fresh database it shows a first-run local admin setup screen. After setup, project data, credential profiles, AI providers, runs, reports, evidence, API specs, test plans, and authorization reports require the local admin session. The UI is still alpha and should be exposed only in trusted local/self-hosted environments.
 
@@ -218,7 +226,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.12.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.13.0-alpha`.
 
 ### PostgreSQL
 
@@ -241,6 +249,7 @@ PostgreSQL stores durable metadata:
 - `test_plan_executions`
 - `test_plan_execution_scenarios`
 - `test_plan_execution_steps`
+- `qa_runs`
 
 Reports are generated dynamically from run, job, finding, and evidence rows.
 
@@ -285,9 +294,21 @@ For this alpha, AI analysis and AI test planning run synchronously in the contro
 
 The safe AI input builder includes only sanitized report data such as run status, summary counts, finding titles/summaries, safe evidence metadata, browser/API/login metadata, API smoke result summaries, and job metadata. It strips or redacts URL queries, cookies, authorization values, usernames, tokens, passwords, API keys, session IDs, JWT-looking strings, full response bodies, full HTML, and secret-looking fields. Screenshots, HTML, request bodies, response bodies, browser storage, auth headers, cookies, and network bodies are not sent by default.
 
-AI-assisted test plans use sanitized project configuration, optional product context, selected focus areas, optional latest/run-specific report metadata, and optional AI analysis summaries. The strict plan parser accepts only a reviewable JSON structure with assumptions, coverage goals, scenarios, steps, assertions, test data needs, instrumentation suggestions, and limitations.
+AI-assisted test plans use sanitized project configuration, optional product context, selected focus areas, optional latest/run-specific report metadata, optional discovery map summaries, and optional AI analysis summaries. The strict plan parser accepts only a reviewable JSON structure with assumptions, coverage goals, scenarios, steps, assertions, test data needs, instrumentation suggestions, limitations, and optional deterministic safe DSL candidates.
 
 Generated plans are not executed automatically. A user can explicitly preview and start safe execution. The deterministic mapper only queues scenarios marked `automation_candidate=true`, `destructive=false`, and `requires_authentication=false`; skips unsafe terms such as login, payment, submit, upload, mutation, admin, SQLi, XSS, SSRF, brute force, and destructive actions; and maps only the supported browser DSL. Unsupported or ambiguous steps are persisted as skipped with reasons.
+
+### Safe QA Runs
+
+Safe QA Runs combine the existing safe pieces into a single alpha workflow:
+
+1. Reuse a completed discovery run, use the latest completed discovery run, or create a new bounded discovery run.
+2. Generate a discovery-aware AI test plan from sanitized project/report/discovery metadata.
+3. Build and persist the deterministic safe execution preview.
+4. Stop at review by default, or execute the approved safe DSL path when the user explicitly requests it.
+5. Serve a Safe QA Run JSON/HTML report linking the discovery run, generated plan, preview coverage, optional execution report, and safety notes.
+
+The workflow is orchestration, not free-form autonomy. It does not give an LLM browser control, does not execute model text, and does not allow arbitrary clicking, form submission, crawling, payloads, or destructive actions.
 
 ## Run Lifecycle
 
@@ -322,10 +343,13 @@ Generated plans are not executed automatically. A user can explicitly preview an
 29. The browser worker executes the configured selector-based login flow, records login evidence/findings, and serves JSON/HTML reports with a login summary.
 30. Optionally, a user starts an authenticated browser smoke run.
 31. The browser worker logs in through the credential profile, visits one configured same-origin target path, records browser/login evidence and findings, and serves JSON/HTML reports.
+32. Optionally, a user starts a Safe QA Run.
+33. The API reuses or creates a discovery run, generates a discovery-aware test plan from sanitized metadata, stores safe execution coverage, and either stops for review or explicitly starts the approved safe execution.
+34. The API serves JSON and HTML Safe QA Run reports with discovery, plan, preview, execution, and safety metadata.
 
 ## Intentional Alpha Constraints
 
-- No user accounts or authentication.
+- Local authentication is intentionally minimal: one admin role, no user management UI, no password reset, no SSO/OIDC/SAML, no enterprise RBAC, no teams, and no multi-tenancy.
 - Web UI is alpha and suitable only for trusted self-hosted/local environments.
 - AI provider management is alpha and should be used only in trusted local/self-hosted environments.
 - AI-assisted test planning is alpha and should be treated as human-reviewable suggestions.
@@ -339,7 +363,7 @@ Generated plans are not executed automatically. A user can explicitly preview an
 - No authenticated API testing.
 - No arbitrary form submission, MFA, session export, multi-step authenticated journeys, or AI-controlled login.
 - No autonomous AI browser control.
-- No automatic execution of generated AI test plan steps and no free-form model-controlled browser actions.
+- No automatic execution of generated AI test plan steps and no free-form model-controlled browser actions. Safe QA execution requires an explicit user request and still runs only persisted safe DSL steps.
 - No active security scanning.
 - No destructive API testing by default.
 - No full OpenAPI schema validation or fuzzing.

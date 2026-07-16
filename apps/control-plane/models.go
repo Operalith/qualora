@@ -15,6 +15,20 @@ const (
 )
 
 const (
+	QARunStatusRunningDiscovery    = "running_discovery"
+	QARunStatusGeneratingPlan      = "generating_plan"
+	QARunStatusPreviewingExecution = "previewing_execution"
+	QARunStatusExecutingPlan       = "executing_plan"
+)
+
+const (
+	AITestPlanExecutionModeReviewOnly     = "review_only"
+	AITestPlanExecutionModeSafeExecutable = "safe_executable"
+	TestPlanSourceRunReport               = "run_report"
+	TestPlanSourceDiscovery               = "discovery"
+)
+
+const (
 	JobKindBrowser = "browser"
 	JobKindAPI     = "api"
 )
@@ -593,29 +607,37 @@ type AIAnalysis struct {
 }
 
 type AITestPlanRequest struct {
-	ProviderID     string   `json:"provider_id"`
-	RunID          string   `json:"run_id"`
-	ProductContext string   `json:"product_context"`
-	FocusAreas     []string `json:"focus_areas"`
-	MaxScenarios   int      `json:"max_scenarios"`
+	ProviderID            string   `json:"provider_id"`
+	RunID                 string   `json:"run_id"`
+	DiscoveryRunID        string   `json:"discovery_run_id,omitempty"`
+	UseLatestDiscovery    bool     `json:"use_latest_discovery,omitempty"`
+	IncludeDiscoveryMap   *bool    `json:"include_discovery_map,omitempty"`
+	ExecutionMode         string   `json:"execution_mode,omitempty"`
+	MaxPagesFromDiscovery int      `json:"max_pages_from_discovery,omitempty"`
+	ProductContext        string   `json:"product_context"`
+	FocusAreas            []string `json:"focus_areas"`
+	MaxScenarios          int      `json:"max_scenarios"`
 }
 
 type TestPlan struct {
-	ID             string         `json:"id"`
-	ProjectID      string         `json:"project_id"`
-	RunID          string         `json:"run_id,omitempty"`
-	ProviderID     string         `json:"provider_id,omitempty"`
-	ProviderName   string         `json:"provider_name,omitempty"`
-	Model          string         `json:"model,omitempty"`
-	Status         string         `json:"status"`
-	Title          string         `json:"title"`
-	Summary        string         `json:"summary"`
-	PlanJSON       map[string]any `json:"plan_json"`
-	RiskLevel      string         `json:"risk_level"`
-	TotalScenarios int            `json:"total_scenarios"`
-	ErrorMessage   string         `json:"error_message,omitempty"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
+	ID                string                     `json:"id"`
+	ProjectID         string                     `json:"project_id"`
+	RunID             string                     `json:"run_id,omitempty"`
+	DiscoveryRunID    string                     `json:"discovery_run_id,omitempty"`
+	SourceType        string                     `json:"source_type,omitempty"`
+	ProviderID        string                     `json:"provider_id,omitempty"`
+	ProviderName      string                     `json:"provider_name,omitempty"`
+	Model             string                     `json:"model,omitempty"`
+	Status            string                     `json:"status"`
+	Title             string                     `json:"title"`
+	Summary           string                     `json:"summary"`
+	PlanJSON          map[string]any             `json:"plan_json"`
+	RiskLevel         string                     `json:"risk_level"`
+	TotalScenarios    int                        `json:"total_scenarios"`
+	ExecutionCoverage TestPlanExecutableCoverage `json:"execution_coverage"`
+	ErrorMessage      string                     `json:"error_message,omitempty"`
+	CreatedAt         time.Time                  `json:"created_at"`
+	UpdatedAt         time.Time                  `json:"updated_at"`
 }
 
 type TestPlanRef struct {
@@ -625,6 +647,17 @@ type TestPlanRef struct {
 	RiskLevel      string    `json:"risk_level"`
 	TotalScenarios int       `json:"total_scenarios"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+type TestPlanExecutableCoverage struct {
+	TotalScenarios          int `json:"total_scenarios"`
+	ExecutableScenarios     int `json:"executable_scenarios"`
+	SkippedScenarios        int `json:"skipped_scenarios"`
+	TotalSteps              int `json:"total_steps"`
+	ExecutableSteps         int `json:"executable_steps"`
+	SkippedSteps            int `json:"skipped_steps"`
+	UnsafeSkippedSteps      int `json:"unsafe_skipped_steps"`
+	UnsupportedSkippedSteps int `json:"unsupported_skipped_steps"`
 }
 
 type TestPlanExecutionRequest struct {
@@ -747,6 +780,53 @@ type TestPlanExecutionReport struct {
 	Evidence      []Evidence                    `json:"evidence"`
 	SafetySummary TestPlanExecutionSafetyReport `json:"safety_summary"`
 	GeneratedAt   time.Time                     `json:"generated_at"`
+}
+
+type QARunRequest struct {
+	Mode                      string   `json:"mode"`
+	StartURL                  string   `json:"start_url,omitempty"`
+	CredentialProfileID       string   `json:"credential_profile_id,omitempty"`
+	MaxPages                  int      `json:"max_pages,omitempty"`
+	MaxDepth                  int      `json:"max_depth,omitempty"`
+	MaxScenarios              int      `json:"max_scenarios,omitempty"`
+	Execute                   bool     `json:"execute,omitempty"`
+	UseExistingDiscoveryRunID string   `json:"use_existing_discovery_run_id,omitempty"`
+	UseLatestDiscovery        bool     `json:"use_latest_discovery,omitempty"`
+	ProviderID                string   `json:"provider_id,omitempty"`
+	ProductContext            string   `json:"product_context,omitempty"`
+	FocusAreas                []string `json:"focus_areas,omitempty"`
+}
+
+type QARun struct {
+	ID                  string         `json:"id"`
+	ProjectID           string         `json:"project_id"`
+	Status              string         `json:"status"`
+	Mode                string         `json:"mode"`
+	DiscoveryRunID      string         `json:"discovery_run_id,omitempty"`
+	TestPlanID          string         `json:"test_plan_id,omitempty"`
+	TestPlanExecutionID string         `json:"test_plan_execution_id,omitempty"`
+	CredentialProfileID string         `json:"credential_profile_id,omitempty"`
+	ErrorMessage        string         `json:"error_message,omitempty"`
+	Summary             map[string]any `json:"summary"`
+	StartedAt           *time.Time     `json:"started_at,omitempty"`
+	CompletedAt         *time.Time     `json:"completed_at,omitempty"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
+}
+
+type QARunReport struct {
+	Run              QARun                     `json:"run"`
+	Project          Project                   `json:"project"`
+	DiscoveryRun     *DiscoveryRun             `json:"discovery_run,omitempty"`
+	DiscoverySummary *DiscoverySummary         `json:"discovery_summary,omitempty"`
+	TestPlan         *TestPlan                 `json:"test_plan,omitempty"`
+	ExecutionPreview *TestPlanExecutionPreview `json:"execution_preview,omitempty"`
+	ExecutionReport  *TestPlanExecutionReport  `json:"execution_report,omitempty"`
+	Findings         []Finding                 `json:"findings"`
+	Evidence         []Evidence                `json:"evidence"`
+	SafetyNotes      []string                  `json:"safety_notes"`
+	Limitations      []string                  `json:"limitations"`
+	GeneratedAt      time.Time                 `json:"generated_at"`
 }
 
 type APISpecImportRequest struct {

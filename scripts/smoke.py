@@ -130,7 +130,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.12.0-alpha" not in status.get("version", ""):
+    if "0.13.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -766,6 +766,123 @@ def run_application_discovery(project, profile=None):
     return report
 
 
+def generate_discovery_ai_test_plan(project, discovery_report, provider):
+    discovery_run_id = discovery_report["run"]["id"]
+    plan = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/ai-test-plans",
+        {
+            "provider_id": provider["id"],
+            "discovery_run_id": discovery_run_id,
+            "include_discovery_map": True,
+            "execution_mode": "safe_executable",
+            "max_pages_from_discovery": 12,
+            "product_context": "Discovery-aware smoke context. password=should-not-leak",
+            "focus_areas": ["smoke", "functional", "regression"],
+            "max_scenarios": 10,
+        },
+    )
+    print(f"discovery-aware AI test plan: {json.dumps(plan, indent=2)}")
+    assert_no_demo_secret(plan, "discovery-aware AI test plan response")
+    rendered = json.dumps(plan, sort_keys=True)
+    if "should-not-leak" in rendered:
+        raise RuntimeError("discovery-aware AI test plan exposed redaction smoke text")
+    if plan.get("status") != "completed":
+        raise RuntimeError(f"discovery-aware AI test plan did not complete: {plan}")
+    if plan.get("source_type") != "discovery" or plan.get("discovery_run_id") != discovery_run_id:
+        raise RuntimeError(f"discovery-aware AI test plan was not linked to discovery: {plan}")
+    coverage = plan.get("execution_coverage") or {}
+    if int(coverage.get("executable_steps") or 0) < 1:
+        raise RuntimeError(f"discovery-aware AI test plan did not record executable coverage: {coverage}")
+    scenarios = (plan.get("plan_json") or {}).get("scenarios") or []
+    tags = {tag for scenario in scenarios for tag in scenario.get("tags", [])}
+    if "generated_from_discovery" not in tags or "safe_executable_candidate" not in tags:
+        raise RuntimeError(f"discovery-aware AI test plan did not include discovery/safe tags: {tags}")
+
+    fetched = request("GET", f"/api/v1/test-plans/{plan['id']}")
+    if fetched.get("source_type") != "discovery" or fetched.get("discovery_run_id") != discovery_run_id:
+        raise RuntimeError(f"discovery-aware test plan detail lost source metadata: {fetched}")
+    print(f"Discovery-aware AI test plan detail: {API_URL}/api/v1/test-plans/{plan['id']}")
+    print(f"Web discovery-aware test plan: {WEB_URL}/#/test-plans/{plan['id']}")
+    return plan
+
+
+def wait_for_qa_run(qa_run_id, label, require_execution=False):
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/qa-runs/{qa_run_id}")
+        status = current["status"]
+        print(f"{label} status: {status}")
+        if status in ("completed", "failed", "error", "canceled"):
+            if not require_execution or current.get("test_plan_execution_id"):
+                break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"{label} QA run {qa_run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    report = request("GET", f"/api/v1/qa-runs/{qa_run_id}/report")
+    print(f"{label} report: {json.dumps(report, indent=2)}")
+    assert_no_demo_secret(report, f"{label} JSON report")
+    if report["run"]["status"] != "completed":
+        raise RuntimeError(f"{label} QA run did not complete: {report['run']}")
+    if not report.get("discovery_run") or not report.get("test_plan") or not report.get("execution_preview"):
+        raise RuntimeError(f"{label} QA report missed discovery, plan, or preview: {report}")
+    if int(report["execution_preview"].get("executable_steps") or 0) < 1:
+        raise RuntimeError(f"{label} QA preview had no executable steps: {report['execution_preview']}")
+
+    html = fetch_text(f"/api/v1/qa-runs/{qa_run_id}/report.html")
+    assert_no_demo_secret(html, f"{label} HTML report")
+    if "Qualora safe QA report" not in html or "Safe Execution Preview" not in html:
+        raise RuntimeError(f"{label} QA HTML report did not include expected content")
+
+    print(f"{label} QA JSON report: {API_URL}/api/v1/qa-runs/{qa_run_id}/report")
+    print(f"{label} QA HTML report: {API_URL}/api/v1/qa-runs/{qa_run_id}/report.html")
+    print(f"Web {label} QA report: {WEB_URL}/#/qa-runs/{qa_run_id}")
+    return report
+
+
+def run_safe_qa_preview(project, discovery_report, provider):
+    qa_run = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/qa-runs",
+        {
+            "mode": "safe",
+            "provider_id": provider["id"],
+            "use_existing_discovery_run_id": discovery_report["run"]["id"],
+            "execute": False,
+            "max_pages": 12,
+            "max_depth": 2,
+            "max_scenarios": 10,
+            "focus_areas": ["smoke", "functional", "regression"],
+            "product_context": "One-click safe QA preview. password=should-not-leak",
+        },
+    )
+    qa_run_id = qa_run["id"]
+    print(f"started safe QA preview: {qa_run_id}")
+    report = wait_for_qa_run(qa_run_id, "safe QA preview")
+    if report["run"].get("test_plan_execution_id"):
+        raise RuntimeError(f"safe QA preview unexpectedly executed a plan: {report['run']}")
+    return report
+
+
+def execute_previewed_qa_run(preview_report):
+    qa_run_id = preview_report["run"]["id"]
+    accepted = request("POST", f"/api/v1/qa-runs/{qa_run_id}/execute", {})
+    print(f"accepted safe QA preview execution: {json.dumps(accepted, indent=2)}")
+    report = wait_for_qa_run(qa_run_id, "safe QA executed preview", require_execution=True)
+    execution_report = report.get("execution_report")
+    if not execution_report:
+        raise RuntimeError(f"executed QA report did not include execution report: {report}")
+    if execution_report["execution"].get("status") != "completed":
+        raise RuntimeError(f"QA execution did not complete: {execution_report['execution']}")
+    if int(execution_report["execution"].get("passed_steps") or 0) < 1:
+        raise RuntimeError("QA execution did not pass any safe steps")
+    evidence_types = {item.get("type") for item in report.get("evidence", [])}
+    if "screenshot" not in evidence_types or "browser_observations" not in evidence_types:
+        raise RuntimeError(f"executed QA report missed expected evidence types: {evidence_types}")
+    return report
+
+
 def create_authorization_check(project, profile, name, target_path, expected_outcome, success_text="", denied_text="Access denied"):
     check = request(
         "POST",
@@ -877,7 +994,11 @@ def main():
     authenticated_report = run_authenticated_browser_smoke(browser_project, credential_profile)
     authenticated_report = run_ai_analysis(authenticated_report, provider)
     generate_ai_test_plan(browser_project, authenticated_report, provider)
-    run_application_discovery(browser_project)
+    discovery_report = run_application_discovery(browser_project)
+    discovery_plan = generate_discovery_ai_test_plan(browser_project, discovery_report, provider)
+    preview_test_plan_execution(discovery_plan)
+    qa_preview_report = run_safe_qa_preview(browser_project, discovery_report, provider)
+    execute_previewed_qa_run(qa_preview_report)
 
     role_profiles = {
         role_name: create_role_credential_profile(browser_project, name, username, password, role_name, subject_label)

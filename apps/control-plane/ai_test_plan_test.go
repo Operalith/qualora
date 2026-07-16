@@ -16,12 +16,27 @@ func TestNormalizeAITestPlanRequestDefaultsAndValidates(t *testing.T) {
 	if len(req.FocusAreas) == 0 {
 		t.Fatal("expected default focus areas")
 	}
+	if req.IncludeDiscoveryMap == nil || !*req.IncludeDiscoveryMap {
+		t.Fatal("expected discovery map inclusion to default true")
+	}
+	if req.ExecutionMode != AITestPlanExecutionModeReviewOnly {
+		t.Fatalf("expected default execution mode review_only, got %q", req.ExecutionMode)
+	}
+	if req.MaxPagesFromDiscovery != defaultMaxDiscoveryPages {
+		t.Fatalf("unexpected default max discovery pages %d", req.MaxPagesFromDiscovery)
+	}
 
 	if _, err := NormalizeAITestPlanRequest(AITestPlanRequest{MaxScenarios: 31}); err == nil {
 		t.Fatal("expected max_scenarios above limit to be rejected")
 	}
 	if _, err := NormalizeAITestPlanRequest(AITestPlanRequest{FocusAreas: []string{"exploit"}}); err == nil {
 		t.Fatal("expected unsupported focus area to be rejected")
+	}
+	if _, err := NormalizeAITestPlanRequest(AITestPlanRequest{ExecutionMode: "autonomous"}); err == nil {
+		t.Fatal("expected unsupported execution mode to be rejected")
+	}
+	if _, err := NormalizeAITestPlanRequest(AITestPlanRequest{MaxPagesFromDiscovery: 101}); err == nil {
+		t.Fatal("expected max_pages_from_discovery above limit to be rejected")
 	}
 }
 
@@ -76,7 +91,7 @@ func TestBuildSafeTestPlanInputRedactsSecretsAndIncludesAnalysisSummary(t *testi
 		t.Fatalf("normalize request: %v", err)
 	}
 
-	safeInput := BuildSafeTestPlanInput(project, report, input)
+	safeInput := BuildSafeTestPlanInput(project, report, nil, input)
 	rendered := prettyJSON(safeInput)
 	for _, leaked := range []string{"api_key=secret", "access_token=secret", "session_id=secret", "password=hunter2", "should-not-leak", "private body", "<html>secret</html>"} {
 		if strings.Contains(rendered, leaked) {
@@ -88,6 +103,75 @@ func TestBuildSafeTestPlanInputRedactsSecretsAndIncludesAnalysisSummary(t *testi
 	}
 	if strings.Contains(rendered, "?") || strings.Contains(rendered, "#frag") {
 		t.Fatalf("expected URL query and fragment to be stripped:\n%s", rendered)
+	}
+}
+
+func TestBuildSafeTestPlanInputIncludesCappedDiscoveryMapWithoutSecrets(t *testing.T) {
+	status := 200
+	report := &DiscoveryReport{
+		Run: DiscoveryRun{
+			ID:             "discovery-1",
+			ProjectID:      "project-1",
+			Status:         StatusCompleted,
+			StartURL:       "https://example.com/?token=secret",
+			MaxPages:       20,
+			MaxDepth:       2,
+			SameOriginOnly: true,
+		},
+		Project: Project{ID: "project-1", Name: "Example"},
+		Summary: DiscoverySummary{TotalPages: 2, TotalLinks: 1, TotalForms: 1},
+		Pages: []DiscoveredPage{
+			{Path: "/", NormalizedURL: "https://example.com/?api_key=secret", Title: "Home", HTTPStatus: &status},
+			{Path: "/dashboard", NormalizedURL: "https://example.com/dashboard?session=secret", Title: "Dashboard", HTTPStatus: &status},
+		},
+		Links: []DiscoveredLink{{
+			NormalizedURL: "https://example.com/logout?session=secret",
+			LinkText:      "Logout",
+			Skipped:       true,
+			SkipReason:    "unsafe_link_skipped",
+		}},
+		Forms: []DiscoveredForm{{
+			FormAction:         "/login",
+			FormMethod:         "post",
+			PasswordFieldCount: 1,
+			Classification:     "password_form",
+			Fields: []DiscoveredFormField{{
+				FieldName: "password",
+				FieldType: "password",
+				Label:     "Password",
+			}},
+		}},
+		Evidence: []Evidence{{
+			Type:     "screenshot",
+			Metadata: map[string]any{"cookie": "secret"},
+		}},
+	}
+	includeDiscovery := true
+	input, err := NormalizeAITestPlanRequest(AITestPlanRequest{
+		IncludeDiscoveryMap:   &includeDiscovery,
+		ExecutionMode:         AITestPlanExecutionModeSafeExecutable,
+		MaxPagesFromDiscovery: 1,
+		MaxScenarios:          5,
+	})
+	if err != nil {
+		t.Fatalf("normalize request: %v", err)
+	}
+
+	safeInput := BuildSafeTestPlanInput(report.Project, nil, report, input)
+	rendered := prettyJSON(safeInput)
+	for _, leaked := range []string{"api_key=secret", "session=secret", "token=secret", "cookie"} {
+		if strings.Contains(rendered, leaked) {
+			t.Fatalf("safe discovery test plan input leaked %q in:\n%s", leaked, rendered)
+		}
+	}
+	if !strings.Contains(rendered, `"execution_mode": "safe_executable"`) {
+		t.Fatalf("expected safe execution mode in input:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, `"included_pages": 1`) {
+		t.Fatalf("expected discovery map page cap in input:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "Dashboard") {
+		t.Fatalf("expected discovery pages to be capped:\n%s", rendered)
 	}
 }
 

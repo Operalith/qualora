@@ -162,6 +162,76 @@ const testPlan = {
   ]
 };
 
+const discoveryTestPlan = {
+  title: "Discovery-aware safe QA plan",
+  summary: "A conservative plan generated from a sanitized Qualora discovery map using only safe executable browser DSL actions.",
+  assumptions: [
+    "Only pages and links from the provided discovery map were considered.",
+    "Credentials, cookies, browser storage, screenshots, full HTML, and response bodies were not available to the fake provider."
+  ],
+  coverage_goals: [
+    "Exercise discovered public routes with safe navigation and assertions.",
+    "Check discovered same-origin links without submitting forms or mutating state.",
+    "Collect browser observations for discovered pages."
+  ],
+  scenarios: [
+    {
+      id: "discovery-home-smoke",
+      name: "Discovered home route safe smoke",
+      type: "smoke",
+      priority: "high",
+      risk: "medium",
+      description: "Verify a discovered public entry route loads and exposes stable text.",
+      preconditions: ["A completed Qualora discovery map includes the public home route."],
+      steps: [
+        { order: 1, action: "goto", target: "/", data: "", expected_result: "The discovered home route loads." },
+        { order: 2, action: "assert_title_contains", target: "Qualora Demo Web", data: "", expected_result: "The title matches the discovered demo application." },
+        { order: 3, action: "assert_text_visible", target: "Self-hosted QA automation demo", data: "", expected_result: "The discovered page text is visible." },
+        { order: 4, action: "collect_browser_signals", target: "", data: "", expected_result: "Console and network observations are collected." }
+      ],
+      assertions: ["The discovered home route is reachable and renders expected public text."],
+      test_data_needed: [],
+      automation_candidate: true,
+      destructive: false,
+      requires_authentication: false,
+      related_findings: [],
+      tags: ["generated_from_discovery", "safe_executable_candidate", "smoke"]
+    },
+    {
+      id: "discovery-status-link",
+      name: "Discovered status link remains safe and reachable",
+      type: "regression",
+      priority: "medium",
+      risk: "medium",
+      description: "Verify a discovered same-origin status route and link target with safe read-only actions.",
+      preconditions: ["The discovery map includes /status or a same-origin status link."],
+      steps: [
+        { order: 1, action: "goto", target: "/status", data: "", expected_result: "The status route loads." },
+        { order: 2, action: "assert_url_contains", target: "/status", data: "", expected_result: "The browser remains on the discovered status route." },
+        { order: 3, action: "assert_text_visible", target: "System status: OK", data: "", expected_result: "The status text is visible." },
+        { order: 4, action: "check_link_status", target: "/about", data: "", expected_result: "A discovered same-origin link responds successfully." },
+        { order: 5, action: "assert_no_console_errors", target: "", data: "", expected_result: "No console errors are observed." },
+        { order: 6, action: "assert_no_failed_requests", target: "", data: "", expected_result: "No failed network requests are observed." }
+      ],
+      assertions: ["The discovered status route is reachable.", "Browser observations stay clean for the safe check."],
+      test_data_needed: [],
+      automation_candidate: true,
+      destructive: false,
+      requires_authentication: false,
+      related_findings: [],
+      tags: ["generated_from_discovery", "safe_executable_candidate", "regression"]
+    }
+  ],
+  suggested_next_instrumentation: [
+    "Add semantic route labels to the discovery map for richer future planning.",
+    "Review skipped links before broadening safe QA coverage."
+  ],
+  limitations: [
+    "The fake provider only returns deterministic discovery-aware smoke data.",
+    "No authenticated, mutating, or arbitrary form-submission flows are generated."
+  ]
+};
+
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && (req.url === "/health" || req.url === "/")) {
     writeJSON(res, 200, { status: "ok" });
@@ -176,7 +246,8 @@ const server = http.createServer((req, res) => {
           ? request.messages.map((message) => String(message.content || "")).join("\n").toLowerCase()
           : "";
         const isTestPlan = content.includes("test plan") || content.includes("test planning");
-        const payload = isTestPlan ? testPlan : analysis;
+        const isDiscoveryAware = /"discovery_map"\s*:\s*\{/.test(content) || content.includes("generated_from_discovery");
+        const payload = isTestPlan ? (isDiscoveryAware ? discoveryTestPlan : testPlan) : analysis;
         writeJSON(res, 200, {
           id: "chatcmpl-qualora-fake",
           object: "chat.completion",

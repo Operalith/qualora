@@ -70,6 +70,25 @@ WHERE id = $1
 	return &run, nil
 }
 
+func (s *Store) GetLatestCompletedDiscoveryRun(ctx context.Context, projectID string) (*DiscoveryRun, error) {
+	run, err := scanDiscoveryRun(s.db.QueryRow(ctx, `
+SELECT id, project_id, credential_profile_id::text, status, start_url, max_pages, max_depth,
+	same_origin_only, started_at, completed_at, total_pages, total_links, total_forms,
+	total_console_errors, total_failed_requests, total_findings, error_message, created_at, updated_at
+FROM discovery_runs
+WHERE project_id = $1 AND status = $2
+ORDER BY completed_at DESC NULLS LAST, created_at DESC
+LIMIT 1
+`, projectID, StatusCompleted))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get latest completed discovery run: %w", err)
+	}
+	return &run, nil
+}
+
 func (s *Store) MarkDiscoveryRunFailed(ctx context.Context, id string, message string) error {
 	tag, err := s.db.Exec(ctx, `
 UPDATE discovery_runs

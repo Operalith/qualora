@@ -1,6 +1,6 @@
 # Qualora Web
 
-Minimal React/Vite web UI for Qualora v0.12.0-alpha.
+Minimal React/Vite web UI for Qualora v0.13.0-alpha.
 
 The UI supports:
 
@@ -21,6 +21,8 @@ The UI supports:
 - Viewing authorization check reports, results, findings, and evidence.
 - Starting safe application discovery runs.
 - Viewing discovery run reports, application maps, pages, links, forms, findings, and evidence.
+- Generating discovery-aware AI test plans from sanitized application maps.
+- Starting Safe QA Run previews, executing reviewed safe QA runs, and viewing Safe QA Run reports.
 - Starting runs.
 - Listing runs.
 - Viewing run reports, findings, evidence metadata, browser metadata, API metadata, and worker job metadata.
@@ -62,6 +64,7 @@ QUALORA_API_BASE_URL=http://localhost:8080 docker compose up -d --build qualora-
 - AI provider credentials should only be configured in trusted environments.
 - AI-assisted test plans are suggestions and are never executed automatically.
 - Safe test plan execution is limited to the supported non-destructive browser DSL.
+- Safe QA Runs preview by default and execute only persisted safe DSL steps after explicit user action.
 - Safe API smoke execution is read-only and skips mutating, authenticated, ambiguous, request-body, unresolved-parameter, and sensitive operations.
 - Credential profiles are intended for trusted local/self-hosted test accounts and never return raw credentials.
 - Authenticated browser smoke is limited to one configured login form and one same-origin target path.

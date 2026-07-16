@@ -4,6 +4,38 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.13.0-alpha] - 2026-07-16
+
+### Added
+
+- Discovery-aware AI test plan generation using sanitized application map summaries.
+- Safe executable AI plan mode with optional deterministic DSL candidates.
+- Stored test plan source metadata, discovery run links, and safe execution coverage counts.
+- Safe QA Run API for reuse/latest/new discovery, AI plan generation, safe execution preview, optional explicit execution, and JSON/HTML reports.
+- Web UI Safe QA Run controls on project pages and discovery report pages.
+- Web UI Safe QA Run report page with discovery, generated plan, preview coverage, optional execution report, findings, evidence, and safety metadata.
+- Fake OpenAI-compatible provider output for deterministic discovery-aware test plan smoke coverage.
+- Smoke coverage for discovery-aware planning, Safe QA preview, Safe QA execution, Safe QA reports, and existing browser/API/AI/test-plan flows.
+
+### Changed
+
+- Package metadata has been updated to `0.13.0-alpha`.
+- AI test plan requests can opt into `include_discovery_map`, `execution_mode`, and `max_pages_from_discovery`.
+- The web UI now shows test plan source, discovery run links, and executable coverage when available.
+
+### Security
+
+- Discovery-aware AI input is sanitized and capped; it excludes credentials, cookies, browser storage, auth headers, tokens, full HTML, screenshots, request bodies, and response bodies.
+- Safe QA Runs stop after preview by default and execute only persisted, mapped, non-destructive browser DSL steps after explicit user action.
+- No autonomous AI browser control, arbitrary clicking, arbitrary form submission, active scanning, fuzzing, payload execution, or destructive actions were added.
+
+### Known Limitations
+
+- Safe QA Runs are alpha orchestration and depend on the quality of the sanitized discovery map and configured AI provider.
+- Safe execution remains browser-only and limited to the supported deterministic DSL.
+- Authenticated discovery and richer multi-step logged-in journeys are not part of this release.
+- AI planning is optional and unavailable until an OpenAI-compatible provider is configured.
+
 ## [v0.12.0-alpha] - 2026-07-15
 
 ### Added

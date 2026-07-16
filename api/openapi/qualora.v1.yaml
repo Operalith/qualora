@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.12.0-alpha
+  version: 0.13.0-alpha
   description: API for first-run local admin setup, local session authentication, creating QA projects, running safe application discovery, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
@@ -615,10 +615,111 @@ paths:
                 type: string
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/qa-runs:
+    get:
+      summary: List safe QA runs for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Safe QA run list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [qa_runs]
+                properties:
+                  qa_runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/QARun"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Start a discovery-aware safe QA run
+      description: Creates an alpha one-click QA workflow that reuses or runs safe discovery, generates a sanitized discovery-aware AI test plan, previews the executable safe DSL subset, and optionally executes approved safe steps. It does not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, or response bodies to AI.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QARunRequest"
+      responses:
+        "201":
+          description: Created safe QA run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QARun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/qa-runs/{qa_run_id}:
+    get:
+      summary: Get a safe QA run
+      parameters:
+        - $ref: "#/components/parameters/QARunID"
+      responses:
+        "200":
+          description: Safe QA run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QARun"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/qa-runs/{qa_run_id}/execute:
+    post:
+      summary: Execute a previewed safe QA run
+      description: Starts safe DSL execution for a completed preview-only QA run that has a generated test plan and no execution yet.
+      parameters:
+        - $ref: "#/components/parameters/QARunID"
+      responses:
+        "202":
+          description: Execution accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QARun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/qa-runs/{qa_run_id}/report:
+    get:
+      summary: Get a combined safe QA JSON report
+      parameters:
+        - $ref: "#/components/parameters/QARunID"
+      responses:
+        "200":
+          description: Combined safe QA report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QARunReport"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/qa-runs/{qa_run_id}/report.html:
+    get:
+      summary: Get a self-contained safe QA HTML report
+      parameters:
+        - $ref: "#/components/parameters/QARunID"
+      responses:
+        "200":
+          description: HTML safe QA report
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{project_id}/ai-test-plans:
     post:
       summary: Generate an AI-assisted test plan for a project
-      description: Synchronously builds a sanitized project/run context and sends it to the selected or default OpenAI-compatible provider. Generated plans are suggestions; only explicitly approved safe DSL steps can be executed.
+      description: Synchronously builds a sanitized project/run/discovery context and sends it to the selected or default OpenAI-compatible provider. Discovery maps are optional, capped, and sanitized. Generated plans are suggestions; only explicitly approved safe DSL steps can be executed.
       parameters:
         - $ref: "#/components/parameters/ProjectID"
       requestBody:
@@ -1258,6 +1359,13 @@ components:
       schema:
         type: string
         format: uuid
+    QARunID:
+      name: qa_run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     EvidenceID:
       name: evidence_id
       in: path
@@ -1302,7 +1410,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.12.0-alpha
+          example: 0.13.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -2803,6 +2911,27 @@ components:
           type: string
           format: uuid
           description: Optional. Uses the latest project run when omitted.
+        discovery_run_id:
+          type: string
+          format: uuid
+          description: Optional completed discovery run to include as sanitized planning context.
+        use_latest_discovery:
+          type: boolean
+          default: false
+          description: Use the latest completed discovery run for the project when discovery_run_id is omitted.
+        include_discovery_map:
+          type: boolean
+          default: true
+          description: Include a capped sanitized discovery map when a discovery run is selected.
+        execution_mode:
+          type: string
+          enum: [review_only, safe_executable]
+          default: review_only
+        max_pages_from_discovery:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
         product_context:
           type: string
           description: Optional product notes. Secrets are redacted before prompt construction.
@@ -2842,6 +2971,13 @@ components:
           type: string
           format: uuid
           nullable: true
+        discovery_run_id:
+          type: string
+          format: uuid
+          nullable: true
+        source_type:
+          type: string
+          enum: [run_report, discovery, ""]
         provider_id:
           type: string
           format: uuid
@@ -2864,6 +3000,8 @@ components:
           enum: [low, medium, high, critical, ""]
         total_scenarios:
           type: integer
+        execution_coverage:
+          $ref: "#/components/schemas/TestPlanExecutableCoverage"
         error_message:
           type: string
         created_at:
@@ -2872,6 +3010,34 @@ components:
         updated_at:
           type: string
           format: date-time
+    TestPlanExecutableCoverage:
+      type: object
+      required:
+        - total_scenarios
+        - executable_scenarios
+        - skipped_scenarios
+        - total_steps
+        - executable_steps
+        - skipped_steps
+        - unsafe_skipped_steps
+        - unsupported_skipped_steps
+      properties:
+        total_scenarios:
+          type: integer
+        executable_scenarios:
+          type: integer
+        skipped_scenarios:
+          type: integer
+        total_steps:
+          type: integer
+        executable_steps:
+          type: integer
+        skipped_steps:
+          type: integer
+        unsafe_skipped_steps:
+          type: integer
+        unsupported_skipped_steps:
+          type: integer
     TestPlanRef:
       type: object
       required: [id, title, status, risk_level, total_scenarios, created_at]
@@ -3345,6 +3511,165 @@ components:
             $ref: "#/components/schemas/Evidence"
         safety_summary:
           $ref: "#/components/schemas/TestPlanExecutionSafetyReport"
+        generated_at:
+          type: string
+          format: date-time
+    QARunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [safe]
+          default: safe
+        start_url:
+          type: string
+          description: Optional start URL when running a new discovery.
+        credential_profile_id:
+          type: string
+          format: uuid
+          description: Optional credential profile for deterministic authenticated discovery. Credentials are never sent to AI.
+        max_pages:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+        max_depth:
+          type: integer
+          minimum: 0
+          maximum: 5
+          default: 2
+        max_scenarios:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 10
+        execute:
+          type: boolean
+          default: false
+          description: When true, execute the previewed safe DSL subset after plan generation.
+        use_existing_discovery_run_id:
+          type: string
+          format: uuid
+        use_latest_discovery:
+          type: boolean
+          default: false
+          description: Use the latest completed discovery run when available; otherwise start a new safe discovery.
+        provider_id:
+          type: string
+          format: uuid
+          description: Optional. Uses the default AI provider when omitted.
+        product_context:
+          type: string
+          description: Optional product notes. Secrets are redacted before prompt construction.
+        focus_areas:
+          type: array
+          items:
+            type: string
+            enum: [smoke, functional, negative, accessibility, performance, security-passive, authorization, api, visual, regression]
+          default: [smoke, functional, regression]
+    QARun:
+      type: object
+      required:
+        - id
+        - project_id
+        - status
+        - mode
+        - summary
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running_discovery, generating_plan, previewing_execution, executing_plan, completed, failed, error]
+        mode:
+          type: string
+          enum: [safe]
+        discovery_run_id:
+          type: string
+          format: uuid
+          nullable: true
+        test_plan_id:
+          type: string
+          format: uuid
+          nullable: true
+        test_plan_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        credential_profile_id:
+          type: string
+          format: uuid
+          nullable: true
+        error_message:
+          type: string
+        summary:
+          type: object
+          additionalProperties: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    QARunReport:
+      type: object
+      required: [run, project, findings, evidence, safety_notes, limitations, generated_at]
+      properties:
+        run:
+          $ref: "#/components/schemas/QARun"
+        project:
+          $ref: "#/components/schemas/Project"
+        discovery_run:
+          allOf:
+            - $ref: "#/components/schemas/DiscoveryRun"
+          nullable: true
+        discovery_summary:
+          allOf:
+            - $ref: "#/components/schemas/DiscoverySummary"
+          nullable: true
+        test_plan:
+          allOf:
+            - $ref: "#/components/schemas/TestPlan"
+          nullable: true
+        execution_preview:
+          allOf:
+            - $ref: "#/components/schemas/TestPlanExecutionPreview"
+          nullable: true
+        execution_report:
+          allOf:
+            - $ref: "#/components/schemas/TestPlanExecutionReport"
+          nullable: true
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+        safety_notes:
+          type: array
+          items:
+            type: string
+        limitations:
+          type: array
+          items:
+            type: string
         generated_at:
           type: string
           format: date-time

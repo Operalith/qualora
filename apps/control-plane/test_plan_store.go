@@ -11,21 +11,25 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) CreateTestPlan(ctx context.Context, projectID string, runID string, providerID string, model string) (*TestPlan, error) {
+func (s *Store) CreateTestPlan(ctx context.Context, projectID string, runID string, discoveryRunID string, sourceType string, providerID string, model string) (*TestPlan, error) {
 	var nullableRunID any
 	if runID != "" {
 		nullableRunID = runID
+	}
+	var nullableDiscoveryRunID any
+	if discoveryRunID != "" {
+		nullableDiscoveryRunID = discoveryRunID
 	}
 	var nullableProviderID any
 	if providerID != "" {
 		nullableProviderID = providerID
 	}
 	plan, err := scanTestPlan(s.db.QueryRow(ctx, `
-INSERT INTO test_plans (id, project_id, run_id, provider_id, model, status)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, project_id, run_id::text, provider_id::text, '', model, status, title, summary,
-	plan_json, risk_level, total_scenarios, error_message, created_at, updated_at
-`, uuid.NewString(), projectID, nullableRunID, nullableProviderID, model, StatusRunning))
+INSERT INTO test_plans (id, project_id, run_id, discovery_run_id, source_type, provider_id, model, status)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, project_id, run_id::text, discovery_run_id::text, source_type, provider_id::text, '', model, status, title, summary,
+	plan_json, risk_level, total_scenarios, execution_coverage_json, error_message, created_at, updated_at
+`, uuid.NewString(), projectID, nullableRunID, nullableDiscoveryRunID, sourceType, nullableProviderID, model, StatusRunning))
 	if err != nil {
 		return nil, fmt.Errorf("insert test plan: %w", err)
 	}
@@ -48,11 +52,29 @@ SET status = $2,
 	error_message = '',
 	updated_at = now()
 WHERE id = $1
-RETURNING id, project_id, run_id::text, provider_id::text, '', model, status, title, summary,
-	plan_json, risk_level, total_scenarios, error_message, created_at, updated_at
+RETURNING id, project_id, run_id::text, discovery_run_id::text, source_type, provider_id::text, '', model, status, title, summary,
+	plan_json, risk_level, total_scenarios, execution_coverage_json, error_message, created_at, updated_at
 `, id, StatusCompleted, payload.Title, payload.Summary, rawJSON, testPlanRiskLevel(payload), len(payload.Scenarios)))
 	if err != nil {
 		return nil, fmt.Errorf("complete test plan: %w", err)
+	}
+	return &plan, nil
+}
+
+func (s *Store) UpdateTestPlanCoverage(ctx context.Context, id string, coverage TestPlanExecutableCoverage) (*TestPlan, error) {
+	rawCoverage, err := json.Marshal(coverage)
+	if err != nil {
+		return nil, fmt.Errorf("marshal test plan coverage: %w", err)
+	}
+	plan, err := scanTestPlan(s.db.QueryRow(ctx, `
+UPDATE test_plans
+SET execution_coverage_json = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, project_id, run_id::text, discovery_run_id::text, source_type, provider_id::text, '', model, status, title, summary,
+	plan_json, risk_level, total_scenarios, execution_coverage_json, error_message, created_at, updated_at
+`, id, rawCoverage))
+	if err != nil {
+		return nil, fmt.Errorf("update test plan coverage: %w", err)
 	}
 	return &plan, nil
 }
@@ -62,8 +84,8 @@ func (s *Store) FailTestPlan(ctx context.Context, id string, message string) (*T
 UPDATE test_plans
 SET status = $2, error_message = $3, updated_at = now()
 WHERE id = $1
-RETURNING id, project_id, run_id::text, provider_id::text, '', model, status, title, summary,
-	plan_json, risk_level, total_scenarios, error_message, created_at, updated_at
+RETURNING id, project_id, run_id::text, discovery_run_id::text, source_type, provider_id::text, '', model, status, title, summary,
+	plan_json, risk_level, total_scenarios, execution_coverage_json, error_message, created_at, updated_at
 `, id, StatusFailed, message))
 	if err != nil {
 		return nil, fmt.Errorf("fail test plan: %w", err)
@@ -73,9 +95,10 @@ RETURNING id, project_id, run_id::text, provider_id::text, '', model, status, ti
 
 func (s *Store) ListTestPlans(ctx context.Context, projectID string) ([]TestPlan, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT t.id, t.project_id, t.run_id::text, t.provider_id::text, COALESCE(p.name, ''), t.model,
+SELECT t.id, t.project_id, t.run_id::text, t.discovery_run_id::text, t.source_type,
+	t.provider_id::text, COALESCE(p.name, ''), t.model,
 	t.status, t.title, t.summary, t.plan_json, t.risk_level, t.total_scenarios,
-	t.error_message, t.created_at, t.updated_at
+	t.execution_coverage_json, t.error_message, t.created_at, t.updated_at
 FROM test_plans t
 LEFT JOIN ai_providers p ON p.id = t.provider_id
 WHERE t.project_id = $1
@@ -102,9 +125,10 @@ ORDER BY t.created_at DESC
 
 func (s *Store) GetTestPlan(ctx context.Context, id string) (*TestPlan, error) {
 	plan, err := scanTestPlan(s.db.QueryRow(ctx, `
-SELECT t.id, t.project_id, t.run_id::text, t.provider_id::text, COALESCE(p.name, ''), t.model,
+SELECT t.id, t.project_id, t.run_id::text, t.discovery_run_id::text, t.source_type,
+	t.provider_id::text, COALESCE(p.name, ''), t.model,
 	t.status, t.title, t.summary, t.plan_json, t.risk_level, t.total_scenarios,
-	t.error_message, t.created_at, t.updated_at
+	t.execution_coverage_json, t.error_message, t.created_at, t.updated_at
 FROM test_plans t
 LEFT JOIN ai_providers p ON p.id = t.provider_id
 WHERE t.id = $1
@@ -186,12 +210,16 @@ LIMIT 1
 func scanTestPlan(row scanRow) (TestPlan, error) {
 	var plan TestPlan
 	var runID sql.NullString
+	var discoveryRunID sql.NullString
 	var providerID sql.NullString
 	var planRaw []byte
+	var coverageRaw []byte
 	if err := row.Scan(
 		&plan.ID,
 		&plan.ProjectID,
 		&runID,
+		&discoveryRunID,
+		&plan.SourceType,
 		&providerID,
 		&plan.ProviderName,
 		&plan.Model,
@@ -201,6 +229,7 @@ func scanTestPlan(row scanRow) (TestPlan, error) {
 		&planRaw,
 		&plan.RiskLevel,
 		&plan.TotalScenarios,
+		&coverageRaw,
 		&plan.ErrorMessage,
 		&plan.CreatedAt,
 		&plan.UpdatedAt,
@@ -210,6 +239,9 @@ func scanTestPlan(row scanRow) (TestPlan, error) {
 	if runID.Valid {
 		plan.RunID = runID.String
 	}
+	if discoveryRunID.Valid {
+		plan.DiscoveryRunID = discoveryRunID.String
+	}
 	if providerID.Valid {
 		plan.ProviderID = providerID.String
 	}
@@ -217,6 +249,11 @@ func scanTestPlan(row scanRow) (TestPlan, error) {
 		plan.PlanJSON = map[string]any{}
 	} else if err := json.Unmarshal(planRaw, &plan.PlanJSON); err != nil {
 		return TestPlan{}, fmt.Errorf("unmarshal test plan json: %w", err)
+	}
+	if len(coverageRaw) > 0 {
+		if err := json.Unmarshal(coverageRaw, &plan.ExecutionCoverage); err != nil {
+			return TestPlan{}, fmt.Errorf("unmarshal test plan coverage: %w", err)
+		}
 	}
 	return plan, nil
 }

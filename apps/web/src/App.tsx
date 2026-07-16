@@ -15,11 +15,13 @@ import {
   discoveryHTMLReportURL,
   evidenceDownloadURL,
   executeTestPlan,
+  executeQARun,
   generateAITestPlan,
   getAuthorizationCheckReport,
   getAPISpec,
   getDiscoveryReport,
   getProject,
+  getQARunReport,
   getReport,
   getRun,
   getSetupStatus,
@@ -34,6 +36,7 @@ import {
   listCredentialProfiles,
   listDiscoveryRuns,
   listProjects,
+  listQARuns,
   listRuns,
   listTestPlanExecutions,
   listTestPlans,
@@ -41,6 +44,7 @@ import {
   logout,
   me,
   previewTestPlanExecution,
+  qaRunHTMLReportURL,
   runAIAnalysis,
   setupAdmin,
   startAuthorizationCheckRun,
@@ -48,6 +52,7 @@ import {
   startAuthenticatedBrowserSmokeRun,
   startBrowserSmokeRun,
   startDiscoveryRun,
+  startQARun,
   startRun,
   testCredentialProfileLogin,
   testPlanExportURL,
@@ -82,6 +87,9 @@ import type {
   Evidence,
   LoginInput,
   Project,
+  QARun,
+  QARunInput,
+  QARunReport,
   Report,
   RunJob,
   SetupAdminInput,
@@ -107,6 +115,7 @@ type Route =
   | { name: "test-plan-execution"; id: string }
   | { name: "authorization-check-run"; id: string }
   | { name: "discovery-run"; id: string }
+  | { name: "qa-run"; id: string }
   | { name: "run"; id: string };
 
 type LoadState<T> = {
@@ -125,7 +134,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.12.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.13.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -317,6 +326,7 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
         {route.name === "test-plan-execution" && <TestPlanExecutionPage executionID={route.id} />}
         {route.name === "authorization-check-run" && <AuthorizationCheckRunPage runID={route.id} />}
         {route.name === "discovery-run" && <DiscoveryRunPage runID={route.id} />}
+        {route.name === "qa-run" && <QARunPage runID={route.id} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
       </main>
     </div>
@@ -963,6 +973,7 @@ function ProjectPage({
   const [authorizationChecks, setAuthorizationChecks] = useState<LoadState<AuthorizationCheck[]>>({ data: [], loading: true, error: "" });
   const [authorizationRuns, setAuthorizationRuns] = useState<LoadState<AuthorizationCheckRun[]>>({ data: [], loading: true, error: "" });
   const [discoveryRuns, setDiscoveryRuns] = useState<LoadState<DiscoveryRun[]>>({ data: [], loading: true, error: "" });
+  const [qaRuns, setQARuns] = useState<LoadState<QARun[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
   const [starting, setStarting] = useState("");
 
@@ -974,6 +985,7 @@ function ProjectPage({
     setAuthorizationChecks((current) => ({ ...current, loading: true, error: "" }));
     setAuthorizationRuns((current) => ({ ...current, loading: true, error: "" }));
     setDiscoveryRuns((current) => ({ ...current, loading: true, error: "" }));
+    setQARuns((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
       const [
@@ -985,7 +997,8 @@ function ProjectPage({
         nextCredentialProfiles,
         nextAuthorizationChecks,
         nextAuthorizationRuns,
-        nextDiscoveryRuns
+        nextDiscoveryRuns,
+        nextQARuns
       ] = await Promise.all([
         cachedProject ? Promise.resolve(cachedProject) : getProject(projectID),
         listRuns(projectID),
@@ -995,7 +1008,8 @@ function ProjectPage({
         listCredentialProfiles(projectID),
         listAuthorizationChecks(projectID),
         listAuthorizationCheckRuns(projectID),
-        listDiscoveryRuns(projectID)
+        listDiscoveryRuns(projectID),
+        listQARuns(projectID)
       ]);
       setProject(nextProject);
       setRuns({ data: nextRuns, loading: false, error: "" });
@@ -1006,6 +1020,7 @@ function ProjectPage({
       setAuthorizationChecks({ data: nextAuthorizationChecks, loading: false, error: "" });
       setAuthorizationRuns({ data: nextAuthorizationRuns, loading: false, error: "" });
       setDiscoveryRuns({ data: nextDiscoveryRuns, loading: false, error: "" });
+      setQARuns({ data: nextQARuns, loading: false, error: "" });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
@@ -1016,6 +1031,7 @@ function ProjectPage({
       setAuthorizationChecks((current) => ({ ...current, loading: false, error: message }));
       setAuthorizationRuns((current) => ({ ...current, loading: false, error: message }));
       setDiscoveryRuns((current) => ({ ...current, loading: false, error: message }));
+      setQARuns((current) => ({ ...current, loading: false, error: message }));
     }
   }, [cachedProject, projectID]);
 
@@ -1104,6 +1120,23 @@ function ProjectPage({
     }
   }
 
+  async function startSafeQARun(input: QARunInput) {
+    if (!project) {
+      return;
+    }
+    setStarting("qa-run");
+    setError("");
+    try {
+      const run = await startQARun(project.id, input);
+      await refresh();
+      window.location.hash = `#/qa-runs/${run.id}`;
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : String(startError));
+    } finally {
+      setStarting("");
+    }
+  }
+
   return (
     <div className="grid">
       <section>
@@ -1161,6 +1194,34 @@ function ProjectPage({
         <div className="section-split">
           {discoveryRuns.error && <Notice tone="danger" message={discoveryRuns.error} />}
           {discoveryRuns.loading ? <SkeletonRows /> : <DiscoveryRunTable runs={discoveryRuns.data} />}
+        </div>
+      </section>
+
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>Safe QA Runs</h2>
+            <p>Generate discovery-aware AI plans, preview safe steps, and optionally execute the safe subset.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="Safe QA runs send only sanitized discovery metadata to AI. They do not send credentials, cookies, storage, auth headers, screenshots, full HTML, or response bodies."
+        />
+        <QARunForm
+          project={project}
+          providers={providers}
+          profiles={credentialProfiles.data}
+          discoveryRuns={discoveryRuns.data}
+          disabled={starting !== ""}
+          onStart={(input) => void startSafeQARun(input)}
+        />
+        <div className="section-split">
+          {qaRuns.error && <Notice tone="danger" message={qaRuns.error} />}
+          {qaRuns.loading ? <SkeletonRows /> : <QARunTable runs={qaRuns.data} />}
         </div>
       </section>
 
@@ -1289,6 +1350,7 @@ function ProjectPage({
         <GenerateAITestPlanForm
           project={project}
           runs={runs.data}
+          discoveryRuns={discoveryRuns.data}
           providers={providers}
           onGenerated={async (plan) => {
             await refresh();
@@ -1433,6 +1495,232 @@ function DiscoveryRunTable({ runs }: { runs: DiscoveryRun[] }) {
               <td>{formatDate(run.created_at)}</td>
               <td>
                 <a href={`#/discovery-runs/${run.id}`}>Open</a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function QARunForm({
+  project,
+  providers,
+  profiles,
+  discoveryRuns,
+  disabled,
+  onStart
+}: {
+  project: Project;
+  providers: AIProvider[];
+  profiles: CredentialProfile[];
+  discoveryRuns: DiscoveryRun[];
+  disabled: boolean;
+  onStart: (input: QARunInput) => void;
+}) {
+  const completedDiscoveryRuns = discoveryRuns.filter((run) => run.status === "completed");
+  const [providerID, setProviderID] = useState("");
+  const [discoveryMode, setDiscoveryMode] = useState<"latest" | "existing" | "new">("latest");
+  const [existingDiscoveryRunID, setExistingDiscoveryRunID] = useState("");
+  const [credentialProfileID, setCredentialProfileID] = useState("");
+  const [startURL, setStartURL] = useState(project.frontend_url || "");
+  const [maxPages, setMaxPages] = useState(20);
+  const [maxDepth, setMaxDepth] = useState(2);
+  const [maxScenarios, setMaxScenarios] = useState(10);
+  const [execute, setExecute] = useState(false);
+  const [productContext, setProductContext] = useState("");
+  const [focusAreas, setFocusAreas] = useState<string[]>(["smoke", "functional", "regression"]);
+
+  useEffect(() => {
+    if (providerID || providers.length === 0) {
+      return;
+    }
+    setProviderID(providers.find((provider) => provider.is_default)?.id || providers[0].id);
+  }, [providerID, providers]);
+
+  useEffect(() => {
+    if (existingDiscoveryRunID || completedDiscoveryRuns.length === 0) {
+      return;
+    }
+    setExistingDiscoveryRunID(completedDiscoveryRuns[0].id);
+  }, [completedDiscoveryRuns, existingDiscoveryRunID]);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const input: QARunInput = {
+      mode: "safe",
+      provider_id: providerID || undefined,
+      credential_profile_id: credentialProfileID || undefined,
+      max_pages: maxPages,
+      max_depth: maxDepth,
+      max_scenarios: maxScenarios,
+      execute,
+      product_context: productContext.trim() || undefined,
+      focus_areas: focusAreas
+    };
+    if (discoveryMode === "existing") {
+      input.use_existing_discovery_run_id = existingDiscoveryRunID || undefined;
+    } else if (discoveryMode === "latest") {
+      input.use_latest_discovery = true;
+    } else {
+      input.start_url = startURL.trim() || undefined;
+    }
+    onStart(input);
+  }
+
+  function toggleFocusArea(value: string) {
+    setFocusAreas((current) => {
+      if (current.includes(value)) {
+        const next = current.filter((item) => item !== value);
+        return next.length > 0 ? next : current;
+      }
+      return [...current, value];
+    });
+  }
+
+  if (providers.length === 0) {
+    return <Notice tone="info" message="Configure an AI provider to start a discovery-aware safe QA run." />;
+  }
+
+  return (
+    <form className="project-form test-plan-form" onSubmit={submit}>
+      <div className="form-grid two">
+        <label>
+          Provider
+          <select value={providerID} onChange={(event) => setProviderID(event.target.value)} required>
+            {providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.name} ({provider.model})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Discovery Source
+          <select value={discoveryMode} onChange={(event) => setDiscoveryMode(event.target.value as "latest" | "existing" | "new")}>
+            <option value="latest">Use latest completed, or run new</option>
+            <option value="existing">Use selected completed discovery</option>
+            <option value="new">Run new safe discovery</option>
+          </select>
+        </label>
+        {discoveryMode === "existing" && (
+          <label>
+            Completed Discovery Run
+            <select value={existingDiscoveryRunID} onChange={(event) => setExistingDiscoveryRunID(event.target.value)} required>
+              {completedDiscoveryRuns.map((run) => (
+                <option key={run.id} value={run.id}>
+                  {shortID(run.id)} · {run.total_pages} pages · {formatDate(run.created_at)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {discoveryMode === "new" && (
+          <label>
+            Start URL
+            <input value={startURL} onChange={(event) => setStartURL(event.target.value)} />
+          </label>
+        )}
+        <label>
+          Credential Profile
+          <select value={credentialProfileID} onChange={(event) => setCredentialProfileID(event.target.value)}>
+            <option value="">Unauthenticated discovery</option>
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {credentialProfileLabel(profile)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Max Pages
+          <input type="number" min="1" max="100" value={maxPages} onChange={(event) => setMaxPages(Number(event.target.value))} />
+        </label>
+        <label>
+          Max Depth
+          <input type="number" min="0" max="5" value={maxDepth} onChange={(event) => setMaxDepth(Number(event.target.value))} />
+        </label>
+        <label>
+          Max Scenarios
+          <input type="number" min="1" max="30" value={maxScenarios} onChange={(event) => setMaxScenarios(Number(event.target.value))} />
+        </label>
+      </div>
+      <label>
+        Product Context
+        <textarea
+          value={productContext}
+          placeholder="Optional product behavior or workflows to emphasize. Do not include secrets."
+          onChange={(event) => setProductContext(event.target.value)}
+        />
+      </label>
+      <div>
+        <p className="field-label">Focus Areas</p>
+        <div className="checkbox-grid">
+          {focusAreaOptions.map((option) => (
+            <label key={option.value} className="check-row">
+              <input type="checkbox" checked={focusAreas.includes(option.value)} onChange={() => toggleFocusArea(option.value)} />
+              {option.label}
+            </label>
+          ))}
+        </div>
+      </div>
+      <label className="check-row">
+        <input type="checkbox" checked={execute} onChange={(event) => setExecute(event.target.checked)} />
+        Execute supported safe steps after preview
+      </label>
+      <div className="form-actions">
+        <button type="submit" disabled={disabled || !project.frontend_url || focusAreas.length === 0}>
+          {disabled ? "Starting" : execute ? "Start safe QA run" : "Generate safe QA preview"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function QARunTable({ runs }: { runs: QARun[] }) {
+  if (runs.length === 0) {
+    return <EmptyState title="No safe QA runs" body="Start a safe QA run to generate a discovery-aware plan and combined report." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>QA Run</th>
+            <th>Discovery</th>
+            <th>Plan</th>
+            <th>Execution</th>
+            <th>Created</th>
+            <th>Report</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td>
+                <StatusBadge status={run.status} />
+                {run.error_message && <p className="muted">{run.error_message}</p>}
+              </td>
+              <td>{shortID(run.id)}</td>
+              <td>{run.discovery_run_id ? <a href={`#/discovery-runs/${run.discovery_run_id}`}>{shortID(run.discovery_run_id)}</a> : "Pending"}</td>
+              <td>{run.test_plan_id ? <a href={`#/test-plans/${run.test_plan_id}`}>{shortID(run.test_plan_id)}</a> : "Pending"}</td>
+              <td>
+                {run.test_plan_execution_id ? (
+                  <a href={`#/test-plan-executions/${run.test_plan_execution_id}`}>{shortID(run.test_plan_execution_id)}</a>
+                ) : (
+                  "Preview only"
+                )}
+              </td>
+              <td>{formatDate(run.created_at)}</td>
+              <td>
+                <div className="button-row compact">
+                  <a href={`#/qa-runs/${run.id}`}>Open</a>
+                  <a href={qaRunHTMLReportURL(run.id)} target="_blank" rel="noreferrer">
+                    HTML
+                  </a>
+                </div>
               </td>
             </tr>
           ))}
@@ -2371,19 +2659,25 @@ const focusAreaOptions = [
 function GenerateAITestPlanForm({
   project,
   runs,
+  discoveryRuns = [],
   providers,
   onGenerated
 }: {
   project: Project;
   runs: TestRun[];
+  discoveryRuns?: DiscoveryRun[];
   providers: AIProvider[];
   onGenerated: (plan: TestPlan) => Promise<void>;
 }) {
   const [providerID, setProviderID] = useState("");
   const [runID, setRunID] = useState("");
+  const [discoveryRunID, setDiscoveryRunID] = useState("");
+  const [useLatestDiscovery, setUseLatestDiscovery] = useState(false);
+  const [executionMode, setExecutionMode] = useState<"review_only" | "safe_executable">("review_only");
   const [productContext, setProductContext] = useState("");
   const [focusAreas, setFocusAreas] = useState<string[]>(["smoke", "functional", "negative", "accessibility", "regression"]);
   const [maxScenarios, setMaxScenarios] = useState(10);
+  const [maxPagesFromDiscovery, setMaxPagesFromDiscovery] = useState(20);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
 
@@ -2401,6 +2695,11 @@ function GenerateAITestPlanForm({
     const payload: AITestPlanInput = {
       provider_id: providerID || undefined,
       run_id: runID || undefined,
+      discovery_run_id: discoveryRunID || undefined,
+      use_latest_discovery: useLatestDiscovery || undefined,
+      include_discovery_map: discoveryRunID || useLatestDiscovery ? true : undefined,
+      execution_mode: executionMode,
+      max_pages_from_discovery: maxPagesFromDiscovery,
       product_context: productContext.trim() || undefined,
       focus_areas: focusAreas,
       max_scenarios: maxScenarios
@@ -2453,6 +2752,61 @@ function GenerateAITestPlanForm({
               </option>
             ))}
           </select>
+        </label>
+        <label>
+          Discovery Map
+          <select
+            value={discoveryRunID}
+            onChange={(event) => {
+              setDiscoveryRunID(event.target.value);
+              if (event.target.value) {
+                setUseLatestDiscovery(false);
+                setExecutionMode("safe_executable");
+              }
+            }}
+          >
+            <option value="">No explicit discovery map</option>
+            {discoveryRuns
+              .filter((run) => run.status === "completed")
+              .map((run) => (
+                <option key={run.id} value={run.id}>
+                  {shortID(run.id)} · {run.total_pages} pages · {formatDate(run.created_at)}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label>
+          Execution Mode
+          <select value={executionMode} onChange={(event) => setExecutionMode(event.target.value as "review_only" | "safe_executable")}>
+            <option value="review_only">Review only</option>
+            <option value="safe_executable">Safe executable candidates</option>
+          </select>
+        </label>
+      </div>
+      <div className="form-grid two">
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={useLatestDiscovery}
+            onChange={(event) => {
+              setUseLatestDiscovery(event.target.checked);
+              if (event.target.checked) {
+                setDiscoveryRunID("");
+                setExecutionMode("safe_executable");
+              }
+            }}
+          />
+          Use latest completed discovery map
+        </label>
+        <label>
+          Max Discovery Pages
+          <input
+            type="number"
+            min="1"
+            max="100"
+            value={maxPagesFromDiscovery}
+            onChange={(event) => setMaxPagesFromDiscovery(Number(event.target.value))}
+          />
         </label>
       </div>
       <label>
@@ -2574,6 +2928,7 @@ function TestPlanTable({
             <th>Project</th>
             <th>Risk</th>
             <th>Scenarios</th>
+            <th>Source</th>
             <th>Run</th>
             <th>Created</th>
             <th></th>
@@ -2592,6 +2947,7 @@ function TestPlanTable({
               <td>{projectsByID.get(plan.project_id)?.name || plan.project_id}</td>
               <td>{plan.risk_level ? <span className={`severity ${plan.risk_level}`}>{plan.risk_level}</span> : "Not set"}</td>
               <td>{plan.total_scenarios}</td>
+              <td>{plan.source_type || "run_report"}</td>
               <td>{plan.run_id ? <a href={`#/runs/${plan.run_id}`}>{shortID(plan.run_id)}</a> : "Latest/project only"}</td>
               <td>{formatDate(plan.created_at)}</td>
               <td className="actions">
@@ -2738,6 +3094,8 @@ function TestPlanDetailPage({
           <Field label="Scenarios" value={String(plan.total_scenarios || payload.scenarios.length)} />
           <Field label="Provider" value={plan.provider_name || plan.provider_id || "Not available"} />
           <Field label="Model" value={plan.model || "Not available"} />
+          <Field label="Source" value={plan.source_type || "run_report"} />
+          <Field label="Discovery" value={plan.discovery_run_id ? shortID(plan.discovery_run_id) : "Not linked"} />
           <Field label="Created" value={formatDate(plan.created_at)} />
           <Field label="Updated" value={formatDate(plan.updated_at)} />
         </div>
@@ -2806,6 +3164,14 @@ function TestPlanDetailPage({
 
       <section>
         <h2>Coverage</h2>
+        <div className="summary-grid">
+          <Metric label="Executable Scenarios" value={plan.execution_coverage?.executable_scenarios ?? 0} />
+          <Metric label="Skipped Scenarios" value={plan.execution_coverage?.skipped_scenarios ?? 0} tone="medium" />
+          <Metric label="Executable Steps" value={plan.execution_coverage?.executable_steps ?? 0} />
+          <Metric label="Skipped Steps" value={plan.execution_coverage?.skipped_steps ?? 0} tone="medium" />
+          <Metric label="Unsafe Skips" value={plan.execution_coverage?.unsafe_skipped_steps ?? 0} tone="high" />
+          <Metric label="Unsupported Skips" value={plan.execution_coverage?.unsupported_skipped_steps ?? 0} tone="info" />
+        </div>
         <div className="analysis-grid">
           <AnalysisList title="Assumptions" items={payload.assumptions} />
           <AnalysisList title="Coverage Goals" items={payload.coverage_goals} />
@@ -3271,16 +3637,17 @@ function ProjectForm({ onCreated }: { onCreated: (project: Project) => void }) {
   );
 }
 
-function DiscoveryRunPage({ runID }: { runID: string }) {
-  const [report, setReport] = useState<DiscoveryReport | undefined>();
+function QARunPage({ runID }: { runID: string }) {
+  const [report, setReport] = useState<QARunReport | undefined>();
   const [loading, setLoading] = useState(true);
+  const [executing, setExecuting] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      setReport(await getDiscoveryReport(runID));
+      setReport(await getQARunReport(runID));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
@@ -3299,6 +3666,258 @@ function DiscoveryRunPage({ runID }: { runID: string }) {
     const timer = window.setInterval(() => void refresh(), 2500);
     return () => window.clearInterval(timer);
   }, [refresh, report]);
+
+  async function executePreviewedRun() {
+    setExecuting(true);
+    setError("");
+    try {
+      await executeQARun(runID);
+      await refresh();
+    } catch (executeError) {
+      setError(executeError instanceof Error ? executeError.message : String(executeError));
+    } finally {
+      setExecuting(false);
+    }
+  }
+
+  if (error) {
+    return <Notice tone="danger" message={error} />;
+  }
+  if (loading && !report) {
+    return <SkeletonRows />;
+  }
+  if (!report) {
+    return <Notice tone="danger" message="Safe QA report could not be loaded." />;
+  }
+
+  const summary = summarizeFindingsForUI(report.findings);
+  const canExecutePreview = report.run.status === "completed" && Boolean(report.run.test_plan_id) && !report.run.test_plan_execution_id;
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>{report.project.name}</h2>
+            <p>
+              <StatusBadge status={report.run.status} /> <span className="muted">Safe QA run {report.run.id}</span>
+            </p>
+          </div>
+          <div className="button-row">
+            <a className="button secondary-link" href={`#/projects/${report.project.id}`}>
+              Project
+            </a>
+            {report.run.discovery_run_id && (
+              <a className="button secondary-link" href={`#/discovery-runs/${report.run.discovery_run_id}`}>
+                Discovery
+              </a>
+            )}
+            {report.run.test_plan_id && (
+              <a className="button secondary-link" href={`#/test-plans/${report.run.test_plan_id}`}>
+                Plan
+              </a>
+            )}
+            {report.run.test_plan_execution_id && (
+              <a className="button secondary-link" href={`#/test-plan-executions/${report.run.test_plan_execution_id}`}>
+                Execution
+              </a>
+            )}
+            <a className="button secondary-link" href={`${API_BASE_URL}/api/v1/qa-runs/${report.run.id}/report`} target="_blank" rel="noreferrer">
+              JSON Report
+            </a>
+            <a className="button" href={qaRunHTMLReportURL(report.run.id)} target="_blank" rel="noreferrer">
+              HTML Report
+            </a>
+          </div>
+        </div>
+        {report.run.error_message && <Notice tone="danger" message={report.run.error_message} />}
+        <div className="summary-grid">
+          <Metric label="Findings" value={summary.total_findings} tone="critical" />
+          <Metric label="Critical" value={summary.critical} tone="critical" />
+          <Metric label="High" value={summary.high} tone="high" />
+          <Metric label="Medium" value={summary.medium} tone="medium" />
+          <Metric label="Low" value={summary.low} tone="low" />
+          <Metric label="Evidence" value={report.evidence.length} tone="info" />
+        </div>
+        <div className="detail-grid compact">
+          <Field label="Created" value={formatDate(report.run.created_at)} />
+          <Field label="Started" value={report.run.started_at ? formatDate(report.run.started_at) : "Not started"} />
+          <Field label="Completed" value={report.run.completed_at ? formatDate(report.run.completed_at) : "Not completed"} />
+          <Field label="Generated" value={formatDate(report.generated_at)} />
+          <Field label="Mode" value={report.run.mode} />
+          <Field label="Execution" value={report.run.test_plan_execution_id ? shortID(report.run.test_plan_execution_id) : "Preview only"} />
+        </div>
+        {canExecutePreview && (
+          <div className="form-actions">
+            <button type="button" disabled={executing} onClick={() => void executePreviewedRun()}>
+              {executing ? "Starting" : "Execute previewed safe steps"}
+            </button>
+          </div>
+        )}
+      </section>
+
+      {report.discovery_summary && (
+        <section>
+          <h2>Discovery Summary</h2>
+          <div className="summary-grid">
+            <Metric label="Pages" value={report.discovery_summary.total_pages} />
+            <Metric label="Links" value={report.discovery_summary.total_links} />
+            <Metric label="Forms" value={report.discovery_summary.total_forms} />
+            <Metric label="Skipped Links" value={report.discovery_summary.skipped_links} tone="medium" />
+            <Metric label="Console Errors" value={report.discovery_summary.total_console_errors} tone="medium" />
+            <Metric label="Failed Requests" value={report.discovery_summary.total_failed_requests} tone="medium" />
+          </div>
+        </section>
+      )}
+
+      {report.test_plan && (
+        <section>
+          <h2>AI Test Plan</h2>
+          <div className="detail-grid compact">
+            <Field label="Title" value={report.test_plan.title || "Untitled"} />
+            <Field label="Source" value={report.test_plan.source_type || "Not set"} />
+            <Field label="Risk" value={report.test_plan.risk_level || "Not set"} />
+            <Field label="Scenarios" value={String(report.test_plan.total_scenarios)} />
+            <Field label="Executable Scenarios" value={String(report.test_plan.execution_coverage?.executable_scenarios ?? 0)} />
+            <Field label="Skipped Steps" value={String(report.test_plan.execution_coverage?.skipped_steps ?? 0)} />
+          </div>
+        </section>
+      )}
+
+      {report.execution_preview && (
+        <section>
+          <h2>Safe Execution Preview</h2>
+          <ExecutionPreview preview={report.execution_preview} />
+        </section>
+      )}
+
+      {report.execution_report && (
+        <section>
+          <h2>Execution Result</h2>
+          <div className="summary-grid">
+            <Metric label="Scenarios" value={report.execution_report.execution.total_scenarios} />
+            <Metric label="Passed" value={report.execution_report.execution.passed_scenarios} />
+            <Metric label="Failed" value={report.execution_report.execution.failed_scenarios} tone="high" />
+            <Metric label="Skipped" value={report.execution_report.execution.skipped_scenarios} tone="medium" />
+            <Metric label="Steps" value={report.execution_report.execution.total_steps} />
+            <Metric label="Failed Steps" value={report.execution_report.execution.failed_steps} tone="high" />
+          </div>
+        </section>
+      )}
+
+      <section>
+        <h2>Safety Scope</h2>
+        <Notice
+          tone="info"
+          message="Safe QA runs use sanitized discovery metadata for AI planning and only execute approved deterministic browser DSL steps after explicit user action."
+        />
+        <div className="analysis-grid">
+          <AnalysisList title="Safety Notes" items={report.safety_notes} />
+          <AnalysisList title="Limitations" items={report.limitations} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Findings</h2>
+        <FindingTable findings={report.findings} />
+      </section>
+
+      <section>
+        <h2>Evidence</h2>
+        <EvidenceTable evidence={report.evidence} />
+      </section>
+    </div>
+  );
+}
+
+function DiscoveryRunPage({ runID }: { runID: string }) {
+  const [report, setReport] = useState<DiscoveryReport | undefined>();
+  const [providers, setProviders] = useState<AIProvider[]>([]);
+  const [providerID, setProviderID] = useState("");
+  const [actionBusy, setActionBusy] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [nextReport, nextProviders] = await Promise.all([getDiscoveryReport(runID), listAIProviders()]);
+      setReport(nextReport);
+      setProviders(nextProviders);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [runID]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!report || !isActiveRunStatus(report.run.status)) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => window.clearInterval(timer);
+  }, [refresh, report]);
+
+  useEffect(() => {
+    if (providerID || providers.length === 0) {
+      return;
+    }
+    setProviderID(providers.find((provider) => provider.is_default)?.id || providers[0].id);
+  }, [providerID, providers]);
+
+  async function generateTestsFromDiscovery() {
+    if (!report) {
+      return;
+    }
+    setActionBusy("generate");
+    setError("");
+    try {
+      const plan = await generateAITestPlan(report.project.id, {
+        provider_id: providerID || undefined,
+        discovery_run_id: report.run.id,
+        include_discovery_map: true,
+        execution_mode: "safe_executable",
+        max_pages_from_discovery: 20,
+        focus_areas: ["smoke", "functional", "regression"],
+        max_scenarios: 10
+      });
+      window.location.hash = `#/test-plans/${plan.id}`;
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : String(actionError));
+    } finally {
+      setActionBusy("");
+    }
+  }
+
+  async function startQAPreviewFromDiscovery() {
+    if (!report) {
+      return;
+    }
+    setActionBusy("qa");
+    setError("");
+    try {
+      const run = await startQARun(report.project.id, {
+        provider_id: providerID || undefined,
+        use_existing_discovery_run_id: report.run.id,
+        execute: false,
+        max_pages: 20,
+        max_depth: 2,
+        max_scenarios: 10,
+        focus_areas: ["smoke", "functional", "regression"]
+      });
+      window.location.hash = `#/qa-runs/${run.id}`;
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : String(actionError));
+    } finally {
+      setActionBusy("");
+    }
+  }
 
   if (error) {
     return <Notice tone="danger" message={error} />;
@@ -3334,6 +3953,31 @@ function DiscoveryRunPage({ runID }: { runID: string }) {
             </a>
           </div>
         </div>
+        {providers.length > 0 && report.run.status === "completed" && (
+          <div className="form-grid two">
+            <label>
+              AI Provider
+              <select value={providerID} onChange={(event) => setProviderID(event.target.value)}>
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name} ({provider.model})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="button-row">
+              <button type="button" className="secondary" disabled={actionBusy !== ""} onClick={() => void generateTestsFromDiscovery()}>
+                {actionBusy === "generate" ? "Generating" : "Generate tests from discovery"}
+              </button>
+              <button type="button" disabled={actionBusy !== ""} onClick={() => void startQAPreviewFromDiscovery()}>
+                {actionBusy === "qa" ? "Starting" : "Start Safe QA preview"}
+              </button>
+            </div>
+          </div>
+        )}
+        {providers.length === 0 && report.run.status === "completed" && (
+          <Notice tone="info" message="Configure an AI provider to generate discovery-aware plans or Safe QA previews from this map." />
+        )}
         {report.run.error_message && <Notice tone="danger" message={report.run.error_message} />}
         <div className="summary-grid">
           <Metric label="Pages" value={report.summary.total_pages} />
@@ -4312,6 +4956,9 @@ function parseHash(hash: string): Route {
   if (parts[0] === "discovery-runs" && parts[1]) {
     return { name: "discovery-run", id: parts[1] };
   }
+  if (parts[0] === "qa-runs" && parts[1]) {
+    return { name: "qa-run", id: parts[1] };
+  }
   return { name: "dashboard" };
 }
 
@@ -4339,6 +4986,8 @@ function hashForRoute(route: Route): string {
       return `/authorization-check-runs/${route.id}`;
     case "discovery-run":
       return `/discovery-runs/${route.id}`;
+    case "qa-run":
+      return `/qa-runs/${route.id}`;
     case "run":
       return `/runs/${route.id}`;
   }
@@ -4368,6 +5017,8 @@ function titleForRoute(route: Route): string {
       return "Authorization Report";
     case "discovery-run":
       return "Discovery Report";
+    case "qa-run":
+      return "Safe QA Report";
     case "run":
       return "Run Report";
   }
@@ -4543,7 +5194,15 @@ function splitHosts(input: string): string[] {
 }
 
 function isActiveRunStatus(status: string): boolean {
-  return status === "queued" || status === "pending" || status === "running";
+  return (
+    status === "queued" ||
+    status === "pending" ||
+    status === "running" ||
+    status === "running_discovery" ||
+    status === "generating_plan" ||
+    status === "previewing_execution" ||
+    status === "executing_plan"
+  );
 }
 
 function targetSummary(project: Project): string {

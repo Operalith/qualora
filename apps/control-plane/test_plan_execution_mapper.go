@@ -170,6 +170,22 @@ func BuildTestPlanExecutionPreview(plan TestPlan, project Project, input TestPla
 	return preview, nil
 }
 
+func TestPlanCoverageFromPreview(preview *TestPlanExecutionPreview) TestPlanExecutableCoverage {
+	if preview == nil {
+		return TestPlanExecutableCoverage{}
+	}
+	return TestPlanExecutableCoverage{
+		TotalScenarios:          preview.TotalScenarios,
+		ExecutableScenarios:     preview.ExecutableScenarios,
+		SkippedScenarios:        preview.SkippedScenarios,
+		TotalSteps:              preview.TotalSteps,
+		ExecutableSteps:         preview.ExecutableSteps,
+		SkippedSteps:            preview.SkippedSteps,
+		UnsafeSkippedSteps:      preview.SafetySummary.SkippedUnsafeSteps,
+		UnsupportedSkippedSteps: preview.SafetySummary.SkippedUnsupportedSteps,
+	}
+}
+
 func payloadFromStoredTestPlan(plan TestPlan) (*TestPlanPayload, error) {
 	raw, err := json.Marshal(plan.PlanJSON)
 	if err != nil {
