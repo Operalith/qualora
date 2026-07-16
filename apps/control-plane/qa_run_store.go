@@ -15,7 +15,7 @@ func (s *Store) CreateQARun(ctx context.Context, projectID string, input QARunRe
 	run, err := scanQARun(s.db.QueryRow(ctx, `
 INSERT INTO qa_runs (id, project_id, status, mode, credential_profile_id)
 VALUES ($1, $2, $3, $4, NULLIF($5, '')::uuid)
-RETURNING id, project_id, status, mode, discovery_run_id::text, test_plan_id::text,
+RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
 	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 `, uuid.NewString(), projectID, StatusQueued, input.Mode, input.CredentialProfileID))
@@ -27,7 +27,7 @@ RETURNING id, project_id, status, mode, discovery_run_id::text, test_plan_id::te
 
 func (s *Store) ListQARuns(ctx context.Context, projectID string) ([]QARun, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT id, project_id, status, mode, discovery_run_id::text, test_plan_id::text,
+SELECT id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
 	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 FROM qa_runs
@@ -55,7 +55,7 @@ ORDER BY created_at DESC
 
 func (s *Store) GetQARun(ctx context.Context, id string) (*QARun, error) {
 	run, err := scanQARun(s.db.QueryRow(ctx, `
-SELECT id, project_id, status, mode, discovery_run_id::text, test_plan_id::text,
+SELECT id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
 	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 FROM qa_runs
@@ -77,7 +77,7 @@ SET status = $2,
 	started_at = COALESCE(started_at, now()),
 	updated_at = now()
 WHERE id = $1
-RETURNING id, project_id, status, mode, discovery_run_id::text, test_plan_id::text,
+RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
 	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 `, id, status))
@@ -94,6 +94,10 @@ func (s *Store) AttachQARunDiscovery(ctx context.Context, id string, discoveryRu
 	return s.updateQARunLink(ctx, id, "discovery_run_id", discoveryRunID)
 }
 
+func (s *Store) AttachQARunQualityCheck(ctx context.Context, id string, qualityCheckRunID string) (*QARun, error) {
+	return s.updateQARunLink(ctx, id, "quality_check_run_id", qualityCheckRunID)
+}
+
 func (s *Store) AttachQARunTestPlan(ctx context.Context, id string, testPlanID string) (*QARun, error) {
 	return s.updateQARunLink(ctx, id, "test_plan_id", testPlanID)
 }
@@ -107,7 +111,7 @@ func (s *Store) updateQARunLink(ctx context.Context, id string, column string, v
 UPDATE qa_runs
 SET %s = NULLIF($2, '')::uuid, updated_at = now()
 WHERE id = $1
-RETURNING id, project_id, status, mode, discovery_run_id::text, test_plan_id::text,
+RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
 	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 `, column), id, value))
@@ -145,7 +149,7 @@ SET status = $2,
 	completed_at = now(),
 	updated_at = now()
 WHERE id = $1
-RETURNING id, project_id, status, mode, discovery_run_id::text, test_plan_id::text,
+RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
 	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 `, id, status, message, rawSummary))
@@ -161,6 +165,7 @@ RETURNING id, project_id, status, mode, discovery_run_id::text, test_plan_id::te
 func scanQARun(row scanRow) (QARun, error) {
 	var run QARun
 	var discoveryRunID sql.NullString
+	var qualityCheckRunID sql.NullString
 	var testPlanID sql.NullString
 	var executionID sql.NullString
 	var credentialProfileID sql.NullString
@@ -171,6 +176,7 @@ func scanQARun(row scanRow) (QARun, error) {
 		&run.Status,
 		&run.Mode,
 		&discoveryRunID,
+		&qualityCheckRunID,
 		&testPlanID,
 		&executionID,
 		&credentialProfileID,
@@ -185,6 +191,9 @@ func scanQARun(row scanRow) (QARun, error) {
 	}
 	if discoveryRunID.Valid {
 		run.DiscoveryRunID = discoveryRunID.String
+	}
+	if qualityCheckRunID.Valid {
+		run.QualityCheckRunID = qualityCheckRunID.String
 	}
 	if testPlanID.Valid {
 		run.TestPlanID = testPlanID.String

@@ -11,7 +11,7 @@ import net from "node:net";
 import path from "node:path";
 import Redis from "ioredis";
 import { Pool } from "pg";
-import { chromium, type Page } from "playwright";
+import { chromium, type Page, type Response } from "playwright";
 import {
   buildDiscoveryFormFindings,
   buildDiscoveryLinkFinding,
@@ -35,6 +35,13 @@ import {
   type AuthorizationResultStatus
 } from "./authorization";
 import { buildFindings, type BrowserResult, type FindingInput } from "./findings";
+import {
+  buildQualityResults,
+  type QualityCheckOptions,
+  type QualityPageSnapshot,
+  type QualityResource,
+  type QualityResult
+} from "./quality";
 
 type Config = {
   databaseUrl: string;
@@ -71,7 +78,12 @@ type DiscoveryRunJob = {
   project_id: string;
 };
 
-type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob & DiscoveryRunJob>;
+type QualityCheckRunJob = {
+  quality_check_run_id: string;
+  project_id: string;
+};
+
+type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob & DiscoveryRunJob & QualityCheckRunJob>;
 
 type Project = {
   id: string;
@@ -151,6 +163,20 @@ type DiscoveryRunContext = {
   max_pages: number;
   max_depth: number;
   same_origin_only: boolean;
+  project: Project;
+};
+
+type QualityCheckRunContext = {
+  id: string;
+  project_id: string;
+  discovery_run_id: string;
+  credential_profile_id: string;
+  status: string;
+  target_url: string;
+  max_pages: number;
+  include_security: boolean;
+  include_accessibility: boolean;
+  include_performance: boolean;
   project: Project;
 };
 
@@ -293,7 +319,12 @@ async function main(): Promise<void> {
         log("invalid_job_payload", {});
         continue;
       }
-      if (job.discovery_run_id) {
+      if (job.quality_check_run_id) {
+        await handleQualityCheckRunJob({
+          quality_check_run_id: job.quality_check_run_id,
+          project_id: job.project_id ?? ""
+        });
+      } else if (job.discovery_run_id) {
         await handleDiscoveryRunJob({
           discovery_run_id: job.discovery_run_id,
           project_id: job.project_id ?? ""
@@ -521,6 +552,21 @@ type DiscoveryRunTotals = {
   totalFindings: number;
 };
 
+type QualityCheckRunTotals = {
+  totalPages: number;
+  totalFindings: number;
+  criticalFindings: number;
+  highFindings: number;
+  mediumFindings: number;
+  lowFindings: number;
+  infoFindings: number;
+  securityFindings: number;
+  accessibilityFindings: number;
+  performanceFindings: number;
+};
+
+type QualityDOMSummary = Pick<QualityPageSnapshot, "forms" | "accessibility">;
+
 async function handleDiscoveryRunJob(job: DiscoveryRunJob): Promise<void> {
   log("discovery_run_started", { discovery_run_id: job.discovery_run_id, project_id: job.project_id });
 
@@ -731,6 +777,213 @@ async function runDiscovery(run: DiscoveryRunContext): Promise<DiscoveryRunTotal
   }
 }
 
+async function handleQualityCheckRunJob(job: QualityCheckRunJob): Promise<void> {
+  log("quality_check_run_started", { quality_check_run_id: job.quality_check_run_id, project_id: job.project_id });
+
+  try {
+    if (!job.quality_check_run_id || !job.project_id) {
+      throw new Error("quality check run job is missing required IDs");
+    }
+    const run = await getQualityCheckRunContext(job.quality_check_run_id, job.project_id);
+    const scopeCheck = await validateTargetURL(run.target_url, run.project.allowed_hosts, run.project.allow_private_targets);
+    if (!scopeCheck.ok) {
+      throw new Error(scopeCheck.reason);
+    }
+    await markQualityCheckRunRunning(run.id);
+    const totals = await runQualityChecks(run);
+    await finishQualityCheckRun(run.id, "completed", "", totals);
+    log("quality_check_run_completed", {
+      quality_check_run_id: run.id,
+      pages: totals.totalPages,
+      findings: totals.totalFindings
+    });
+  } catch (error) {
+    const message = sanitizeText(error instanceof Error ? error.message : String(error));
+    if (job.quality_check_run_id) {
+      await finishQualityCheckRun(job.quality_check_run_id, "failed", message, emptyQualityTotals()).catch(() => undefined);
+    }
+    log("quality_check_run_failed", { quality_check_run_id: job.quality_check_run_id, error: message });
+  }
+}
+
+async function runQualityChecks(run: QualityCheckRunContext): Promise<QualityCheckRunTotals> {
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox"]
+  });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: false,
+    viewport: { width: 1365, height: 768 }
+  });
+  const page = await context.newPage();
+  const signals = createBrowserSignals(page);
+  await installAllowedHostRoutes(page, run.project, signals);
+  const totals = emptyQualityTotals();
+  const options: QualityCheckOptions = {
+    includeSecurity: run.include_security,
+    includeAccessibility: run.include_accessibility,
+    includePerformance: run.include_performance
+  };
+
+  try {
+    if (run.credential_profile_id) {
+      const profile = await getCredentialProfile(run.credential_profile_id, run.project.id);
+      const login = await executeLoginFlowOnPage(page, run.project, profile, signals, 30);
+      if (!login.success) {
+        const result: QualityResult = {
+          category: "security",
+          ruleID: login.failureCategory === "login_selector_missing" ? "quality_login_selector_missing" : "quality_login_failed",
+          severity: login.failureCategory === "login_selector_missing" ? "medium" : "high",
+          title: login.failureCategory === "login_selector_missing" ? "Quality check login selector missing" : "Quality check login failed",
+          description: `The configured selector-based login did not succeed before quality checks: ${login.failureReason}`,
+          recommendation: "Verify the credential profile selectors and dedicated test account before running authenticated quality checks.",
+          url: login.loginURL,
+          evidence: {
+            credential_profile_id: profile.id,
+            credential_profile_name: profile.name,
+            role_name: profile.role_name,
+            login_url: login.loginURL,
+            final_url: login.finalURL,
+            page_title: login.pageTitle,
+            login_status: "failed",
+            failure_reason: login.failureReason,
+            console_error_count: login.consoleErrors.length,
+            failed_request_count: login.failedRequests.length,
+            blocked_request_count: login.blockedRequests.length
+          }
+        };
+        await insertQualityCheckResult(run, result);
+        addQualityResultToTotals(totals, result);
+        throw new Error(login.failureReason || "quality check login failed");
+      }
+    }
+
+    const targets = await getQualityCheckTargetURLs(run);
+    for (const targetURL of targets) {
+      const allowed = await validateTargetURL(targetURL, run.project.allowed_hosts, run.project.allow_private_targets);
+      if (!allowed.ok) {
+        const result: QualityResult = {
+          category: "security",
+          ruleID: "quality_target_out_of_scope",
+          severity: "medium",
+          title: "Quality check target is outside allowed hosts",
+          description: `A selected quality check URL was rejected by allowed-host validation: ${allowed.reason}`,
+          recommendation: "Review the project allowed_hosts and selected discovery run before rerunning quality checks.",
+          url: sanitizeURL(targetURL),
+          evidence: {
+            target_url: sanitizeURL(targetURL),
+            reason: allowed.reason
+          }
+        };
+        await insertQualityCheckResult(run, result);
+        addQualityResultToTotals(totals, result);
+        continue;
+      }
+
+      const snapshot = await captureQualityPage(page, run, targetURL, signals);
+      const results = buildQualityResults(snapshot, options);
+      totals.totalPages += 1;
+      for (const result of results) {
+        await insertQualityCheckResult(run, result);
+        addQualityResultToTotals(totals, result);
+      }
+    }
+    return totals;
+  } finally {
+    await browser.close();
+  }
+}
+
+async function captureQualityPage(
+  page: Page,
+  run: QualityCheckRunContext,
+  targetURL: string,
+  signals: BrowserSignals
+): Promise<QualityPageSnapshot> {
+  void run;
+  const startedAt = Date.now();
+  const consoleStart = signals.consoleErrors.length;
+  const failedStart = signals.failedRequests.length;
+  const blockedStart = signals.blockedRequests.length;
+  const resources: QualityResource[] = [];
+  let statusCode: number | null = null;
+  let responseHeaders: Record<string, string> = {};
+  let finalURL = sanitizeURL(targetURL);
+  let title = "";
+  let bodyTextLength: number | null = null;
+  let loadError = "";
+
+  const onResponse = (response: Response) => {
+    const request = response.request();
+    const url = sanitizeURL(response.url());
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      return;
+    }
+    const headers = response.headers();
+    resources.push({
+      url,
+      status: response.status(),
+      contentType: sanitizeText(headers["content-type"] ?? ""),
+      resourceType: sanitizeText(request.resourceType()),
+      contentLength: contentLengthFromHeaders(headers)
+    });
+  };
+  page.on("response", onResponse);
+
+  try {
+    const response = await page.goto(targetURL, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+    statusCode = response ? response.status() : null;
+    responseHeaders = selectQualityHeaders(response?.headers() ?? {});
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+  } catch (error) {
+    loadError = sanitizeText(error instanceof Error ? error.message : String(error));
+    responseHeaders = {};
+  } finally {
+    page.off("response", onResponse);
+  }
+
+  finalURL = sanitizeURL(page.url() || targetURL);
+  title = sanitizeText(await page.title().catch(() => ""));
+  bodyTextLength = await page
+    .evaluate(() => (document.body?.innerText ?? "").trim().length)
+    .catch(() => null);
+  const dom = await extractQualityDOMSummary(page).catch(() => defaultQualityDOMSummary());
+  const cookies = await page
+    .context()
+    .cookies([finalURL])
+    .then((records) =>
+      records.slice(0, 50).map((cookie) => ({
+        name: safeCookieName(cookie.name),
+        secure: Boolean(cookie.secure),
+        httpOnly: Boolean(cookie.httpOnly),
+        sameSite: sanitizeText(cookie.sameSite || "")
+      }))
+    )
+    .catch(() => []);
+
+  return {
+    targetURL: sanitizeURL(targetURL),
+    finalURL,
+    title,
+    statusCode,
+    headers: responseHeaders,
+    isHTTPS: finalURL.startsWith("https://"),
+    bodyTextLength,
+    loadDurationMS: Date.now() - startedAt,
+    loadError,
+    consoleErrorCount: signals.consoleErrors.slice(consoleStart).length,
+    failedRequestCount: signals.failedRequests.slice(failedStart).length,
+    blockedRequestCount: signals.blockedRequests.slice(blockedStart).length,
+    cookies,
+    resources: resources.slice(0, 250),
+    forms: dom.forms,
+    accessibility: dom.accessibility
+  };
+}
+
 async function captureDiscoveryPage(page: Page, run: DiscoveryRunContext, targetURL: string, signals: BrowserSignals): Promise<DiscoveryPageSnapshot> {
   const startedAt = Date.now();
   const consoleStart = signals.consoleErrors.length;
@@ -843,6 +1096,173 @@ async function extractDiscoveryForms(page: Page): Promise<ExtractedForm[]> {
         };
       });
   });
+}
+
+async function extractQualityDOMSummary(page: Page): Promise<QualityDOMSummary> {
+  return page.evaluate(() => {
+    const visible = (element: Element) => {
+      const style = window.getComputedStyle(element);
+      return style.visibility !== "hidden" && style.display !== "none" && element.getClientRects().length > 0;
+    };
+    const labelFor = (field: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): string => {
+      const id = field.getAttribute("id");
+      if (id) {
+        const explicit = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+        if (explicit?.textContent) {
+          return explicit.textContent.replace(/\s+/g, " ").trim();
+        }
+      }
+      const wrapping = field.closest("label");
+      if (wrapping?.textContent) {
+        return wrapping.textContent.replace(/\s+/g, " ").trim();
+      }
+      return field.getAttribute("aria-label") || field.getAttribute("aria-labelledby") || "";
+    };
+    const accessibleName = (element: Element) => {
+      return (element.textContent || element.getAttribute("aria-label") || element.getAttribute("title") || "").replace(/\s+/g, " ").trim();
+    };
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>("img")).filter(visible).slice(0, 500);
+    const inputs = Array.from(document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea"))
+      .filter((field) => visible(field) && (field as HTMLInputElement).type !== "hidden")
+      .slice(0, 500);
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input[type="button"], input[type="submit"]'))
+      .filter(visible)
+      .slice(0, 500);
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]")).filter(visible).slice(0, 500);
+    const forms = Array.from(document.forms).slice(0, 100);
+    let passwordForms = 0;
+    let passwordAutocompleteIssues = 0;
+    let insecureActions = 0;
+    for (const form of forms) {
+      const passwordFields = Array.from(form.querySelectorAll<HTMLInputElement>('input[type="password"]'));
+      if (passwordFields.length > 0) {
+        passwordForms += 1;
+      }
+      passwordAutocompleteIssues += passwordFields.filter((field) => {
+        const value = (field.getAttribute("autocomplete") || "").toLowerCase();
+        return value !== "current-password" && value !== "new-password";
+      }).length;
+      const action = form.getAttribute("action") || window.location.href;
+      try {
+        const parsed = new URL(action, window.location.href);
+        if (parsed.protocol === "http:" && (window.location.protocol === "https:" || passwordFields.length > 0)) {
+          insecureActions += 1;
+        }
+      } catch {
+        // Invalid form actions are not submitted by quality checks.
+      }
+    }
+    return {
+      forms: {
+        total: forms.length,
+        passwordForms,
+        passwordAutocompleteIssues,
+        insecureActions
+      },
+      accessibility: {
+        hasTitle: Boolean(document.title.trim()),
+        htmlLang: document.documentElement.getAttribute("lang") || "",
+        hasMainLandmark: Boolean(document.querySelector("main, [role='main']")),
+        imagesTotal: images.length,
+        imagesMissingAlt: images.filter((image) => !image.hasAttribute("alt")).length,
+        inputsTotal: inputs.length,
+        inputsMissingLabels: inputs.filter((field) => !labelFor(field)).length,
+        buttonsTotal: buttons.length,
+        buttonsMissingNames: buttons.filter((button) => !accessibleName(button)).length,
+        linksTotal: links.length,
+        linksMissingNames: links.filter((link) => !accessibleName(link)).length,
+        imagesMissingDimensions: images.filter((image) => !image.getAttribute("width") || !image.getAttribute("height")).length
+      }
+    };
+  });
+}
+
+function defaultQualityDOMSummary(): QualityDOMSummary {
+  return {
+    forms: {
+      total: 0,
+      passwordForms: 0,
+      passwordAutocompleteIssues: 0,
+      insecureActions: 0
+    },
+    accessibility: {
+      hasTitle: true,
+      htmlLang: "",
+      hasMainLandmark: false,
+      imagesTotal: 0,
+      imagesMissingAlt: 0,
+      inputsTotal: 0,
+      inputsMissingLabels: 0,
+      buttonsTotal: 0,
+      buttonsMissingNames: 0,
+      linksTotal: 0,
+      linksMissingNames: 0,
+      imagesMissingDimensions: 0
+    }
+  };
+}
+
+function selectQualityHeaders(headers: Record<string, string>): Record<string, string> {
+  const selected: Record<string, string> = {};
+  for (const name of [
+    "content-security-policy",
+    "x-frame-options",
+    "x-content-type-options",
+    "referrer-policy",
+    "permissions-policy",
+    "strict-transport-security",
+    "server",
+    "x-powered-by"
+  ]) {
+    const value = headers[name];
+    if (value) {
+      selected[name] = sanitizeText(value);
+    }
+  }
+  return selected;
+}
+
+function contentLengthFromHeaders(headers: Record<string, string>): number | null {
+  const value = headers["content-length"];
+  if (!value) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function safeCookieName(name: string): string {
+  const cleaned = sanitizeText(name);
+  const lower = cleaned.toLowerCase();
+  if (/(token|secret|credential|authorization|jwt|password|passwd|key)/.test(lower)) {
+    return "[redacted-cookie-name]";
+  }
+  return cleaned.slice(0, 120);
+}
+
+function sanitizeQualityEvidence(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.slice(0, 25).map((item) => sanitizeQualityEvidence(item));
+  }
+  if (value && typeof value === "object") {
+    const output: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      const lowered = key.toLowerCase();
+      if (/(password|passwd|token|secret|credential|authorization|cookie|session|storage|jwt|api[_-]?key)/.test(lowered)) {
+        output[key] = "[REDACTED]";
+        continue;
+      }
+      output[key] = sanitizeQualityEvidence(entry);
+    }
+    return output;
+  }
+  if (typeof value === "string") {
+    if (value.startsWith("http://") || value.startsWith("https://")) {
+      return sanitizeURL(value);
+    }
+    return sanitizeText(value);
+  }
+  return value;
 }
 
 function isLikelyHTML(contentType: string): boolean {
@@ -1037,6 +1457,196 @@ async function finishDiscoveryRun(runID: string, status: "completed" | "failed" 
   );
 }
 
+async function getQualityCheckRunContext(runID: string, projectID: string): Promise<QualityCheckRunContext> {
+  const result = await pool.query(
+    `SELECT q.id, q.project_id, q.discovery_run_id::text, q.credential_profile_id::text,
+            q.status, q.target_url, q.max_pages, q.include_security,
+            q.include_accessibility, q.include_performance,
+            p.frontend_url, p.allowed_hosts, p.allow_private_targets
+     FROM quality_check_runs q
+     JOIN projects p ON p.id = q.project_id
+     WHERE q.id = $1 AND p.id = $2`,
+    [runID, projectID]
+  );
+  if (result.rowCount !== 1) {
+    throw new Error("quality check run was not found");
+  }
+  const row = result.rows[0] as {
+    id: string;
+    project_id: string;
+    discovery_run_id: string | null;
+    credential_profile_id: string | null;
+    status: string;
+    target_url: string;
+    max_pages: number;
+    include_security: boolean;
+    include_accessibility: boolean;
+    include_performance: boolean;
+    frontend_url: string;
+    allowed_hosts: string[] | string;
+    allow_private_targets: boolean;
+  };
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    discovery_run_id: row.discovery_run_id ?? "",
+    credential_profile_id: row.credential_profile_id ?? "",
+    status: row.status,
+    target_url: row.target_url,
+    max_pages: Number(row.max_pages || 10),
+    include_security: row.include_security,
+    include_accessibility: row.include_accessibility,
+    include_performance: row.include_performance,
+    project: {
+      id: row.project_id,
+      frontend_url: row.frontend_url,
+      allowed_hosts: Array.isArray(row.allowed_hosts) ? row.allowed_hosts : JSON.parse(row.allowed_hosts),
+      allow_private_targets: row.allow_private_targets
+    }
+  };
+}
+
+async function markQualityCheckRunRunning(runID: string): Promise<void> {
+  await pool.query(
+    `UPDATE quality_check_runs
+     SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
+     WHERE id = $1`,
+    [runID]
+  );
+}
+
+async function finishQualityCheckRun(runID: string, status: "completed" | "failed" | "error", errorMessage: string, totals: QualityCheckRunTotals): Promise<void> {
+  const summary = {
+    pages_checked: totals.totalPages,
+    total_findings: totals.totalFindings,
+    security_findings: totals.securityFindings,
+    accessibility_findings: totals.accessibilityFindings,
+    performance_findings: totals.performanceFindings,
+    safe_passive_checks_only: true,
+    forms_submitted: false,
+    destructive_actions: false,
+    autonomous_ai_browser_control: false,
+    credentials_sent_to_ai: false,
+    browser_storage_exposed_to_ai: false
+  };
+  await pool.query(
+    `UPDATE quality_check_runs
+     SET status = $2,
+         error_message = $3,
+         completed_at = now(),
+         total_pages = $4,
+         total_findings = $5,
+         critical_findings = $6,
+         high_findings = $7,
+         medium_findings = $8,
+         low_findings = $9,
+         info_findings = $10,
+         summary_json = $11,
+         updated_at = now()
+     WHERE id = $1`,
+    [
+      runID,
+      status,
+      errorMessage,
+      totals.totalPages,
+      totals.totalFindings,
+      totals.criticalFindings,
+      totals.highFindings,
+      totals.mediumFindings,
+      totals.lowFindings,
+      totals.infoFindings,
+      JSON.stringify(summary)
+    ]
+  );
+}
+
+async function getQualityCheckTargetURLs(run: QualityCheckRunContext): Promise<string[]> {
+  if (!run.discovery_run_id) {
+    return [run.target_url];
+  }
+  const result = await pool.query(
+    `SELECT normalized_url
+     FROM discovered_pages
+     WHERE discovery_run_id = $1 AND project_id = $2
+     ORDER BY depth ASC, created_at ASC
+     LIMIT $3`,
+    [run.discovery_run_id, run.project_id, run.max_pages]
+  );
+  const urls = result.rows
+    .map((row) => sanitizeURL(String(row.normalized_url || "")))
+    .filter((url) => url.startsWith("http://") || url.startsWith("https://"));
+  return Array.from(new Set(urls.length > 0 ? urls : [run.target_url])).slice(0, run.max_pages);
+}
+
+async function insertQualityCheckResult(run: QualityCheckRunContext, qualityResult: QualityResult): Promise<void> {
+  await pool.query(
+    `INSERT INTO quality_check_results (
+       id, run_id, project_id, category, rule_id, severity, title, description,
+       recommendation, url, evidence_json
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [
+      randomUUID(),
+      run.id,
+      run.project_id,
+      qualityResult.category,
+      qualityResult.ruleID,
+      qualityResult.severity,
+      sanitizeText(qualityResult.title),
+      sanitizeText(qualityResult.description),
+      sanitizeText(qualityResult.recommendation),
+      sanitizeURL(qualityResult.url),
+      JSON.stringify(sanitizeQualityEvidence(qualityResult.evidence))
+    ]
+  );
+}
+
+function addQualityResultToTotals(totals: QualityCheckRunTotals, qualityResult: QualityResult): void {
+  totals.totalFindings += 1;
+  switch (qualityResult.severity) {
+    case "critical":
+      totals.criticalFindings += 1;
+      break;
+    case "high":
+      totals.highFindings += 1;
+      break;
+    case "medium":
+      totals.mediumFindings += 1;
+      break;
+    case "low":
+      totals.lowFindings += 1;
+      break;
+    case "info":
+      totals.infoFindings += 1;
+      break;
+  }
+  switch (qualityResult.category) {
+    case "security":
+      totals.securityFindings += 1;
+      break;
+    case "accessibility":
+      totals.accessibilityFindings += 1;
+      break;
+    case "performance":
+      totals.performanceFindings += 1;
+      break;
+  }
+}
+
+function emptyQualityTotals(): QualityCheckRunTotals {
+  return {
+    totalPages: 0,
+    totalFindings: 0,
+    criticalFindings: 0,
+    highFindings: 0,
+    mediumFindings: 0,
+    lowFindings: 0,
+    infoFindings: 0,
+    securityFindings: 0,
+    accessibilityFindings: 0,
+    performanceFindings: 0
+  };
+}
+
 async function getAuthorizationCheckRunContext(runID: string, projectID: string): Promise<AuthorizationCheckRunContext> {
   const result = await pool.query(
     `SELECT r.id, r.check_ids_json, r.max_checks,
@@ -1149,7 +1759,7 @@ async function executeAuthorizationCheck(run: AuthorizationCheckRunContext, chec
   let targetURL = check.target_url || check.path || "";
 
   if (check.type !== "browser_url") {
-    const skipReason = "authenticated API authorization checks are not implemented in v0.13.0-alpha";
+    const skipReason = "authenticated API authorization checks are not implemented in v0.14.0-alpha";
     const evidenceID = await insertAuthorizationObservation(run, check, null, {
       target_url: targetURL,
       actual_outcome: "unknown",

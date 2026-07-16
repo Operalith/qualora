@@ -17,9 +17,10 @@ Responsibilities:
 - AI-assisted test plan storage.
 - Approved safe test plan execution orchestration.
 - OpenAPI import, operation discovery, safe API smoke execution, and API result reporting.
+- Passive quality check run orchestration and quality report rendering.
 - Credential profile CRUD, deterministic login checks, authenticated browser smoke orchestration, and role-aware authorization check orchestration.
 
-The MVP delegates browser checks, credential-profile login checks, authenticated browser smoke checks, role-aware authorization checks, legacy project API checks, and safe test plan execution to workers through Redis queues. Imported-spec API smoke execution runs in the control plane so API operations and result rows are first-class API/UI resources.
+The MVP delegates browser checks, credential-profile login checks, authenticated browser smoke checks, application discovery, passive quality checks, role-aware authorization checks, legacy project API checks, and safe test plan execution to workers through Redis queues. Imported-spec API smoke execution runs in the control plane so API operations and result rows are first-class API/UI resources.
 
 The API performs project target validation, including `allowed_hosts` enforcement, blocked private/metadata targets by default, and DNS resolution checks for hostnames.
 
@@ -79,6 +80,11 @@ Current protected report and workflow endpoints include:
 - `GET /api/v1/authorization-check-runs/{authorization_check_run_id}`
 - `GET /api/v1/authorization-check-runs/{authorization_check_run_id}/report`
 - `GET /api/v1/authorization-check-runs/{authorization_check_run_id}/report.html`
+- `GET /api/v1/projects/{project_id}/quality-check-runs`
+- `POST /api/v1/projects/{project_id}/quality-check-runs`
+- `GET /api/v1/quality-check-runs/{quality_check_run_id}`
+- `GET /api/v1/quality-check-runs/{quality_check_run_id}/report`
+- `GET /api/v1/quality-check-runs/{quality_check_run_id}/report.html`
 - `GET /api/v1/ai/providers`
 - `POST /api/v1/ai/providers`
 - `POST /api/v1/ai/providers/{provider_id}/test`

@@ -16,6 +16,7 @@ const (
 
 const (
 	QARunStatusRunningDiscovery    = "running_discovery"
+	QARunStatusRunningQuality      = "running_quality_checks"
 	QARunStatusGeneratingPlan      = "generating_plan"
 	QARunStatusPreviewingExecution = "previewing_execution"
 	QARunStatusExecutingPlan       = "executing_plan"
@@ -40,6 +41,7 @@ const (
 	RunTypeLoginCheck                = "login_check"
 	RunTypeAuthenticatedBrowserSmoke = "authenticated_browser_smoke"
 	RunTypeAppDiscovery              = "app_discovery"
+	RunTypeQualityCheck              = "quality_check"
 )
 
 const (
@@ -350,6 +352,83 @@ type DiscoveryReport struct {
 	SafetyNotes []string         `json:"safety_notes"`
 	Limitations []string         `json:"limitations"`
 	Metadata    map[string]any   `json:"metadata"`
+}
+
+type QualityCheckRunRequest struct {
+	TargetURL            string `json:"target_url,omitempty"`
+	CredentialProfileID  string `json:"credential_profile_id,omitempty"`
+	DiscoveryRunID       string `json:"discovery_run_id,omitempty"`
+	UseLatestDiscovery   bool   `json:"use_latest_discovery,omitempty"`
+	MaxPages             int    `json:"max_pages,omitempty"`
+	IncludeSecurity      *bool  `json:"include_security,omitempty"`
+	IncludeAccessibility *bool  `json:"include_accessibility,omitempty"`
+	IncludePerformance   *bool  `json:"include_performance,omitempty"`
+}
+
+type QualityCheckRun struct {
+	ID                   string         `json:"id"`
+	ProjectID            string         `json:"project_id"`
+	DiscoveryRunID       string         `json:"discovery_run_id,omitempty"`
+	CredentialProfileID  string         `json:"credential_profile_id,omitempty"`
+	Status               string         `json:"status"`
+	TargetURL            string         `json:"target_url"`
+	MaxPages             int            `json:"max_pages"`
+	IncludeSecurity      bool           `json:"include_security"`
+	IncludeAccessibility bool           `json:"include_accessibility"`
+	IncludePerformance   bool           `json:"include_performance"`
+	StartedAt            *time.Time     `json:"started_at,omitempty"`
+	CompletedAt          *time.Time     `json:"completed_at,omitempty"`
+	TotalPages           int            `json:"total_pages"`
+	TotalFindings        int            `json:"total_findings"`
+	CriticalFindings     int            `json:"critical_findings"`
+	HighFindings         int            `json:"high_findings"`
+	MediumFindings       int            `json:"medium_findings"`
+	LowFindings          int            `json:"low_findings"`
+	InfoFindings         int            `json:"info_findings"`
+	ErrorMessage         string         `json:"error_message,omitempty"`
+	Summary              map[string]any `json:"summary"`
+	CreatedAt            time.Time      `json:"created_at"`
+	UpdatedAt            time.Time      `json:"updated_at"`
+}
+
+type QualityCheckResult struct {
+	ID             string         `json:"id"`
+	RunID          string         `json:"run_id"`
+	ProjectID      string         `json:"project_id"`
+	Category       string         `json:"category"`
+	RuleID         string         `json:"rule_id"`
+	Severity       string         `json:"severity"`
+	Title          string         `json:"title"`
+	Description    string         `json:"description"`
+	Recommendation string         `json:"recommendation"`
+	URL            string         `json:"url"`
+	Evidence       map[string]any `json:"evidence"`
+	CreatedAt      time.Time      `json:"created_at"`
+}
+
+type QualityCheckSummary struct {
+	TotalFindings         int `json:"total_findings"`
+	Critical              int `json:"critical"`
+	High                  int `json:"high"`
+	Medium                int `json:"medium"`
+	Low                   int `json:"low"`
+	Info                  int `json:"info"`
+	TotalPages            int `json:"total_pages"`
+	SecurityFindings      int `json:"security_findings"`
+	AccessibilityFindings int `json:"accessibility_findings"`
+	PerformanceFindings   int `json:"performance_findings"`
+}
+
+type QualityCheckReport struct {
+	GeneratedAt  time.Time            `json:"generated_at"`
+	Run          QualityCheckRun      `json:"run"`
+	Project      Project              `json:"project"`
+	DiscoveryRun *DiscoveryRun        `json:"discovery_run,omitempty"`
+	Summary      QualityCheckSummary  `json:"summary"`
+	Results      []QualityCheckResult `json:"results"`
+	SafetyNotes  []string             `json:"safety_notes"`
+	Limitations  []string             `json:"limitations"`
+	Metadata     map[string]any       `json:"metadata"`
 }
 
 type AIProvider struct {
@@ -783,18 +862,23 @@ type TestPlanExecutionReport struct {
 }
 
 type QARunRequest struct {
-	Mode                      string   `json:"mode"`
-	StartURL                  string   `json:"start_url,omitempty"`
-	CredentialProfileID       string   `json:"credential_profile_id,omitempty"`
-	MaxPages                  int      `json:"max_pages,omitempty"`
-	MaxDepth                  int      `json:"max_depth,omitempty"`
-	MaxScenarios              int      `json:"max_scenarios,omitempty"`
-	Execute                   bool     `json:"execute,omitempty"`
-	UseExistingDiscoveryRunID string   `json:"use_existing_discovery_run_id,omitempty"`
-	UseLatestDiscovery        bool     `json:"use_latest_discovery,omitempty"`
-	ProviderID                string   `json:"provider_id,omitempty"`
-	ProductContext            string   `json:"product_context,omitempty"`
-	FocusAreas                []string `json:"focus_areas,omitempty"`
+	Mode                        string   `json:"mode"`
+	StartURL                    string   `json:"start_url,omitempty"`
+	CredentialProfileID         string   `json:"credential_profile_id,omitempty"`
+	MaxPages                    int      `json:"max_pages,omitempty"`
+	MaxDepth                    int      `json:"max_depth,omitempty"`
+	MaxScenarios                int      `json:"max_scenarios,omitempty"`
+	Execute                     bool     `json:"execute,omitempty"`
+	UseExistingDiscoveryRunID   string   `json:"use_existing_discovery_run_id,omitempty"`
+	UseLatestDiscovery          bool     `json:"use_latest_discovery,omitempty"`
+	ProviderID                  string   `json:"provider_id,omitempty"`
+	ProductContext              string   `json:"product_context,omitempty"`
+	FocusAreas                  []string `json:"focus_areas,omitempty"`
+	IncludeQualityChecks        *bool    `json:"include_quality_checks,omitempty"`
+	QualityMaxPages             int      `json:"quality_max_pages,omitempty"`
+	QualityIncludeSecurity      *bool    `json:"quality_include_security,omitempty"`
+	QualityIncludeAccessibility *bool    `json:"quality_include_accessibility,omitempty"`
+	QualityIncludePerformance   *bool    `json:"quality_include_performance,omitempty"`
 }
 
 type QARun struct {
@@ -803,6 +887,7 @@ type QARun struct {
 	Status              string         `json:"status"`
 	Mode                string         `json:"mode"`
 	DiscoveryRunID      string         `json:"discovery_run_id,omitempty"`
+	QualityCheckRunID   string         `json:"quality_check_run_id,omitempty"`
 	TestPlanID          string         `json:"test_plan_id,omitempty"`
 	TestPlanExecutionID string         `json:"test_plan_execution_id,omitempty"`
 	CredentialProfileID string         `json:"credential_profile_id,omitempty"`
@@ -819,6 +904,9 @@ type QARunReport struct {
 	Project          Project                   `json:"project"`
 	DiscoveryRun     *DiscoveryRun             `json:"discovery_run,omitempty"`
 	DiscoverySummary *DiscoverySummary         `json:"discovery_summary,omitempty"`
+	QualityCheckRun  *QualityCheckRun          `json:"quality_check_run,omitempty"`
+	QualitySummary   *QualityCheckSummary      `json:"quality_summary,omitempty"`
+	QualityResults   []QualityCheckResult      `json:"quality_results,omitempty"`
 	TestPlan         *TestPlan                 `json:"test_plan,omitempty"`
 	ExecutionPreview *TestPlanExecutionPreview `json:"execution_preview,omitempty"`
 	ExecutionReport  *TestPlanExecutionReport  `json:"execution_report,omitempty"`

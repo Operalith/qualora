@@ -27,6 +27,9 @@ import type {
   LoginInput,
   MeResponse,
   Project,
+  QualityCheckReport,
+  QualityCheckRun,
+  QualityCheckRunInput,
   QARun,
   QARunInput,
   QARunReport,
@@ -76,6 +79,10 @@ export function authorizationCheckHTMLReportURL(runID: string): string {
 
 export function discoveryHTMLReportURL(runID: string): string {
   return `${API_BASE_URL}/api/v1/discovery-runs/${runID}/report.html`;
+}
+
+export function qualityCheckHTMLReportURL(runID: string): string {
+  return `${API_BASE_URL}/api/v1/quality-check-runs/${runID}/report.html`;
 }
 
 export function qaRunHTMLReportURL(runID: string): string {
@@ -253,6 +260,26 @@ export async function getDiscoveryMap(runID: string): Promise<DiscoveryMap> {
 
 export async function getDiscoveryReport(runID: string): Promise<DiscoveryReport> {
   return request<DiscoveryReport>(`/api/v1/discovery-runs/${runID}/report`);
+}
+
+export async function listQualityCheckRuns(projectID: string): Promise<QualityCheckRun[]> {
+  const response = await request<{ quality_check_runs: QualityCheckRun[] }>(`/api/v1/projects/${projectID}/quality-check-runs`);
+  return response.quality_check_runs;
+}
+
+export async function startQualityCheckRun(projectID: string, input: QualityCheckRunInput): Promise<QualityCheckRun> {
+  return request<QualityCheckRun>(`/api/v1/projects/${projectID}/quality-check-runs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getQualityCheckRun(runID: string): Promise<QualityCheckRun> {
+  return request<QualityCheckRun>(`/api/v1/quality-check-runs/${runID}`);
+}
+
+export async function getQualityCheckReport(runID: string): Promise<QualityCheckReport> {
+  return request<QualityCheckReport>(`/api/v1/quality-check-runs/${runID}/report`);
 }
 
 export async function listQARuns(projectID: string): Promise<QARun[]> {

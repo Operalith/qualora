@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.13.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, human-friendly reports, safe deterministic application discovery, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, and approved safe execution of supported test plan steps.
+Qualora v0.14.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, human-friendly reports, safe deterministic application discovery, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -22,6 +22,7 @@ qualora-api
         |       +--> Deterministic selector-based login checks
         |       +--> Authenticated browser smoke test
         |       +--> Safe deterministic application discovery
+        |       +--> Passive quality checks
         |       +--> Explicit role-aware authorization checks
         |       +--> Approved safe test plan execution
         |       +--> MinIO/S3 screenshot evidence
@@ -71,6 +72,11 @@ Current endpoints:
 - `POST /api/v1/projects/{project_id}/authorization-check-runs`
 - `GET /api/v1/projects/{project_id}/discovery-runs`
 - `POST /api/v1/projects/{project_id}/discovery-runs`
+- `GET /api/v1/projects/{project_id}/quality-check-runs`
+- `POST /api/v1/projects/{project_id}/quality-check-runs`
+- `GET /api/v1/quality-check-runs/{quality_check_run_id}`
+- `GET /api/v1/quality-check-runs/{quality_check_run_id}/report`
+- `GET /api/v1/quality-check-runs/{quality_check_run_id}/report.html`
 - `GET /api/v1/authorization-check-runs/{authorization_check_run_id}`
 - `GET /api/v1/authorization-check-runs/{authorization_check_run_id}/report`
 - `GET /api/v1/authorization-check-runs/{authorization_check_run_id}/report.html`
@@ -137,8 +143,9 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - Login summary and login observation metadata in run reports.
 - Authorization check creation, listing, enable/disable, deletion, run history, JSON report display, HTML report links, findings, and evidence display.
 - Application discovery start form, run list, application map page, JSON/HTML report links, pages, skipped links, forms, findings, and evidence display.
+- Quality Checks form, run list, JSON/HTML report links, category/severity summaries, findings, safety notes, and limitations.
 - Discovery-aware AI test plan generation controls and safe executable coverage display.
-- Safe QA Run preview/execution controls and Safe QA Run JSON/HTML report pages.
+- Safe QA Run preview/execution controls and Safe QA Run JSON/HTML report pages, including quality summaries when requested.
 
 On a fresh database it shows a first-run local admin setup screen. After setup, project data, credential profiles, AI providers, runs, reports, evidence, API specs, test plans, and authorization reports require the local admin session. The UI is still alpha and should be exposed only in trusted local/self-hosted environments.
 
@@ -151,6 +158,8 @@ For credential-profile runs, the worker decrypts the project-scoped username/pas
 For role-aware authorization runs, the worker logs in with the configured actor credential profile, navigates only to the configured same-origin authorization target, classifies the outcome as allowed, denied, or unknown, and records screenshot/observation evidence plus deterministic findings when the observed outcome does not match the expected outcome. It does not use AI, does not crawl, does not submit arbitrary forms, and does not expose cookies, storage, auth headers, tokens, usernames, or passwords in evidence.
 
 For application discovery runs, the worker performs bounded deterministic navigation from the project frontend or requested start URL. It defaults to same-origin only, enforces `allowed_hosts`, strips fragments, redacts sensitive query values, avoids duplicate visits, records pages/links/forms/fields, stores screenshot evidence, and creates findings for obvious load, console, network, skipped-link, and form issues. It never submits forms, clicks arbitrary buttons, runs payloads, performs destructive actions, or uses AI browser control.
+
+For quality check runs, the worker visits only the project frontend origin or pages from a completed discovery run. It can optionally perform the same deterministic selector-based credential-profile login before checking pages. It collects safe metadata for passive security checks, accessibility heuristics, and performance/front-end observations. Quality evidence stores metadata only; it must not contain cookie values, browser storage, auth headers, tokens, credentials, request bodies, response bodies, or full HTML. Quality checks never submit forms, click arbitrary buttons, guess sensitive paths, run payloads, fuzz inputs, perform active scans, perform destructive actions, or use autonomous AI browser control.
 
 The same worker also consumes safe test plan execution jobs. It executes only persisted mapped actions from the supported DSL:
 
@@ -181,6 +190,7 @@ It currently captures:
 - Blocked out-of-scope browser requests.
 - Basic findings for obvious load, timeout, non-success status, console, request, empty page, and scope issues.
 - Login findings for failed login, missing selectors, timeouts, console errors, failed requests, and authenticated navigation failures.
+- Quality findings for missing security headers, cookie flag observations, mixed content, sensitive query names, source maps, password/form issues, basic accessibility issues, slow loads, console errors, failed resources, request-count issues, large JavaScript resources, and image dimension issues.
 
 Login evidence is stored as `login_observations` metadata plus screenshots when configured. JSON and HTML run reports include a `login_summary` for login checks and authenticated browser smoke runs.
 
@@ -226,7 +236,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.13.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.14.0-alpha`.
 
 ### PostgreSQL
 
@@ -236,6 +246,15 @@ PostgreSQL stores durable metadata:
 - `user_sessions`
 - `projects`
 - `credential_profiles`
+- `discovery_runs`
+- `discovered_pages`
+- `discovered_links`
+- `discovered_forms`
+- `quality_check_runs`
+- `quality_check_results`
+- `authorization_checks`
+- `authorization_check_runs`
+- `authorization_check_results`
 - `test_runs`
 - `run_jobs`
 - `findings`
@@ -255,7 +274,7 @@ Reports are generated dynamically from run, job, finding, and evidence rows.
 
 ### Redis
 
-Redis is the MVP queue for browser jobs, API jobs, and safe test plan execution jobs. PostgreSQL remains the source of durable run and execution state.
+Redis is the MVP queue for browser jobs, API jobs, discovery jobs, quality check jobs, authorization jobs, and safe test plan execution jobs. PostgreSQL remains the source of durable run and execution state.
 
 ### MinIO
 
@@ -267,7 +286,7 @@ The `demo-api` Compose service is profile-gated for smoke tests. It serves deter
 
 ### `demo-web`
 
-The `demo-web` Compose service is profile-gated for smoke tests. It serves public pages for browser and safe test plan execution validation plus a deterministic `/login` and protected `/dashboard` route for credential profile and authenticated browser smoke validation.
+The `demo-web` Compose service is profile-gated for smoke tests. It serves public pages for browser and safe test plan execution validation, deterministic passive quality issues, plus a deterministic `/login` and protected `/dashboard` route for credential profile and authenticated browser smoke validation.
 
 ### `mock-api`
 

@@ -15,14 +15,20 @@ const server = http.createServer((request, response) => {
   const url = new URL(request.url, "http://demo-web");
 
   if (url.pathname === "/health") {
-    response.writeHead(200, { "content-type": "application/json" });
+    response.writeHead(200, qualityHeaders({ "content-type": "application/json" }));
     response.end(JSON.stringify({ status: "ok" }));
     return;
   }
 
   if (url.pathname === "/app.js") {
-    response.writeHead(200, { "content-type": "application/javascript" });
+    response.writeHead(200, qualityHeaders({ "content-type": "application/javascript" }));
     response.end("document.documentElement.dataset.qualoraDemo='ready';");
+    return;
+  }
+
+  if (url.pathname === "/quality-pixel.svg") {
+    response.writeHead(200, qualityHeaders({ "content-type": "image/svg+xml" }));
+    response.end('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="48"><rect width="80" height="48" fill="#0d5b57"/></svg>');
     return;
   }
 
@@ -41,6 +47,14 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (url.pathname === "/quality-console") {
+    writePage(response, "Qualora Demo Quality Console", "Quality console signal", "This page intentionally emits a console error for passive quality-check demos.", {
+      consoleError: true,
+      qualityIssues: true
+    });
+    return;
+  }
+
   if (url.pathname === "/login" && request.method === "GET") {
     writeLoginPage(response, "");
     return;
@@ -52,17 +66,17 @@ const server = http.createServer((request, response) => {
         const username = String(form.get("username") || "");
         const account = demoAccounts[username];
         if (account && form.get("password") === account.password) {
-          response.writeHead(303, {
+          response.writeHead(303, qualityHeaders({
             "set-cookie": `qualora_demo_session=${encodeURIComponent(account.role)}; HttpOnly; SameSite=Lax; Path=/`,
             location: "/dashboard"
-          });
+          }));
           response.end();
           return;
         }
         writeLoginPage(response, "Invalid credentials");
       })
       .catch(() => {
-        response.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+        response.writeHead(400, qualityHeaders({ "content-type": "text/plain; charset=utf-8" }));
         response.end("Bad request");
       });
     return;
@@ -71,7 +85,7 @@ const server = http.createServer((request, response) => {
   if (url.pathname === "/dashboard") {
     const account = accountFromRequest(request);
     if (!account) {
-      response.writeHead(302, { location: "/login" });
+      response.writeHead(302, qualityHeaders({ location: "/login" }));
       response.end();
       return;
     }
@@ -95,6 +109,7 @@ const server = http.createServer((request, response) => {
 
   if (url.pathname === "/logout") {
     response.writeHead(200, {
+      ...qualityHeaders({}),
       "content-type": "text/html; charset=utf-8",
       "set-cookie": "qualora_demo_session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/"
     });
@@ -103,7 +118,7 @@ const server = http.createServer((request, response) => {
   }
 
   if (url.pathname === "/delete-account") {
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.writeHead(200, qualityHeaders({ "content-type": "text/html; charset=utf-8" }));
     response.end("<!doctype html><html><body><h1>Dangerous demo action</h1><p>Discovery must skip this route.</p></body></html>");
     return;
   }
@@ -136,7 +151,7 @@ const server = http.createServer((request, response) => {
   }
 
   if (url.pathname !== "/") {
-    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.writeHead(404, qualityHeaders({ "content-type": "text/plain; charset=utf-8" }));
     response.end("Not found");
     return;
   }
@@ -149,8 +164,8 @@ const server = http.createServer((request, response) => {
   );
 });
 
-function writePage(response, title, heading, body) {
-  response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+function writePage(response, title, heading, body, options = {}) {
+  response.writeHead(200, qualityHeaders({ "content-type": "text/html; charset=utf-8" }));
   response.end(`<!doctype html>
 <html lang="en">
 <head>
@@ -199,6 +214,7 @@ function writePage(response, title, heading, body) {
       <a href="/status">Status</a>
       <a href="/about">About</a>
       <a href="/pricing">Pricing</a>
+      <a href="/quality-console">Quality console</a>
       <a href="/login">Login</a>
       <a href="/dashboard">Dashboard</a>
       <a href="/admin">Admin</a>
@@ -209,6 +225,8 @@ function writePage(response, title, heading, body) {
     </nav>
     <h1>${escapeHTML(heading)}</h1>
     <p>${escapeHTML(body)}</p>
+    ${options.qualityIssues ? '<img src="/quality-pixel.svg">' : ""}
+    ${options.qualityIssues ? '<button type="button" aria-hidden="true"></button>' : ""}
     <form method="get" action="/status" aria-label="Newsletter signup">
       <label>
         Newsletter email
@@ -218,12 +236,14 @@ function writePage(response, title, heading, body) {
     </form>
   </main>
   <script src="/app.js"></script>
+  ${options.qualityIssues ? '<script src="/missing-quality.js"></script>' : ""}
+  ${options.consoleError ? "<script>console.error('Qualora demo quality console error');</script>" : ""}
 </body>
 </html>`);
 }
 
 function writeLoginPage(response, error) {
-  response.writeHead(error ? 401 : 200, { "content-type": "text/html; charset=utf-8" });
+  response.writeHead(error ? 401 : 200, qualityHeaders({ "content-type": "text/html; charset=utf-8" }));
   response.end(`<!doctype html>
 <html lang="en">
 <head>
@@ -291,6 +311,14 @@ function writeLoginPage(response, error) {
 </html>`);
 }
 
+function qualityHeaders(headers) {
+  return {
+    "x-powered-by": "Qualora Demo Web",
+    server: "qualora-demo-web",
+    ...headers
+  };
+}
+
 function readForm(request) {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -322,7 +350,7 @@ function accountFromRequest(request) {
 function requireRole(request, response, roles) {
   const account = accountFromRequest(request);
   if (!account) {
-    response.writeHead(302, { location: "/login" });
+    response.writeHead(302, qualityHeaders({ location: "/login" }));
     response.end();
     return null;
   }
@@ -334,7 +362,7 @@ function requireRole(request, response, roles) {
 }
 
 function writeDeniedPage(response, account) {
-  response.writeHead(403, { "content-type": "text/html; charset=utf-8" });
+  response.writeHead(403, qualityHeaders({ "content-type": "text/html; charset=utf-8" }));
   response.end(`<!doctype html>
 <html lang="en">
 <head>

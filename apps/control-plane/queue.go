@@ -31,6 +31,11 @@ type DiscoveryRunJob struct {
 	ProjectID      string `json:"project_id"`
 }
 
+type QualityCheckRunJob struct {
+	QualityCheckRunID string `json:"quality_check_run_id"`
+	ProjectID         string `json:"project_id"`
+}
+
 type APIRunJob struct {
 	JobID     string `json:"job_id"`
 	RunID     string `json:"run_id"`
@@ -90,6 +95,17 @@ func (q *Queue) EnqueueDiscoveryRun(ctx context.Context, job DiscoveryRunJob) er
 	}
 	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
 		return fmt.Errorf("enqueue discovery run: %w", err)
+	}
+	return nil
+}
+
+func (q *Queue) EnqueueQualityCheckRun(ctx context.Context, job QualityCheckRunJob) error {
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("marshal quality check run job: %w", err)
+	}
+	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
+		return fmt.Errorf("enqueue quality check run: %w", err)
 	}
 	return nil
 }

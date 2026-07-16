@@ -140,6 +140,52 @@ func TestBuildSafeDiscoveryAIInputStripsSecretsAndKeepsMapSummary(t *testing.T) 
 	}
 }
 
+func TestBuildSafeQualityAIInputStripsSecretsAndKeepsQualityContext(t *testing.T) {
+	report := &QualityCheckReport{
+		Run: QualityCheckRun{
+			ID:                   "quality-run-id",
+			ProjectID:            "project-id",
+			Status:               StatusCompleted,
+			TargetURL:            "https://example.com/dashboard?token=should-not-pass",
+			MaxPages:             10,
+			IncludeSecurity:      true,
+			IncludeAccessibility: true,
+			IncludePerformance:   true,
+		},
+		Project: Project{ID: "project-id", Name: "Example"},
+		Summary: QualityCheckSummary{TotalFindings: 3, SecurityFindings: 1, AccessibilityFindings: 1, PerformanceFindings: 1},
+		Results: []QualityCheckResult{{
+			Category:       "security",
+			RuleID:         "cookie_flags_incomplete",
+			Severity:       "medium",
+			Title:          "Cookie security flags are incomplete",
+			Description:    "A cookie was visible without flags.",
+			Recommendation: "Set HttpOnly, Secure, and SameSite where appropriate.",
+			URL:            "https://example.com/dashboard?session=should-not-pass",
+			Evidence: map[string]any{
+				"cookies":          []any{map[string]any{"name": "session", "value": "cookie-secret"}},
+				"authorization":    "Bearer should-not-pass",
+				"local_storage":    "storage-secret",
+				"response_body":    "body-secret",
+				"safe_observation": "metadata kept",
+			},
+		}},
+		SafetyNotes: []string{"Quality checks are passive."},
+		Limitations: []string{"Not a full audit."},
+	}
+
+	input := BuildSafeQualityAIInput(report)
+	rendered := prettyJSON(input)
+	for _, leaked := range []string{"should-not-pass", "cookie-secret", "storage-secret", "body-secret", "Bearer"} {
+		if strings.Contains(rendered, leaked) {
+			t.Fatalf("safe quality AI input leaked %q in:\n%s", leaked, rendered)
+		}
+	}
+	if !strings.Contains(rendered, "cookie_flags_incomplete") || !strings.Contains(rendered, "metadata kept") {
+		t.Fatalf("safe quality AI input missed expected quality context:\n%s", rendered)
+	}
+}
+
 func TestParseAIAnalysisPayloadValidatesAndSanitizesJSON(t *testing.T) {
 	payload, normalized, err := ParseAIAnalysisPayload(`{
 		"executive_summary": "Run completed. Bearer secret-token",

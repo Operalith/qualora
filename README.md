@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.13.0-alpha` adds discovery-aware AI test plan generation and a one-click Safe QA Run workflow. Qualora remains useful without AI: discovery, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
+`v0.14.0-alpha` adds passive front-end quality checks for safe security, accessibility, and performance signals. Qualora remains useful without AI: discovery, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
 
 ## Current Alpha Capabilities
 
@@ -27,6 +27,10 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Persist discovered pages, links, forms, fields, screenshots, browser observations, findings, and skip reasons.
 - View discovery runs and application maps in the web UI.
 - Export discovery JSON reports and self-contained HTML reports.
+- Start passive quality check runs for project frontends.
+- Reuse latest or selected discovery runs as quality-check page lists.
+- Run safe passive security header/cookie/form checks, basic accessibility heuristics, and simple performance/resource observations.
+- View quality check runs and JSON/HTML quality reports in the web UI.
 - View projects, runs, findings, evidence metadata, and reports in the web UI.
 - Execute Playwright Chromium checks against a configured frontend URL.
 - Execute safe API checks against `api_base_url`.
@@ -58,7 +62,8 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Execute only approved, supported, same-origin, non-destructive browser DSL steps from a test plan.
 - Persist test plan execution scenarios, steps, skip reasons, findings, evidence, JSON reports, and self-contained HTML reports.
 - Start Safe QA Runs that reuse or create discovery, generate a discovery-aware plan, preview safe execution, and optionally run the approved safe DSL path.
-- View Safe QA Run JSON/HTML reports with discovery, plan, preview, execution, and safety metadata.
+- Optionally include passive quality checks in Safe QA Runs.
+- View Safe QA Run JSON/HTML reports with discovery, quality checks, plan, preview, execution, and safety metadata.
 
 ## Architecture
 
@@ -68,7 +73,7 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
@@ -78,6 +83,7 @@ qualora-api
         |       +--> Deterministic selector-based login checks
         |       +--> Authenticated browser smoke test
         |       +--> Safe deterministic application discovery
+        |       +--> Passive quality checks
         |       +--> Explicit role-aware authorization checks
         |       +--> Approved safe test plan execution steps
         |       +--> MinIO/S3 screenshot evidence
@@ -134,6 +140,7 @@ The smoke target includes:
 - Credential profile creation, deterministic login check, and authenticated browser smoke against `demo-web`.
 - Role credential profile creation plus explicit authorization checks against demo `/admin` and customer invoice routes.
 - Application discovery against `demo-web`, including discovered pages/forms, skipped unsafe/external links, screenshots, JSON report, and HTML report.
+- Passive quality checks against `demo-web`, including security, accessibility, and performance findings plus JSON/HTML quality reports.
 - OpenAPI import and safe API smoke against a local `demo-api` service started by the Makefile.
 - AI provider smoke against a local fake OpenAI-compatible provider.
 - Discovery-aware AI test plan generation from the application map.
@@ -313,6 +320,28 @@ curl -s "http://localhost:8080/api/v1/discovery-runs/${DISCOVERY_RUN_ID}/report"
 ```
 
 Discovery follows safe links only, skips external/unsafe/non-HTML links with recorded reasons, captures screenshots and browser observations, and never submits forms or clicks arbitrary buttons.
+
+Start a passive quality check run from the latest completed discovery:
+
+```bash
+QUALITY_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/quality-check-runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "use_latest_discovery": true,
+    "max_pages": 10,
+    "include_security": true,
+    "include_accessibility": true,
+    "include_performance": true
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -s "http://localhost:8080/api/v1/quality-check-runs/${QUALITY_RUN_ID}/report" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
+open "http://localhost:8080/api/v1/quality-check-runs/${QUALITY_RUN_ID}/report.html"
+```
+
+Quality checks are passive metadata checks. They do not submit forms, click arbitrary buttons, run payloads, fuzz inputs, perform active security scanning, or use autonomous AI browser control.
 
 Create a credential profile for deterministic login:
 
@@ -552,7 +581,7 @@ curl -s -X POST "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/execute" \
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.13.0-alpha`:
+Supported provider type in `v0.14.0-alpha`:
 
 - `openai-compatible`
 
@@ -572,7 +601,7 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.13.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, and application discovery are deterministic browser-worker paths and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.14.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, and application discovery are deterministic browser-worker paths and are not AI-controlled.
 
 ## Report Example
 
@@ -658,6 +687,7 @@ The alpha is safe by default:
 - Every project must define `allowed_hosts`.
 - Browser navigation, browser network requests, API base URL checks, and OpenAPI checks are constrained by `allowed_hosts`.
 - API worker tests only `GET`, `HEAD`, and `OPTIONS` by default.
+- Quality checks are passive only and are not penetration tests, WCAG audits, Lighthouse audits, fuzzers, or active scanners.
 - `security_mode` is currently limited to `passive`.
 - `destructive_actions` must be `false`.
 - `localhost`, `.local`, loopback, link-local, private IP literal targets, common cloud metadata targets, and public hostnames resolving to blocked IP ranges are blocked by default.
@@ -691,6 +721,7 @@ See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.
 - Generated test plans are not executed automatically or as free-form instructions.
 - Safe test plan execution is limited to the supported non-destructive browser DSL and same-origin link checks.
 - Screenshot preview/download is available only for evidence records known to Qualora.
+- Quality checks are alpha heuristics, not full security, accessibility, performance, Lighthouse, Core Web Vitals, or WCAG coverage.
 - No authenticated API testing.
 - Authenticated browser smoke supports one configured login form and one same-origin target path per run.
 - No arbitrary form submission, multi-step authenticated journeys, MFA, role switching, or session export.
@@ -726,7 +757,7 @@ Near-term work:
 - Harden safe test plan execution status/retry handling.
 - Add audit logging, login rate limiting, and local auth hardening.
 - Expand OpenAPI validation.
-- Add passive security checks.
+- Deepen quality checks with richer accessibility/performance signals once the passive alpha path is stable.
 
 See [docs/roadmap.md](docs/roadmap.md).
 

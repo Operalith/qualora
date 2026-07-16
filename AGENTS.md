@@ -10,7 +10,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.13.0-alpha` Docker Compose MVP working.
+- Keep the `v0.14.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
@@ -23,6 +23,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Authenticated browser smoke runs for one configured same-origin target path.
 - Explicit role-aware authorization checks for configured browser URL targets.
 - Safe deterministic application discovery and persistent application maps.
+- Passive quality checks for security headers/cookies/forms, basic accessibility heuristics, and performance/front-end observations.
 - Discovery-aware AI test plan generation from sanitized application maps.
 - Safe QA Runs that preview first and execute only approved deterministic browser DSL steps.
 - Local first-run admin setup and session-protected API/web UI access.
@@ -62,6 +63,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Do not add crawling, fuzzing, payload execution, arbitrary form submission, destructive actions, or autonomous AI browser control to authorization checks.
 - Application discovery must remain bounded, deterministic, same-origin by default, allowlist-enforced, and safe-link-only.
 - Discovery must never submit forms, click arbitrary buttons, execute payloads, perform destructive actions, crawl external domains by default, or use autonomous AI browser control.
+- Quality checks must remain passive, deterministic, metadata-only, same-origin, and allowlist-enforced.
+- Quality checks must never submit forms, click arbitrary buttons, guess sensitive paths, execute payloads, fuzz inputs, perform active scans, perform destructive actions, crawl external domains by default, or use autonomous AI browser control.
 - Safe test plan execution must remain explicit, previewable, same-origin, allowlist-enforced, non-destructive, and limited to the supported persisted DSL.
 - Safe QA Runs must remain an orchestration layer over discovery, AI planning, and safe DSL execution; do not add arbitrary clicking, form submission, broad crawling, active scanning, fuzzing, or destructive actions.
 - API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
@@ -95,6 +98,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Safe API smoke must skip unsafe OpenAPI operations with clear reasons and must not send auth headers, cookies, tokens, request bodies, or secrets.
 - Authorization runs must never send credentials, cookies, local/session storage, auth headers, or tokens to AI or include them in evidence/reports.
 - Discovery runs must never send credentials, cookies, local/session storage, auth headers, tokens, full HTML, request bodies, or response bodies to AI or include them in metadata/report fields.
+- Quality checks must never send credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, or response bodies to AI or include them in metadata/report fields.
 
 ## Contribution Style
 

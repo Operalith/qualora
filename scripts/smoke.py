@@ -77,6 +77,16 @@ def fetch_text(path):
         raise RuntimeError(f"GET {path} failed with HTTP {exc.code}: {text}") from exc
 
 
+def fetch_web_text(path):
+    req = urllib.request.Request(f"{WEB_URL}{path}", headers={"Accept": "text/html,*/*"}, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            return response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        text = exc.read().decode("utf-8")
+        raise RuntimeError(f"GET {WEB_URL}{path} failed with HTTP {exc.code}: {text}") from exc
+
+
 def fetch_binary(path):
     req = urllib.request.Request(f"{API_URL}{path}", headers={"Accept": "*/*"}, method="GET")
     try:
@@ -130,7 +140,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.13.0-alpha" not in status.get("version", ""):
+    if "0.14.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -766,6 +776,86 @@ def run_application_discovery(project, profile=None):
     return report
 
 
+def run_quality_check(project, discovery_report, profile=None):
+    payload = {
+        "use_latest_discovery": True,
+        "target_url": BROWSER_TARGET_URL,
+        "max_pages": 10,
+        "include_security": True,
+        "include_accessibility": True,
+        "include_performance": True,
+    }
+    if profile:
+        payload["credential_profile_id"] = profile["id"]
+    run = request("POST", f"/api/v1/projects/{project['id']}/quality-check-runs", payload)
+    run_id = run["id"]
+    print(f"started quality check run: {run_id}")
+
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/quality-check-runs/{run_id}")
+        status = current["status"]
+        print(f"quality check status: {status}")
+        if status in ("completed", "failed", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"quality check run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    report = request("GET", f"/api/v1/quality-check-runs/{run_id}/report")
+    print(f"quality check report: {json.dumps(report, indent=2)}")
+    assert_no_demo_secret(report, "quality check JSON report")
+    if report["run"]["status"] != "completed":
+        raise RuntimeError(f"quality check run did not complete: {report['run']}")
+    if report["run"].get("discovery_run_id") != discovery_report["run"]["id"]:
+        raise RuntimeError(f"quality check did not use latest discovery run: {report['run']}")
+    summary = report.get("summary") or {}
+    if int(summary.get("total_pages") or 0) < 1:
+        raise RuntimeError(f"quality check did not check any pages: {summary}")
+    if int(summary.get("security_findings") or 0) < 1:
+        raise RuntimeError(f"quality check did not record passive security findings: {summary}")
+    if int(summary.get("accessibility_findings") or 0) < 1:
+        raise RuntimeError(f"quality check did not record accessibility findings: {summary}")
+    if int(summary.get("performance_findings") or 0) < 1:
+        raise RuntimeError(f"quality check did not record performance/front-end findings: {summary}")
+    categories = {item.get("category") for item in report.get("results", [])}
+    if not {"security", "accessibility", "performance"}.issubset(categories):
+        raise RuntimeError(f"quality check report missed expected categories: {categories}")
+
+    html = fetch_text(f"/api/v1/quality-check-runs/{run_id}/report.html")
+    assert_no_demo_secret(html, "quality check HTML report")
+    if "Qualora quality report" not in html or "Quality Findings" not in html:
+        raise RuntimeError("quality check HTML report did not include expected content")
+
+    listed = request("GET", f"/api/v1/projects/{project['id']}/quality-check-runs").get("quality_check_runs", [])
+    if not any(item.get("id") == run_id for item in listed):
+        raise RuntimeError("project quality check list did not include completed run")
+
+    print(f"quality check JSON report: {API_URL}/api/v1/quality-check-runs/{run_id}/report")
+    print(f"quality check HTML report: {API_URL}/api/v1/quality-check-runs/{run_id}/report.html")
+    print(f"Web quality report: {WEB_URL}/#/quality-check-runs/{run_id}")
+    return report
+
+
+def assert_quality_ui_bundle():
+    index = fetch_web_text("/")
+    asset_paths = []
+    for marker in ("src=\"", "href=\""):
+        parts = index.split(marker)
+        for part in parts[1:]:
+            candidate = part.split("\"", 1)[0]
+            if candidate.startswith("/assets/"):
+                asset_paths.append(candidate)
+    bundle_text = index
+    for path in sorted(set(asset_paths)):
+        if path.endswith((".js", ".css")):
+            bundle_text += "\n" + fetch_web_text(path)
+    for expected in ("Quality Checks", "Start quality checks", "Quality Report", "Include passive quality checks"):
+        if expected not in bundle_text:
+            raise RuntimeError(f"web UI bundle did not include expected quality UI text: {expected}")
+    print("web UI bundle includes Quality Checks screens")
+
+
 def generate_discovery_ai_test_plan(project, discovery_report, provider):
     discovery_run_id = discovery_report["run"]["id"]
     plan = request(
@@ -807,7 +897,7 @@ def generate_discovery_ai_test_plan(project, discovery_report, provider):
     return plan
 
 
-def wait_for_qa_run(qa_run_id, label, require_execution=False):
+def wait_for_qa_run(qa_run_id, label, require_execution=False, expect_quality=False):
     deadline = time.time() + TIMEOUT_SECONDS
     while time.time() < deadline:
         current = request("GET", f"/api/v1/qa-runs/{qa_run_id}")
@@ -829,11 +919,21 @@ def wait_for_qa_run(qa_run_id, label, require_execution=False):
         raise RuntimeError(f"{label} QA report missed discovery, plan, or preview: {report}")
     if int(report["execution_preview"].get("executable_steps") or 0) < 1:
         raise RuntimeError(f"{label} QA preview had no executable steps: {report['execution_preview']}")
+    if expect_quality:
+        quality_summary = report.get("quality_summary") or {}
+        if int(quality_summary.get("total_findings") or 0) < 1:
+            raise RuntimeError(f"{label} QA report did not include quality findings: {quality_summary}")
+        if not report.get("quality_check_run"):
+            raise RuntimeError(f"{label} QA report missed the linked quality check run")
+        if not report.get("quality_results"):
+            raise RuntimeError(f"{label} QA report missed quality result rows")
 
     html = fetch_text(f"/api/v1/qa-runs/{qa_run_id}/report.html")
     assert_no_demo_secret(html, f"{label} HTML report")
     if "Qualora safe QA report" not in html or "Safe Execution Preview" not in html:
         raise RuntimeError(f"{label} QA HTML report did not include expected content")
+    if expect_quality and "Quality Checks" not in html:
+        raise RuntimeError(f"{label} QA HTML report did not include quality checks")
 
     print(f"{label} QA JSON report: {API_URL}/api/v1/qa-runs/{qa_run_id}/report")
     print(f"{label} QA HTML report: {API_URL}/api/v1/qa-runs/{qa_run_id}/report.html")
@@ -853,13 +953,18 @@ def run_safe_qa_preview(project, discovery_report, provider):
             "max_pages": 12,
             "max_depth": 2,
             "max_scenarios": 10,
+            "include_quality_checks": True,
+            "quality_max_pages": 10,
+            "quality_include_security": True,
+            "quality_include_accessibility": True,
+            "quality_include_performance": True,
             "focus_areas": ["smoke", "functional", "regression"],
             "product_context": "One-click safe QA preview. password=should-not-leak",
         },
     )
     qa_run_id = qa_run["id"]
     print(f"started safe QA preview: {qa_run_id}")
-    report = wait_for_qa_run(qa_run_id, "safe QA preview")
+    report = wait_for_qa_run(qa_run_id, "safe QA preview", expect_quality=True)
     if report["run"].get("test_plan_execution_id"):
         raise RuntimeError(f"safe QA preview unexpectedly executed a plan: {report['run']}")
     return report
@@ -869,7 +974,7 @@ def execute_previewed_qa_run(preview_report):
     qa_run_id = preview_report["run"]["id"]
     accepted = request("POST", f"/api/v1/qa-runs/{qa_run_id}/execute", {})
     print(f"accepted safe QA preview execution: {json.dumps(accepted, indent=2)}")
-    report = wait_for_qa_run(qa_run_id, "safe QA executed preview", require_execution=True)
+    report = wait_for_qa_run(qa_run_id, "safe QA executed preview", require_execution=True, expect_quality=True)
     execution_report = report.get("execution_report")
     if not execution_report:
         raise RuntimeError(f"executed QA report did not include execution report: {report}")
@@ -967,7 +1072,9 @@ def run_authorization_checks(project, checks):
 def main():
     print(f"Web UI: {WEB_URL}")
     wait_for_url(f"{API_URL}/healthz")
+    wait_for_url(f"{WEB_URL}/healthz")
     setup_and_login()
+    assert_quality_ui_bundle()
 
     print("== AI provider smoke ==")
     wait_for_url(FAKE_LLM_HEALTH_URL)
@@ -995,6 +1102,7 @@ def main():
     authenticated_report = run_ai_analysis(authenticated_report, provider)
     generate_ai_test_plan(browser_project, authenticated_report, provider)
     discovery_report = run_application_discovery(browser_project)
+    run_quality_check(browser_project, discovery_report, credential_profile)
     discovery_plan = generate_discovery_ai_test_plan(browser_project, discovery_report, provider)
     preview_test_plan_execution(discovery_plan)
     qa_preview_report = run_safe_qa_preview(browser_project, discovery_report, provider)

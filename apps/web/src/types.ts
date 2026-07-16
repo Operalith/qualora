@@ -433,6 +433,83 @@ export type DiscoveryReport = DiscoveryMap & {
   metadata: Record<string, unknown>;
 };
 
+export type QualityCheckRunInput = {
+  target_url?: string;
+  credential_profile_id?: string;
+  discovery_run_id?: string;
+  use_latest_discovery?: boolean;
+  max_pages?: number;
+  include_security?: boolean;
+  include_accessibility?: boolean;
+  include_performance?: boolean;
+};
+
+export type QualityCheckRun = {
+  id: string;
+  project_id: string;
+  discovery_run_id?: string;
+  credential_profile_id?: string;
+  status: "queued" | "running" | "completed" | "failed" | "error" | string;
+  target_url: string;
+  max_pages: number;
+  include_security: boolean;
+  include_accessibility: boolean;
+  include_performance: boolean;
+  started_at?: string;
+  completed_at?: string;
+  total_pages: number;
+  total_findings: number;
+  critical_findings: number;
+  high_findings: number;
+  medium_findings: number;
+  low_findings: number;
+  info_findings: number;
+  error_message?: string;
+  summary: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QualityCheckResult = {
+  id: string;
+  run_id: string;
+  project_id: string;
+  category: "security" | "accessibility" | "performance" | string;
+  rule_id: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  title: string;
+  description: string;
+  recommendation: string;
+  url: string;
+  evidence: Record<string, unknown>;
+  created_at: string;
+};
+
+export type QualityCheckSummary = {
+  total_findings: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+  total_pages: number;
+  security_findings: number;
+  accessibility_findings: number;
+  performance_findings: number;
+};
+
+export type QualityCheckReport = {
+  generated_at: string;
+  run: QualityCheckRun;
+  project: Project;
+  discovery_run?: DiscoveryRun;
+  summary: QualityCheckSummary;
+  results: QualityCheckResult[];
+  safety_notes: string[];
+  limitations: string[];
+  metadata: Record<string, unknown>;
+};
+
 export type AuthenticatedBrowserSmokeInput = {
   credential_profile_id?: string;
   target_path?: string;
@@ -684,6 +761,11 @@ export type QARunInput = {
   provider_id?: string;
   product_context?: string;
   focus_areas?: string[];
+  include_quality_checks?: boolean;
+  quality_max_pages?: number;
+  quality_include_security?: boolean;
+  quality_include_accessibility?: boolean;
+  quality_include_performance?: boolean;
 };
 
 export type QARun = {
@@ -692,6 +774,7 @@ export type QARun = {
   status: "queued" | "running_discovery" | "generating_plan" | "previewing_execution" | "executing_plan" | "completed" | "failed" | "error" | string;
   mode: "safe" | string;
   discovery_run_id?: string;
+  quality_check_run_id?: string;
   test_plan_id?: string;
   test_plan_execution_id?: string;
   credential_profile_id?: string;
@@ -708,6 +791,9 @@ export type QARunReport = {
   project: Project;
   discovery_run?: DiscoveryRun;
   discovery_summary?: DiscoverySummary;
+  quality_check_run?: QualityCheckRun;
+  quality_summary?: QualityCheckSummary;
+  quality_results?: QualityCheckResult[];
   test_plan?: TestPlan;
   execution_preview?: TestPlanExecutionPreview;
   execution_report?: TestPlanExecutionReport;

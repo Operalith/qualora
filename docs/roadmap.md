@@ -164,7 +164,7 @@ Delivered:
 
 ## v0.13.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Discovery-aware AI test plan generation from sanitized application maps.
 - Safe executable test plan mode with optional deterministic DSL candidates.
@@ -174,7 +174,22 @@ Current alpha scope:
 - Safe QA Run report page with discovery, plan, preview, optional execution, findings, evidence, and safety metadata.
 - Smoke validation for discovery-aware planning, Safe QA Run preview, Safe QA Run execution, reports, password redaction, and existing browser/API/AI/test-plan flows.
 
-## Phase 14: Run And Worker Hardening
+## v0.14.0-alpha
+
+Current alpha scope:
+
+- Standalone passive quality check runs for project frontends.
+- Optional reuse of latest or selected application discovery runs as page lists.
+- Optional deterministic selector-based login with credential profiles before quality checks.
+- Passive security checks for missing security headers, cookie flags, mixed content, source maps, sensitive query names, and obvious form issues.
+- Basic accessibility heuristics for page metadata, images, inputs, buttons, links, and landmarks.
+- Basic performance/front-end observations for slow loads, failed resources, console errors, request counts, large JavaScript, and image dimensions.
+- Quality check JSON reports and self-contained HTML reports.
+- Web UI Quality Checks section, quality run list, and quality report page.
+- Optional Safe QA Run quality-check integration and combined report fields.
+- Smoke validation for standalone quality checks, Safe QA quality summaries, report redaction, and existing browser/API/AI/test-plan/discovery flows.
+
+## Phase 15: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -187,19 +202,19 @@ Current alpha scope:
 - Move AI analysis to an async analyzer worker.
 - Move AI-assisted test planning to an async analyzer worker.
 
-## Phase 15: Deeper API Checks
+## Phase 16: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 16: Passive Security Checks
+## Phase 17: Quality Check Deepening
 
-- Passive security headers.
-- Cookie flag checks.
-- Mixed-content observations.
-- TLS metadata where practical.
+- Optional axe-core integration or richer accessibility summaries.
+- Lighthouse/Core Web Vitals-style performance collection if it can stay safe and lightweight.
+- More passive security metadata, including TLS details where practical.
+- Better trend comparison across quality runs.
 
 ## Later
 

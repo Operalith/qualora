@@ -22,6 +22,7 @@ import {
   getDiscoveryReport,
   getProject,
   getQARunReport,
+  getQualityCheckReport,
   getReport,
   getRun,
   getSetupStatus,
@@ -37,6 +38,7 @@ import {
   listDiscoveryRuns,
   listProjects,
   listQARuns,
+  listQualityCheckRuns,
   listRuns,
   listTestPlanExecutions,
   listTestPlans,
@@ -44,6 +46,7 @@ import {
   logout,
   me,
   previewTestPlanExecution,
+  qualityCheckHTMLReportURL,
   qaRunHTMLReportURL,
   runAIAnalysis,
   setupAdmin,
@@ -53,6 +56,7 @@ import {
   startBrowserSmokeRun,
   startDiscoveryRun,
   startQARun,
+  startQualityCheckRun,
   startRun,
   testCredentialProfileLogin,
   testPlanExportURL,
@@ -90,6 +94,10 @@ import type {
   QARun,
   QARunInput,
   QARunReport,
+  QualityCheckReport,
+  QualityCheckRun,
+  QualityCheckRunInput,
+  QualityCheckResult,
   Report,
   RunJob,
   SetupAdminInput,
@@ -115,6 +123,7 @@ type Route =
   | { name: "test-plan-execution"; id: string }
   | { name: "authorization-check-run"; id: string }
   | { name: "discovery-run"; id: string }
+  | { name: "quality-check-run"; id: string }
   | { name: "qa-run"; id: string }
   | { name: "run"; id: string };
 
@@ -134,7 +143,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.13.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.14.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -326,6 +335,7 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
         {route.name === "test-plan-execution" && <TestPlanExecutionPage executionID={route.id} />}
         {route.name === "authorization-check-run" && <AuthorizationCheckRunPage runID={route.id} />}
         {route.name === "discovery-run" && <DiscoveryRunPage runID={route.id} />}
+        {route.name === "quality-check-run" && <QualityCheckRunPage runID={route.id} />}
         {route.name === "qa-run" && <QARunPage runID={route.id} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
       </main>
@@ -973,6 +983,7 @@ function ProjectPage({
   const [authorizationChecks, setAuthorizationChecks] = useState<LoadState<AuthorizationCheck[]>>({ data: [], loading: true, error: "" });
   const [authorizationRuns, setAuthorizationRuns] = useState<LoadState<AuthorizationCheckRun[]>>({ data: [], loading: true, error: "" });
   const [discoveryRuns, setDiscoveryRuns] = useState<LoadState<DiscoveryRun[]>>({ data: [], loading: true, error: "" });
+  const [qualityRuns, setQualityRuns] = useState<LoadState<QualityCheckRun[]>>({ data: [], loading: true, error: "" });
   const [qaRuns, setQARuns] = useState<LoadState<QARun[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
   const [starting, setStarting] = useState("");
@@ -985,6 +996,7 @@ function ProjectPage({
     setAuthorizationChecks((current) => ({ ...current, loading: true, error: "" }));
     setAuthorizationRuns((current) => ({ ...current, loading: true, error: "" }));
     setDiscoveryRuns((current) => ({ ...current, loading: true, error: "" }));
+    setQualityRuns((current) => ({ ...current, loading: true, error: "" }));
     setQARuns((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
@@ -998,6 +1010,7 @@ function ProjectPage({
         nextAuthorizationChecks,
         nextAuthorizationRuns,
         nextDiscoveryRuns,
+        nextQualityRuns,
         nextQARuns
       ] = await Promise.all([
         cachedProject ? Promise.resolve(cachedProject) : getProject(projectID),
@@ -1009,6 +1022,7 @@ function ProjectPage({
         listAuthorizationChecks(projectID),
         listAuthorizationCheckRuns(projectID),
         listDiscoveryRuns(projectID),
+        listQualityCheckRuns(projectID),
         listQARuns(projectID)
       ]);
       setProject(nextProject);
@@ -1020,6 +1034,7 @@ function ProjectPage({
       setAuthorizationChecks({ data: nextAuthorizationChecks, loading: false, error: "" });
       setAuthorizationRuns({ data: nextAuthorizationRuns, loading: false, error: "" });
       setDiscoveryRuns({ data: nextDiscoveryRuns, loading: false, error: "" });
+      setQualityRuns({ data: nextQualityRuns, loading: false, error: "" });
       setQARuns({ data: nextQARuns, loading: false, error: "" });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError);
@@ -1031,6 +1046,7 @@ function ProjectPage({
       setAuthorizationChecks((current) => ({ ...current, loading: false, error: message }));
       setAuthorizationRuns((current) => ({ ...current, loading: false, error: message }));
       setDiscoveryRuns((current) => ({ ...current, loading: false, error: message }));
+      setQualityRuns((current) => ({ ...current, loading: false, error: message }));
       setQARuns((current) => ({ ...current, loading: false, error: message }));
     }
   }, [cachedProject, projectID]);
@@ -1113,6 +1129,23 @@ function ProjectPage({
       const run = await startDiscoveryRun(project.id, input);
       await refresh();
       window.location.hash = `#/discovery-runs/${run.id}`;
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : String(startError));
+    } finally {
+      setStarting("");
+    }
+  }
+
+  async function startProjectQualityCheck(input: QualityCheckRunInput) {
+    if (!project) {
+      return;
+    }
+    setStarting("quality");
+    setError("");
+    try {
+      const run = await startQualityCheckRun(project.id, input);
+      await refresh();
+      window.location.hash = `#/quality-check-runs/${run.id}`;
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : String(startError));
     } finally {
@@ -1222,6 +1255,33 @@ function ProjectPage({
         <div className="section-split">
           {qaRuns.error && <Notice tone="danger" message={qaRuns.error} />}
           {qaRuns.loading ? <SkeletonRows /> : <QARunTable runs={qaRuns.data} />}
+        </div>
+      </section>
+
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>Quality Checks</h2>
+            <p>Passive front-end security, accessibility, and performance heuristics for allowed pages.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="Quality checks are read-only and passive. They do not submit forms, run payloads, fuzz inputs, or perform active security scanning."
+        />
+        <QualityCheckRunForm
+          project={project}
+          profiles={credentialProfiles.data}
+          discoveryRuns={discoveryRuns.data}
+          disabled={starting !== ""}
+          onStart={(input) => void startProjectQualityCheck(input)}
+        />
+        <div className="section-split">
+          {qualityRuns.error && <Notice tone="danger" message={qualityRuns.error} />}
+          {qualityRuns.loading ? <SkeletonRows /> : <QualityCheckRunTable runs={qualityRuns.data} />}
         </div>
       </section>
 
@@ -1504,6 +1564,187 @@ function DiscoveryRunTable({ runs }: { runs: DiscoveryRun[] }) {
   );
 }
 
+function QualityCheckRunForm({
+  project,
+  profiles,
+  discoveryRuns,
+  disabled,
+  onStart
+}: {
+  project: Project;
+  profiles: CredentialProfile[];
+  discoveryRuns: DiscoveryRun[];
+  disabled: boolean;
+  onStart: (input: QualityCheckRunInput) => void;
+}) {
+  const completedDiscoveryRuns = discoveryRuns.filter((run) => run.status === "completed");
+  const [source, setSource] = useState<"latest" | "existing" | "target">("latest");
+  const [targetURL, setTargetURL] = useState(project.frontend_url || "");
+  const [discoveryRunID, setDiscoveryRunID] = useState("");
+  const [credentialProfileID, setCredentialProfileID] = useState("");
+  const [maxPages, setMaxPages] = useState(10);
+  const [includeSecurity, setIncludeSecurity] = useState(true);
+  const [includeAccessibility, setIncludeAccessibility] = useState(true);
+  const [includePerformance, setIncludePerformance] = useState(true);
+
+  useEffect(() => {
+    setTargetURL((current) => current || project.frontend_url || "");
+  }, [project.frontend_url]);
+
+  useEffect(() => {
+    if (discoveryRunID || completedDiscoveryRuns.length === 0) {
+      return;
+    }
+    setDiscoveryRunID(completedDiscoveryRuns[0].id);
+  }, [completedDiscoveryRuns, discoveryRunID]);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const input: QualityCheckRunInput = {
+      credential_profile_id: credentialProfileID || undefined,
+      max_pages: maxPages,
+      include_security: includeSecurity,
+      include_accessibility: includeAccessibility,
+      include_performance: includePerformance
+    };
+    if (source === "latest") {
+      input.use_latest_discovery = true;
+      input.target_url = targetURL.trim() || undefined;
+    } else if (source === "existing") {
+      input.discovery_run_id = discoveryRunID || undefined;
+      input.target_url = targetURL.trim() || undefined;
+    } else {
+      input.target_url = targetURL.trim() || undefined;
+    }
+    onStart(input);
+  }
+
+  return (
+    <form className="project-form compact-form" onSubmit={submit}>
+      <label>
+        Source
+        <select value={source} onChange={(event) => setSource(event.target.value as "latest" | "existing" | "target")}>
+          <option value="latest">Use latest completed discovery when available</option>
+          <option value="existing">Use selected discovery run</option>
+          <option value="target">Check target URL only</option>
+        </select>
+      </label>
+      {source === "existing" && (
+        <label>
+          Completed Discovery Run
+          <select value={discoveryRunID} onChange={(event) => setDiscoveryRunID(event.target.value)} required>
+            {completedDiscoveryRuns.map((run) => (
+              <option key={run.id} value={run.id}>
+                {shortID(run.id)} · {run.total_pages} pages · {formatDate(run.created_at)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label>
+        Target URL
+        <input value={targetURL} onChange={(event) => setTargetURL(event.target.value)} />
+      </label>
+      <label>
+        Credential Profile
+        <select value={credentialProfileID} onChange={(event) => setCredentialProfileID(event.target.value)}>
+          <option value="">Unauthenticated</option>
+          {profiles.map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {credentialProfileLabel(profile)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Max Pages
+        <input type="number" min={1} max={50} value={maxPages} onChange={(event) => setMaxPages(Number(event.target.value))} />
+      </label>
+      <div className="checkbox-grid">
+        <label className="check-row">
+          <input type="checkbox" checked={includeSecurity} onChange={(event) => setIncludeSecurity(event.target.checked)} />
+          Passive security
+        </label>
+        <label className="check-row">
+          <input type="checkbox" checked={includeAccessibility} onChange={(event) => setIncludeAccessibility(event.target.checked)} />
+          Accessibility
+        </label>
+        <label className="check-row">
+          <input type="checkbox" checked={includePerformance} onChange={(event) => setIncludePerformance(event.target.checked)} />
+          Performance
+        </label>
+      </div>
+      <div className="form-actions">
+        <button type="submit" disabled={disabled || !project.frontend_url || (!includeSecurity && !includeAccessibility && !includePerformance)}>
+          {disabled ? "Starting" : "Start quality checks"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function QualityCheckRunTable({ runs }: { runs: QualityCheckRun[] }) {
+  if (runs.length === 0) {
+    return <EmptyState title="No quality checks" body="Start passive quality checks to collect security, accessibility, and performance findings." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Target</th>
+            <th>Pages</th>
+            <th>Findings</th>
+            <th>Categories</th>
+            <th>Created</th>
+            <th>Report</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td>
+                <StatusBadge status={run.status} />
+                {run.error_message && <p className="muted">{run.error_message}</p>}
+              </td>
+              <td>
+                <code>{run.target_url}</code>
+                {run.discovery_run_id && <p className="muted">Discovery {shortID(run.discovery_run_id)}</p>}
+              </td>
+              <td>{run.total_pages}</td>
+              <td>
+                {run.total_findings} total
+                <p className="muted">
+                  {run.high_findings} high · {run.medium_findings} medium · {run.low_findings} low
+                </p>
+              </td>
+              <td>
+                {[
+                  run.include_security ? "security" : "",
+                  run.include_accessibility ? "a11y" : "",
+                  run.include_performance ? "performance" : ""
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+              </td>
+              <td>{formatDate(run.created_at)}</td>
+              <td>
+                <div className="button-row compact">
+                  <a href={`#/quality-check-runs/${run.id}`}>Open</a>
+                  <a href={qualityCheckHTMLReportURL(run.id)} target="_blank" rel="noreferrer">
+                    HTML
+                  </a>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function QARunForm({
   project,
   providers,
@@ -1528,6 +1769,11 @@ function QARunForm({
   const [maxPages, setMaxPages] = useState(20);
   const [maxDepth, setMaxDepth] = useState(2);
   const [maxScenarios, setMaxScenarios] = useState(10);
+  const [includeQualityChecks, setIncludeQualityChecks] = useState(true);
+  const [qualityMaxPages, setQualityMaxPages] = useState(10);
+  const [qualityIncludeSecurity, setQualityIncludeSecurity] = useState(true);
+  const [qualityIncludeAccessibility, setQualityIncludeAccessibility] = useState(true);
+  const [qualityIncludePerformance, setQualityIncludePerformance] = useState(true);
   const [execute, setExecute] = useState(false);
   const [productContext, setProductContext] = useState("");
   const [focusAreas, setFocusAreas] = useState<string[]>(["smoke", "functional", "regression"]);
@@ -1555,6 +1801,11 @@ function QARunForm({
       max_pages: maxPages,
       max_depth: maxDepth,
       max_scenarios: maxScenarios,
+      include_quality_checks: includeQualityChecks,
+      quality_max_pages: qualityMaxPages,
+      quality_include_security: qualityIncludeSecurity,
+      quality_include_accessibility: qualityIncludeAccessibility,
+      quality_include_performance: qualityIncludePerformance,
       execute,
       product_context: productContext.trim() || undefined,
       focus_areas: focusAreas
@@ -1669,8 +1920,42 @@ function QARunForm({
         <input type="checkbox" checked={execute} onChange={(event) => setExecute(event.target.checked)} />
         Execute supported safe steps after preview
       </label>
+      <label className="check-row">
+        <input type="checkbox" checked={includeQualityChecks} onChange={(event) => setIncludeQualityChecks(event.target.checked)} />
+        Include passive quality checks after discovery
+      </label>
+      {includeQualityChecks && (
+        <div className="form-grid two">
+          <label>
+            Quality Max Pages
+            <input type="number" min="1" max="50" value={qualityMaxPages} onChange={(event) => setQualityMaxPages(Number(event.target.value))} />
+          </label>
+          <div className="checkbox-grid">
+            <label className="check-row">
+              <input type="checkbox" checked={qualityIncludeSecurity} onChange={(event) => setQualityIncludeSecurity(event.target.checked)} />
+              Passive security
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={qualityIncludeAccessibility} onChange={(event) => setQualityIncludeAccessibility(event.target.checked)} />
+              Accessibility
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={qualityIncludePerformance} onChange={(event) => setQualityIncludePerformance(event.target.checked)} />
+              Performance
+            </label>
+          </div>
+        </div>
+      )}
       <div className="form-actions">
-        <button type="submit" disabled={disabled || !project.frontend_url || focusAreas.length === 0}>
+        <button
+          type="submit"
+          disabled={
+            disabled ||
+            !project.frontend_url ||
+            focusAreas.length === 0 ||
+            (includeQualityChecks && !qualityIncludeSecurity && !qualityIncludeAccessibility && !qualityIncludePerformance)
+          }
+        >
           {disabled ? "Starting" : execute ? "Start safe QA run" : "Generate safe QA preview"}
         </button>
       </div>
@@ -1690,6 +1975,7 @@ function QARunTable({ runs }: { runs: QARun[] }) {
             <th>Status</th>
             <th>QA Run</th>
             <th>Discovery</th>
+            <th>Quality</th>
             <th>Plan</th>
             <th>Execution</th>
             <th>Created</th>
@@ -1705,6 +1991,7 @@ function QARunTable({ runs }: { runs: QARun[] }) {
               </td>
               <td>{shortID(run.id)}</td>
               <td>{run.discovery_run_id ? <a href={`#/discovery-runs/${run.discovery_run_id}`}>{shortID(run.discovery_run_id)}</a> : "Pending"}</td>
+              <td>{run.quality_check_run_id ? <a href={`#/quality-check-runs/${run.quality_check_run_id}`}>{shortID(run.quality_check_run_id)}</a> : "Not included"}</td>
               <td>{run.test_plan_id ? <a href={`#/test-plans/${run.test_plan_id}`}>{shortID(run.test_plan_id)}</a> : "Pending"}</td>
               <td>
                 {run.test_plan_execution_id ? (
@@ -3637,6 +3924,159 @@ function ProjectForm({ onCreated }: { onCreated: (project: Project) => void }) {
   );
 }
 
+function QualityCheckRunPage({ runID }: { runID: string }) {
+  const [report, setReport] = useState<QualityCheckReport | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setReport(await getQualityCheckReport(runID));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [runID]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!report || !isActiveRunStatus(report.run.status)) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => window.clearInterval(timer);
+  }, [refresh, report]);
+
+  if (error) {
+    return <Notice tone="danger" message={error} />;
+  }
+  if (loading && !report) {
+    return <SkeletonRows />;
+  }
+  if (!report) {
+    return <Notice tone="danger" message="Quality report could not be loaded." />;
+  }
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>{report.project.name}</h2>
+            <p>
+              <StatusBadge status={report.run.status} /> <span className="muted">Quality run {report.run.id}</span>
+            </p>
+          </div>
+          <div className="button-row">
+            <a className="button secondary-link" href={`#/projects/${report.project.id}`}>
+              Project
+            </a>
+            {report.run.discovery_run_id && (
+              <a className="button secondary-link" href={`#/discovery-runs/${report.run.discovery_run_id}`}>
+                Discovery
+              </a>
+            )}
+            <a className="button secondary-link" href={`${API_BASE_URL}/api/v1/quality-check-runs/${report.run.id}/report`} target="_blank" rel="noreferrer">
+              JSON Report
+            </a>
+            <a className="button" href={qualityCheckHTMLReportURL(report.run.id)} target="_blank" rel="noreferrer">
+              HTML Report
+            </a>
+          </div>
+        </div>
+        {report.run.error_message && <Notice tone="danger" message={report.run.error_message} />}
+        <div className="summary-grid">
+          <Metric label="Pages" value={report.summary.total_pages} />
+          <Metric label="Findings" value={report.summary.total_findings} tone="critical" />
+          <Metric label="Critical" value={report.summary.critical} tone="critical" />
+          <Metric label="High" value={report.summary.high} tone="high" />
+          <Metric label="Medium" value={report.summary.medium} tone="medium" />
+          <Metric label="Low" value={report.summary.low} tone="low" />
+        </div>
+        <div className="detail-grid compact">
+          <Field label="Target URL" value={report.run.target_url} />
+          <Field label="Max Pages" value={String(report.run.max_pages)} />
+          <Field label="Security" value={report.run.include_security ? "Enabled" : "Disabled"} />
+          <Field label="Accessibility" value={report.run.include_accessibility ? "Enabled" : "Disabled"} />
+          <Field label="Performance" value={report.run.include_performance ? "Enabled" : "Disabled"} />
+          <Field label="Generated" value={formatDate(report.generated_at)} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Safety Scope</h2>
+        <Notice
+          tone="info"
+          message="Quality checks are passive metadata checks only. They do not submit forms, fuzz inputs, run payloads, or perform active security scanning."
+        />
+        <div className="analysis-grid">
+          <AnalysisList title="Safety Notes" items={report.safety_notes} />
+          <AnalysisList title="Limitations" items={report.limitations} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Quality Findings</h2>
+        <QualityResultTable results={report.results} />
+      </section>
+    </div>
+  );
+}
+
+function QualityResultTable({ results }: { results: QualityCheckResult[] }) {
+  if (results.length === 0) {
+    return <EmptyState title="No quality findings" body="The quality run did not record passive quality findings." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Category</th>
+            <th>Rule</th>
+            <th>Finding</th>
+            <th>URL</th>
+            <th>Evidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((result) => (
+            <tr key={result.id}>
+              <td>
+                <span className={`severity ${result.severity}`}>{result.severity}</span>
+              </td>
+              <td>{result.category}</td>
+              <td>
+                <code>{result.rule_id}</code>
+              </td>
+              <td>
+                <strong>{result.title}</strong>
+                <p className="muted">{result.recommendation}</p>
+              </td>
+              <td>
+                <code>{result.url}</code>
+              </td>
+              <td>
+                <details>
+                  <summary>Metadata</summary>
+                  <pre>{JSON.stringify(result.evidence, null, 2)}</pre>
+                </details>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function QARunPage({ runID }: { runID: string }) {
   const [report, setReport] = useState<QARunReport | undefined>();
   const [loading, setLoading] = useState(true);
@@ -3712,6 +4152,11 @@ function QARunPage({ runID }: { runID: string }) {
                 Discovery
               </a>
             )}
+            {report.run.quality_check_run_id && (
+              <a className="button secondary-link" href={`#/quality-check-runs/${report.run.quality_check_run_id}`}>
+                Quality
+              </a>
+            )}
             {report.run.test_plan_id && (
               <a className="button secondary-link" href={`#/test-plans/${report.run.test_plan_id}`}>
                 Plan
@@ -3767,6 +4212,35 @@ function QARunPage({ runID }: { runID: string }) {
             <Metric label="Console Errors" value={report.discovery_summary.total_console_errors} tone="medium" />
             <Metric label="Failed Requests" value={report.discovery_summary.total_failed_requests} tone="medium" />
           </div>
+        </section>
+      )}
+
+      {report.quality_summary && (
+        <section>
+          <h2>Quality Summary</h2>
+          <div className="summary-grid">
+            <Metric label="Pages" value={report.quality_summary.total_pages} />
+            <Metric label="Findings" value={report.quality_summary.total_findings} tone="critical" />
+            <Metric label="Security" value={report.quality_summary.security_findings} tone="medium" />
+            <Metric label="Accessibility" value={report.quality_summary.accessibility_findings} tone="medium" />
+            <Metric label="Performance" value={report.quality_summary.performance_findings} tone="medium" />
+            <Metric label="High" value={report.quality_summary.high} tone="high" />
+          </div>
+          {report.quality_check_run && (
+            <div className="detail-grid compact">
+              <Field label="Quality Run" value={shortID(report.quality_check_run.id)} />
+              <Field label="Target" value={report.quality_check_run.target_url} />
+              <Field label="Status" value={report.quality_check_run.status} />
+              <Field label="Max Pages" value={String(report.quality_check_run.max_pages)} />
+            </div>
+          )}
+        </section>
+      )}
+
+      {report.quality_results && report.quality_results.length > 0 && (
+        <section>
+          <h2>Quality Findings</h2>
+          <QualityResultTable results={report.quality_results} />
         </section>
       )}
 
@@ -4956,6 +5430,9 @@ function parseHash(hash: string): Route {
   if (parts[0] === "discovery-runs" && parts[1]) {
     return { name: "discovery-run", id: parts[1] };
   }
+  if (parts[0] === "quality-check-runs" && parts[1]) {
+    return { name: "quality-check-run", id: parts[1] };
+  }
   if (parts[0] === "qa-runs" && parts[1]) {
     return { name: "qa-run", id: parts[1] };
   }
@@ -4986,6 +5463,8 @@ function hashForRoute(route: Route): string {
       return `/authorization-check-runs/${route.id}`;
     case "discovery-run":
       return `/discovery-runs/${route.id}`;
+    case "quality-check-run":
+      return `/quality-check-runs/${route.id}`;
     case "qa-run":
       return `/qa-runs/${route.id}`;
     case "run":
@@ -5017,6 +5496,8 @@ function titleForRoute(route: Route): string {
       return "Authorization Report";
     case "discovery-run":
       return "Discovery Report";
+    case "quality-check-run":
+      return "Quality Report";
     case "qa-run":
       return "Safe QA Report";
     case "run":
@@ -5199,6 +5680,7 @@ function isActiveRunStatus(status: string): boolean {
     status === "pending" ||
     status === "running" ||
     status === "running_discovery" ||
+    status === "running_quality_checks" ||
     status === "generating_plan" ||
     status === "previewing_execution" ||
     status === "executing_plan"

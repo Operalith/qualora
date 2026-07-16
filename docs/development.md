@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.13.0-alpha.
+This document covers local development for Qualora v0.14.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; starts browser, login check, authenticated browser smoke, application discovery, authorization, and safe API smoke runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; starts Safe QA Run preview and explicit execution flows; prints JSON/HTML report, discovery map, API spec, credential profile, authorization, test-plan, execution, and Safe QA Run URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; starts browser, login check, authenticated browser smoke, application discovery, passive quality, authorization, and safe API smoke runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; starts Safe QA Run preview and explicit execution flows with quality checks enabled; prints JSON/HTML report, discovery map, API spec, credential profile, quality, authorization, test-plan, execution, and Safe QA Run URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates quality finding counts; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -108,6 +108,7 @@ The smoke script runs:
 - Deterministic login check against local `demo-web`.
 - Authenticated browser smoke against local `demo-web` `/dashboard`.
 - Application discovery against local `demo-web`, including pages, links, forms, skipped unsafe/external links, screenshots, JSON report, and HTML report.
+- Passive quality checks against local `demo-web`, including deterministic security, accessibility, and performance/front-end findings plus JSON/HTML reports.
 - Role credential profile creation and explicit authorization checks against local `demo-web` `/admin` and customer invoice routes.
 - Password and raw username redaction checks for credential, report, and AI paths.
 - Browser smoke against the local `demo-web` Compose service.
@@ -116,6 +117,7 @@ The smoke script runs:
 - Discovery-aware AI test plan generation/export validation from the completed application map.
 - Safe test plan execution preview and run validation for the browser smoke project.
 - Safe QA Run preview and explicit execution validation.
+- Safe QA Run quality summary validation when quality checks are included.
 - OpenAPI import and safe API smoke against the local `demo-api` Compose service.
 - Operation discovery validation, including skipped POST/DELETE/auth-required operations.
 - Deterministic `/broken` API finding validation.
@@ -144,7 +146,7 @@ For private or local targets, create projects manually with `allow_private_targe
 
 ## AI Provider Development
 
-The v0.13 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.14 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -193,6 +195,19 @@ Application discovery runs are queued on the browser worker. Keep the crawl dete
 - Discovery records forms and fields but must never submit forms or click arbitrary buttons.
 - Discovery evidence may include screenshots and browser observations, but must not store full HTML, cookies, local/session storage, auth headers, tokens, credentials, request bodies, or response bodies.
 
+## Quality Check Development
+
+Quality checks run on the browser worker and stay passive:
+
+- Defaults are `max_pages=10`; the API caps quality checks at `max_pages<=50`.
+- A quality run may check only the project frontend URL, reuse the latest completed discovery run, reuse a selected completed discovery run, or log in through a deterministic credential profile before checking pages.
+- All page visits must stay on the project frontend origin and pass `allowed_hosts`.
+- Security checks are passive observations from loaded pages, response headers, cookie metadata, forms, and resource metadata.
+- Accessibility checks are lightweight heuristics for page title/lang/main, images, labels, button/link names, and similar obvious issues.
+- Performance checks are lightweight page-load, console, failed-resource, request-count, large-JS, and image-dimension observations.
+- Evidence stores safe metadata only. Do not store cookie values, browser storage, auth headers, secrets, request bodies, response bodies, full HTML, or credentials.
+- Do not add active scanning, payloads, fuzzing, guessed-path probing, form submission, arbitrary clicks, destructive actions, or AI browser control to this path.
+
 ## Safe QA Run Development
 
 Safe QA Runs are an orchestration layer over discovery, AI test planning, and approved safe test plan execution. Keep the workflow reviewable and deterministic:
@@ -204,13 +219,14 @@ Safe QA Runs are an orchestration layer over discovery, AI test planning, and ap
 - `execute=false` must stop after preview so a user can review the plan and skipped reasons.
 - `execute=true` or `POST /api/v1/qa-runs/{qa_run_id}/execute` may start only the persisted safe DSL execution path.
 - Reports should link discovery, test plan, preview, optional execution report, and safety notes without exposing secrets.
+- When `include_quality_checks=true`, reports should also link the quality run and include quality summaries/results without exposing secrets.
 - Do not add autonomous AI browser control, arbitrary clicking, form submission, broad crawling, payloads, active scans, or destructive actions to this workflow.
 
 ## Safe API Smoke Development
 
 Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
 
-The v0.13 API executor:
+The v0.14 API executor:
 
 - Supports OpenAPI 3.x JSON/YAML.
 - Executes only `GET`, `HEAD`, and `OPTIONS`.

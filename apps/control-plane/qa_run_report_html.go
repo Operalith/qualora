@@ -13,6 +13,7 @@ type qaRunHTMLReportData struct {
 var qaRunHTMLReportTemplate = template.Must(template.New("qa-run-report").Funcs(template.FuncMap{
 	"json":       prettyJSON,
 	"formatTime": formatReportTime,
+	"add":        func(left int, right int) int { return left + right },
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -146,6 +147,43 @@ var qaRunHTMLReportTemplate = template.Must(template.New("qa-run-report").Funcs(
       <div class="metric"><span>Console</span><strong>{{ .TotalConsoleErrors }}</strong></div>
       <div class="metric"><span>Failed Req</span><strong>{{ .TotalFailedRequests }}</strong></div>
     </div>
+  </section>
+  {{ end }}
+
+  {{ with .Report.QualitySummary }}
+  <section style="margin-bottom: 16px;">
+    <h2>Quality Checks</h2>
+    <div class="grid six">
+      <div class="metric"><span>Pages</span><strong>{{ .TotalPages }}</strong></div>
+      <div class="metric"><span>Findings</span><strong>{{ .TotalFindings }}</strong></div>
+      <div class="metric"><span>Security</span><strong>{{ .SecurityFindings }}</strong></div>
+      <div class="metric"><span>A11y</span><strong>{{ .AccessibilityFindings }}</strong></div>
+      <div class="metric"><span>Performance</span><strong>{{ .PerformanceFindings }}</strong></div>
+      <div class="metric"><span>High+</span><strong>{{ add .Critical .High }}</strong></div>
+    </div>
+  </section>
+  {{ end }}
+
+  {{ if .Report.QualityResults }}
+  <section style="margin-bottom: 16px;">
+    <h2>Quality Findings</h2>
+    <table>
+      <thead>
+        <tr><th>Severity</th><th>Category</th><th>Rule</th><th>Title</th><th>URL</th><th>Recommendation</th></tr>
+      </thead>
+      <tbody>
+        {{ range .Report.QualityResults }}
+        <tr>
+          <td class="severity-{{ .Severity }}">{{ .Severity }}</td>
+          <td>{{ .Category }}</td>
+          <td>{{ .RuleID }}</td>
+          <td>{{ .Title }}</td>
+          <td><code>{{ .URL }}</code></td>
+          <td>{{ .Recommendation }}</td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
   </section>
   {{ end }}
 

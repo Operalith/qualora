@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.13.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.14.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -33,7 +33,7 @@ The browser worker routes Playwright requests through the host policy:
 
 ## Application Discovery
 
-Application discovery in v0.13 is deterministic and safe by default. It is intended to build a lightweight application map, not to perform uncontrolled browser autonomy.
+Application discovery in v0.14 is deterministic and safe by default. It is intended to build a lightweight application map, not to perform uncontrolled browser autonomy.
 
 Discovery execution rules:
 
@@ -57,9 +57,34 @@ Discovery does not:
 - Crawl external domains by default.
 - Store full HTML, cookies, local/session storage, auth headers, tokens, credentials, request bodies, or response bodies.
 
+## Passive Quality Checks
+
+Quality checks in v0.14 are deterministic browser-worker observations. They are intended to surface obvious front-end quality issues, not to perform penetration testing, WCAG certification, Lighthouse audits, or exhaustive performance analysis.
+
+Quality execution rules:
+
+- Checks run against the project frontend URL, a selected completed discovery run, the latest completed discovery run, or a deterministic selector-authenticated session.
+- Defaults are `max_pages=10`; the API cap is `max_pages<=50`.
+- Every page visit must stay on the project frontend origin and pass `allowed_hosts`.
+- Security checks use loaded page metadata only: response headers, cookie flags without values, forms, resource URLs, sensitive query parameter names, mixed-content observations, and obvious source-map exposure.
+- Accessibility checks use basic document and element metadata: title, language, main landmark, image alt text, form labels, button names, and link text.
+- Performance/front-end checks use navigation timing, console errors, failed resources, request counts, large JavaScript observations, and image dimension metadata.
+- Quality evidence is metadata only and must not include cookie values, browser storage, authorization headers, tokens, credentials, request bodies, response bodies, full HTML, or screenshots by default.
+
+Quality checks do not:
+
+- Submit forms.
+- Click arbitrary buttons.
+- Guess sensitive paths.
+- Run payloads.
+- Fuzz inputs.
+- Perform active scans.
+- Perform destructive actions.
+- Use autonomous AI browser control.
+
 ## API Request Enforcement
 
-The API worker and v0.13 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
+The API worker and v0.14 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
 
 Default API behavior:
 
@@ -152,7 +177,7 @@ Authenticated API authorization testing is not fully supported in the current al
 
 ## Web UI Exposure
 
-The v0.13.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, discovery reports, and authorization reports require a valid local session.
+The v0.14.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, discovery reports, and authorization reports require a valid local session.
 
 Sessions use an HTTP-only `qualora_session` cookie. Mutating protected API requests must include a CSRF token from the `qualora_csrf` cookie in the `X-Qualora-CSRF` header. Health, setup status, first-run admin setup, login, logout, and session introspection endpoints are intentionally public.
 
@@ -182,7 +207,7 @@ The Docker Compose default `QUALORA_ENCRYPTION_KEY` is an insecure development f
 
 AI is disabled until a provider is configured. Qualora works without AI.
 
-The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API/login/authorization metadata, API smoke result summaries, and job metadata. Discovery reports can be sent to AI test planning only through sanitized discovery-aware inputs in v0.13; those inputs are limited to discovery summaries, page paths/titles/statuses, form/link metadata, finding summaries, and evidence metadata.
+The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API/login/authorization metadata, quality check summaries and safe quality result metadata, API smoke result summaries, and job metadata. Discovery reports can be sent to AI test planning only through sanitized discovery-aware inputs in v0.14; those inputs are limited to discovery summaries, page paths/titles/statuses, form/link metadata, finding summaries, and evidence metadata.
 
 The AI input builder does not send by default:
 
@@ -202,15 +227,16 @@ The AI input builder does not send by default:
 
 Redaction is enabled by default and masks common bearer/basic auth values, API keys, passwords, access/refresh tokens, session IDs, cookies, and JWT-looking values. AI output is parsed as strict JSON and redacted before storage.
 
-AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.13 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution and application discovery are deterministic and user-configured, not AI-generated.
+AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.14 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution and application discovery are deterministic and user-configured, not AI-generated.
 
 ## Safe QA Runs
 
-Safe QA Runs in v0.13 orchestrate discovery, AI test planning, and safe test plan execution without changing the safety boundary.
+Safe QA Runs in v0.14 orchestrate discovery, AI test planning, and safe test plan execution without changing the safety boundary.
 
 Allowed behavior:
 
 - Reuse or create a bounded application discovery run.
+- Optionally run passive quality checks against discovered safe pages.
 - Generate a reviewable AI test plan from sanitized project/report/discovery metadata.
 - Persist safe execution coverage from the deterministic mapper.
 - Stop after preview by default.
@@ -251,5 +277,6 @@ Safe QA Runs must not:
 - Screenshot preview/download through the control-plane API is available for stored evidence records and can expose sensitive application state to the local admin.
 - Anyone with the local admin session can configure or use AI providers.
 - AI analysis and AI test plan quality depend on the configured provider and the sanitized evidence available in the report.
+- Quality checks are heuristic metadata checks and can miss real security, accessibility, and performance issues.
 
 See [../SECURITY.md](../SECURITY.md) for vulnerability reporting.

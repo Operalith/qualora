@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.13.0-alpha
-  description: API for first-run local admin setup, local session authentication, creating QA projects, running safe application discovery, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports, and downloading protected stored evidence objects.
+  version: 0.14.0-alpha
+  description: API for first-run local admin setup, local session authentication, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
 security:
@@ -609,6 +609,92 @@ paths:
       responses:
         "200":
           description: HTML discovery report
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/quality-check-runs:
+    get:
+      summary: List passive quality check runs for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Quality check run list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [quality_check_runs]
+                properties:
+                  quality_check_runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/QualityCheckRun"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Start passive quality checks
+      description: Queues read-only front-end quality checks for passive security headers/cookies, basic accessibility heuristics, and simple performance/resource observations. It does not submit forms, run payloads, fuzz inputs, perform active scanning, or use AI browser control.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QualityCheckRunRequest"
+      responses:
+        "201":
+          description: Created quality check run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QualityCheckRun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/quality-check-runs/{quality_check_run_id}:
+    get:
+      summary: Get a passive quality check run
+      parameters:
+        - $ref: "#/components/parameters/QualityCheckRunID"
+      responses:
+        "200":
+          description: Quality check run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QualityCheckRun"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/quality-check-runs/{quality_check_run_id}/report:
+    get:
+      summary: Get a structured passive quality report
+      parameters:
+        - $ref: "#/components/parameters/QualityCheckRunID"
+      responses:
+        "200":
+          description: Quality check report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QualityCheckReport"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/quality-check-runs/{quality_check_run_id}/report.html:
+    get:
+      summary: Get a self-contained HTML passive quality report
+      parameters:
+        - $ref: "#/components/parameters/QualityCheckRunID"
+      responses:
+        "200":
+          description: HTML quality check report
           content:
             text/html:
               schema:
@@ -1359,6 +1445,13 @@ components:
       schema:
         type: string
         format: uuid
+    QualityCheckRunID:
+      name: quality_check_run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     QARunID:
       name: qa_run_id
       in: path
@@ -1410,7 +1503,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.13.0-alpha
+          example: 0.14.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -1589,7 +1682,7 @@ components:
           format: uuid
         run_type:
           type: string
-          enum: [full, browser_smoke, api_smoke, login_check, authenticated_browser_smoke]
+          enum: [full, browser_smoke, api_smoke, login_check, authenticated_browser_smoke, app_discovery, quality_check]
         api_spec_id:
           type: string
           format: uuid
@@ -2281,6 +2374,188 @@ components:
             metadata:
               type: object
               additionalProperties: true
+    QualityCheckRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        target_url:
+          type: string
+          format: uri
+          description: Optional same-origin frontend URL. Defaults to the project frontend_url.
+        credential_profile_id:
+          type: string
+          format: uuid
+        discovery_run_id:
+          type: string
+          format: uuid
+          description: Optional completed discovery run to reuse as the page list.
+        use_latest_discovery:
+          type: boolean
+          default: false
+        max_pages:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+        include_security:
+          type: boolean
+          default: true
+        include_accessibility:
+          type: boolean
+          default: true
+        include_performance:
+          type: boolean
+          default: true
+    QualityCheckRun:
+      type: object
+      required: [id, project_id, status, target_url, max_pages, include_security, include_accessibility, include_performance, total_pages, total_findings, critical_findings, high_findings, medium_findings, low_findings, info_findings, summary, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        discovery_run_id:
+          type: string
+          format: uuid
+        credential_profile_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, completed, failed, error]
+        target_url:
+          type: string
+        max_pages:
+          type: integer
+        include_security:
+          type: boolean
+        include_accessibility:
+          type: boolean
+        include_performance:
+          type: boolean
+        total_pages:
+          type: integer
+        total_findings:
+          type: integer
+        critical_findings:
+          type: integer
+        high_findings:
+          type: integer
+        medium_findings:
+          type: integer
+        low_findings:
+          type: integer
+        info_findings:
+          type: integer
+        error_message:
+          type: string
+        summary:
+          type: object
+          additionalProperties: true
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    QualityCheckResult:
+      type: object
+      required: [id, run_id, project_id, category, rule_id, severity, title, description, recommendation, url, evidence, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        category:
+          type: string
+          enum: [security, accessibility, performance]
+        rule_id:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        title:
+          type: string
+        description:
+          type: string
+        recommendation:
+          type: string
+        url:
+          type: string
+        evidence:
+          type: object
+          additionalProperties: true
+          description: Safe metadata only. No cookies, storage, auth headers, secrets, request bodies, response bodies, or full HTML are stored.
+        created_at:
+          type: string
+          format: date-time
+    QualityCheckSummary:
+      type: object
+      required: [total_findings, critical, high, medium, low, info, total_pages, security_findings, accessibility_findings, performance_findings]
+      properties:
+        total_findings:
+          type: integer
+        critical:
+          type: integer
+        high:
+          type: integer
+        medium:
+          type: integer
+        low:
+          type: integer
+        info:
+          type: integer
+        total_pages:
+          type: integer
+        security_findings:
+          type: integer
+        accessibility_findings:
+          type: integer
+        performance_findings:
+          type: integer
+    QualityCheckReport:
+      type: object
+      required: [generated_at, run, project, summary, results, safety_notes, limitations, metadata]
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        run:
+          $ref: "#/components/schemas/QualityCheckRun"
+        project:
+          $ref: "#/components/schemas/Project"
+        discovery_run:
+          $ref: "#/components/schemas/DiscoveryRun"
+        summary:
+          $ref: "#/components/schemas/QualityCheckSummary"
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/QualityCheckResult"
+        safety_notes:
+          type: array
+          items:
+            type: string
+        limitations:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
     APISpecImportRequest:
       type: object
       additionalProperties: false
@@ -3568,6 +3843,24 @@ components:
             type: string
             enum: [smoke, functional, negative, accessibility, performance, security-passive, authorization, api, visual, regression]
           default: [smoke, functional, regression]
+        include_quality_checks:
+          type: boolean
+          default: false
+          description: When true, run passive quality checks after discovery and include the quality report in the Safe QA report.
+        quality_max_pages:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+        quality_include_security:
+          type: boolean
+          default: true
+        quality_include_accessibility:
+          type: boolean
+          default: true
+        quality_include_performance:
+          type: boolean
+          default: true
     QARun:
       type: object
       required:
@@ -3587,11 +3880,15 @@ components:
           format: uuid
         status:
           type: string
-          enum: [queued, running_discovery, generating_plan, previewing_execution, executing_plan, completed, failed, error]
+          enum: [queued, running_discovery, running_quality_checks, generating_plan, previewing_execution, executing_plan, completed, failed, error]
         mode:
           type: string
           enum: [safe]
         discovery_run_id:
+          type: string
+          format: uuid
+          nullable: true
+        quality_check_run_id:
           type: string
           format: uuid
           nullable: true
@@ -3642,6 +3939,18 @@ components:
           allOf:
             - $ref: "#/components/schemas/DiscoverySummary"
           nullable: true
+        quality_check_run:
+          allOf:
+            - $ref: "#/components/schemas/QualityCheckRun"
+          nullable: true
+        quality_summary:
+          allOf:
+            - $ref: "#/components/schemas/QualityCheckSummary"
+          nullable: true
+        quality_results:
+          type: array
+          items:
+            $ref: "#/components/schemas/QualityCheckResult"
         test_plan:
           allOf:
             - $ref: "#/components/schemas/TestPlan"

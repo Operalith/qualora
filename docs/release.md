@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.13.0-alpha is the thirteenth public alpha release. It adds discovery-aware AI test generation and Safe QA Runs while keeping local auth, browser/API smoke, credential profiles, authorization checks, application discovery, AI analysis, and approved safe plan execution intact.
+Qualora v0.14.0-alpha is the fourteenth public alpha release. It adds passive front-end quality checks for security, accessibility, and performance signals while keeping local auth, browser/API smoke, credential profiles, authorization checks, application discovery, AI analysis, Safe QA Runs, and approved safe plan execution intact.
 
 ## Pre-Release Checklist
 
@@ -45,10 +45,14 @@ Confirm:
 - Discovery records skipped unsafe and external links.
 - Discovery pages include screenshot evidence IDs and downloadable screenshot evidence.
 - Discovery HTML report includes the application discovery summary, pages, skipped links, forms, findings, and safety notes.
+- Passive quality check runs reach `completed` against `demo-web`.
+- Quality JSON reports include security, accessibility, and performance finding counts.
+- Quality HTML reports include the quality summary, findings, safety notes, and limitations.
+- Quality reports do not contain demo passwords, cookies, auth headers, browser storage, request bodies, response bodies, full HTML, or raw credential values.
 - Discovery-aware AI test plan generation completes from the completed discovery run.
 - Discovery-generated test plans include `source_type=discovery`, `discovery_run_id`, and safe execution coverage metadata.
 - Safe QA Run preview completes without automatically executing browser actions.
-- Safe QA Run preview report includes discovery, generated plan, safe execution preview, coverage, and safety notes.
+- Safe QA Run preview report includes discovery, optional quality checks, generated plan, safe execution preview, coverage, and safety notes.
 - Explicit Safe QA Run execution starts only after `POST /api/v1/qa-runs/{qa_run_id}/execute` or `execute=true`.
 - Safe QA Run execution reaches `completed`.
 - Safe QA Run JSON and HTML reports include the linked execution report when execution has run.
@@ -89,10 +93,10 @@ Confirm:
 ```bash
 git status --short
 git add .
-git commit -m "feat: add discovery-aware safe QA runs for v0.13.0-alpha"
-git tag -a v0.13.0-alpha -m "v0.13.0-alpha"
+git commit -m "feat: add passive quality checks for v0.14.0-alpha"
+git tag -a v0.14.0-alpha -m "v0.14.0-alpha"
 git push origin main
-git push origin v0.13.0-alpha
+git push origin v0.14.0-alpha
 ```
 
 ## GitHub Release
@@ -100,7 +104,7 @@ git push origin v0.13.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.13.0-alpha
+Qualora v0.14.0-alpha
 ```
 
-Use [release-notes/v0.13.0-alpha.md](release-notes/v0.13.0-alpha.md) as the release body.
+Use [release-notes/v0.14.0-alpha.md](release-notes/v0.14.0-alpha.md) as the release body.

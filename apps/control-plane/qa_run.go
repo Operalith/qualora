@@ -41,6 +41,31 @@ func NormalizeQARunRequest(project Project, input QARunRequest) (QARunRequest, e
 	if input.MaxScenarios < 1 || input.MaxScenarios > maxTestPlanScenarios {
 		return input, fmt.Errorf("max_scenarios must be between 1 and %d", maxTestPlanScenarios)
 	}
+	if input.IncludeQualityChecks == nil {
+		value := false
+		input.IncludeQualityChecks = &value
+	}
+	if input.QualityMaxPages == 0 {
+		input.QualityMaxPages = minInt(input.MaxPages, defaultQualityMaxPages)
+	}
+	if input.QualityMaxPages < 1 || input.QualityMaxPages > maxQualityMaxPages {
+		return input, fmt.Errorf("quality_max_pages must be between 1 and %d", maxQualityMaxPages)
+	}
+	if input.QualityIncludeSecurity == nil {
+		value := true
+		input.QualityIncludeSecurity = &value
+	}
+	if input.QualityIncludeAccessibility == nil {
+		value := true
+		input.QualityIncludeAccessibility = &value
+	}
+	if input.QualityIncludePerformance == nil {
+		value := true
+		input.QualityIncludePerformance = &value
+	}
+	if !*input.QualityIncludeSecurity && !*input.QualityIncludeAccessibility && !*input.QualityIncludePerformance {
+		return input, fmt.Errorf("at least one quality category must be enabled")
+	}
 	planInput, err := NormalizeAITestPlanRequest(AITestPlanRequest{
 		FocusAreas:   input.FocusAreas,
 		MaxScenarios: input.MaxScenarios,
@@ -82,6 +107,17 @@ func (a *App) executeSafeQARun(ctx context.Context, qaRunID string, project Proj
 		return err
 	}
 
+	var qualityRun *QualityCheckRun
+	if input.IncludeQualityChecks != nil && *input.IncludeQualityChecks {
+		if _, err := a.store.UpdateQARunStatus(ctx, qaRunID, QARunStatusRunningQuality); err != nil {
+			return err
+		}
+		qualityRun, err = a.createAndWaitForQAQualityCheckRun(ctx, qaRunID, project, input, discoveryRun)
+		if err != nil {
+			return err
+		}
+	}
+
 	if _, err := a.store.UpdateQARunStatus(ctx, qaRunID, QARunStatusGeneratingPlan); err != nil {
 		return err
 	}
@@ -113,7 +149,7 @@ func (a *App) executeSafeQARun(ctx context.Context, qaRunID string, project Proj
 	if err != nil {
 		return err
 	}
-	summary := qaRunSummary(discoveryRun, plan, nil, preview, input.Execute, input.MaxScenarios)
+	summary := qaRunSummary(discoveryRun, qualityRun, plan, nil, preview, input.Execute, input.MaxScenarios)
 	if !input.Execute {
 		_, err := a.store.CompleteQARun(ctx, qaRunID, summary)
 		return err
@@ -139,7 +175,7 @@ func (a *App) executeSafeQARun(ctx context.Context, qaRunID string, project Proj
 			return err
 		}
 	}
-	summary = qaRunSummary(discoveryRun, plan, execution, preview, input.Execute, input.MaxScenarios)
+	summary = qaRunSummary(discoveryRun, qualityRun, plan, execution, preview, input.Execute, input.MaxScenarios)
 	if execution.Execution.Status != StatusCompleted {
 		_, err := a.store.FailQARun(ctx, qaRunID, execution.Execution.ErrorMessage, summary)
 		return err
@@ -198,7 +234,11 @@ func (a *App) executeExistingQARun(ctx context.Context, qaRunID string) error {
 	if run.DiscoveryRunID != "" {
 		discoveryRun, _ = a.store.GetDiscoveryRun(ctx, run.DiscoveryRunID)
 	}
-	summary := qaRunSummary(discoveryRun, plan, execution, preview, true, summaryInt(run.Summary, "max_scenarios", defaultMaxTestPlanScenarios))
+	var qualityRun *QualityCheckRun
+	if run.QualityCheckRunID != "" {
+		qualityRun, _ = a.store.GetQualityCheckRun(ctx, run.QualityCheckRunID)
+	}
+	summary := qaRunSummary(discoveryRun, qualityRun, plan, execution, preview, true, summaryInt(run.Summary, "max_scenarios", defaultMaxTestPlanScenarios))
 	if execution.Execution.Status != StatusCompleted {
 		_, err := a.store.FailQARun(ctx, qaRunID, execution.Execution.ErrorMessage, summary)
 		return err
@@ -263,6 +303,38 @@ func (a *App) resolveQADiscoveryRun(ctx context.Context, qaRunID string, project
 	return a.waitForDiscoveryRun(ctx, run.ID)
 }
 
+func (a *App) createAndWaitForQAQualityCheckRun(ctx context.Context, qaRunID string, project Project, input QARunRequest, discoveryRun *DiscoveryRun) (*QualityCheckRun, error) {
+	targetURL := input.StartURL
+	if targetURL == "" && discoveryRun != nil {
+		targetURL = discoveryRun.StartURL
+	}
+	request := QualityCheckRunRequest{
+		TargetURL:            targetURL,
+		CredentialProfileID:  input.CredentialProfileID,
+		DiscoveryRunID:       discoveryRun.ID,
+		MaxPages:             input.QualityMaxPages,
+		IncludeSecurity:      input.QualityIncludeSecurity,
+		IncludeAccessibility: input.QualityIncludeAccessibility,
+		IncludePerformance:   input.QualityIncludePerformance,
+	}
+	normalized, err := NormalizeQualityCheckRunRequest(project, request)
+	if err != nil {
+		return nil, err
+	}
+	run, err := a.store.CreateQualityCheckRun(ctx, project.ID, normalized)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := a.store.AttachQARunQualityCheck(ctx, qaRunID, run.ID); err != nil {
+		return nil, err
+	}
+	if err := a.queue.EnqueueQualityCheckRun(ctx, QualityCheckRunJob{QualityCheckRunID: run.ID, ProjectID: project.ID}); err != nil {
+		_ = a.store.MarkQualityCheckRunFailed(ctx, run.ID, "quality check run could not be queued")
+		return nil, err
+	}
+	return a.waitForQualityCheckRun(ctx, run.ID)
+}
+
 func (a *App) waitForDiscoveryRun(ctx context.Context, runID string) (*DiscoveryRun, error) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -276,6 +348,28 @@ func (a *App) waitForDiscoveryRun(ctx context.Context, runID string) (*Discovery
 			return run, nil
 		case StatusFailed, StatusError, StatusCanceled:
 			return run, fmt.Errorf("discovery run ended with status %s: %s", run.Status, RedactSecrets(run.ErrorMessage))
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (a *App) waitForQualityCheckRun(ctx context.Context, runID string) (*QualityCheckRun, error) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		run, err := a.store.GetQualityCheckRun(ctx, runID)
+		if err != nil {
+			return nil, err
+		}
+		switch run.Status {
+		case StatusCompleted:
+			return run, nil
+		case StatusFailed, StatusError, StatusCanceled:
+			return run, fmt.Errorf("quality check run ended with status %s: %s", run.Status, RedactSecrets(run.ErrorMessage))
 		}
 		select {
 		case <-ctx.Done():
@@ -305,7 +399,7 @@ func (a *App) waitForTestPlanExecution(ctx context.Context, executionID string) 
 	}
 }
 
-func qaRunSummary(discoveryRun *DiscoveryRun, plan *TestPlan, execution *TestPlanExecutionDetail, preview *TestPlanExecutionPreview, execute bool, maxScenarios int) map[string]any {
+func qaRunSummary(discoveryRun *DiscoveryRun, qualityRun *QualityCheckRun, plan *TestPlan, execution *TestPlanExecutionDetail, preview *TestPlanExecutionPreview, execute bool, maxScenarios int) map[string]any {
 	summary := map[string]any{
 		"execute_requested":             execute,
 		"max_scenarios":                 maxScenarios,
@@ -324,6 +418,15 @@ func qaRunSummary(discoveryRun *DiscoveryRun, plan *TestPlan, execution *TestPla
 		summary["discovery_total_links"] = discoveryRun.TotalLinks
 		summary["discovery_total_forms"] = discoveryRun.TotalForms
 	}
+	if qualityRun != nil {
+		summary["quality_check_run_id"] = qualityRun.ID
+		summary["quality_check_status"] = qualityRun.Status
+		summary["quality_total_pages"] = qualityRun.TotalPages
+		summary["quality_total_findings"] = qualityRun.TotalFindings
+		summary["quality_security_enabled"] = qualityRun.IncludeSecurity
+		summary["quality_accessibility_enabled"] = qualityRun.IncludeAccessibility
+		summary["quality_performance_enabled"] = qualityRun.IncludePerformance
+	}
 	if plan != nil {
 		summary["test_plan_id"] = plan.ID
 		summary["test_plan_status"] = plan.Status
@@ -338,6 +441,13 @@ func qaRunSummary(discoveryRun *DiscoveryRun, plan *TestPlan, execution *TestPla
 		summary["skipped_scenarios"] = execution.Execution.SkippedScenarios
 	}
 	return summary
+}
+
+func minInt(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func summaryInt(summary map[string]any, key string, fallback int) int {

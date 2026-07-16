@@ -4,6 +4,36 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.14.0-alpha] - 2026-07-16
+
+### Added
+
+- Passive quality check run API for project frontends.
+- Browser-worker quality checks for safe passive security headers/cookies/forms, basic accessibility heuristics, and simple performance/resource observations.
+- Quality check JSON report and self-contained HTML report.
+- Web UI Quality Checks section with standalone run form, run list, and report page.
+- Optional Safe QA Run quality-check integration and combined report fields.
+- Demo-web deterministic quality signals for smoke/demo coverage.
+- Tests for quality request normalization, quality summary counts, and browser-worker quality rule generation.
+
+### Changed
+
+- Package metadata has been updated to `0.14.0-alpha`.
+- Safe QA reports can include linked passive quality summaries and quality result rows when requested.
+- The OpenAPI contract documents quality check endpoints and Safe QA quality options.
+
+### Security
+
+- Quality checks are passive and read-only by default.
+- No active scanning, exploit payloads, fuzzing, arbitrary form submission, destructive actions, broad external crawling, or autonomous AI browser control were added.
+- Quality evidence stores metadata only and excludes cookies values, browser storage, auth headers, secrets, request bodies, response bodies, and full HTML.
+
+### Known Limitations
+
+- Quality checks are alpha heuristics and are not full security, accessibility, performance, Lighthouse, Core Web Vitals, or WCAG audits.
+- Checks currently focus on browser-observable metadata for configured frontend pages.
+- Authenticated quality checks use only deterministic selector-based credential profiles.
+
 ## [v0.13.0-alpha] - 2026-07-16
 
 ### Added

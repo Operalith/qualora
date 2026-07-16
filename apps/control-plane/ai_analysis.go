@@ -113,6 +113,32 @@ func BuildSafeDiscoveryAIInput(report *DiscoveryReport) map[string]any {
 	return sanitizeValue(input).(map[string]any)
 }
 
+func BuildSafeQualityAIInput(report *QualityCheckReport) map[string]any {
+	input := map[string]any{
+		"run_id":     report.Run.ID,
+		"project_id": report.Project.ID,
+		"status":     report.Run.Status,
+		"settings": map[string]any{
+			"target_url":              report.Run.TargetURL,
+			"max_pages":               report.Run.MaxPages,
+			"include_security":        report.Run.IncludeSecurity,
+			"include_accessibility":   report.Run.IncludeAccessibility,
+			"include_performance":     report.Run.IncludePerformance,
+			"uses_discovery_run":      report.Run.DiscoveryRunID != "",
+			"uses_credential_profile": report.Run.CredentialProfileID != "",
+			"forms_submitted":         false,
+			"destructive_actions":     false,
+			"active_scanning":         false,
+		},
+		"summary":      report.Summary,
+		"results":      safeQualityResults(report.Results),
+		"safety_notes": report.SafetyNotes,
+		"limitations":  report.Limitations,
+		"metadata":     safeMetadata(report.Metadata),
+	}
+	return sanitizeValue(input).(map[string]any)
+}
+
 func ParseAIAnalysisPayload(raw string) (*AIAnalysisPayload, map[string]any, error) {
 	raw = strings.TrimSpace(raw)
 	if strings.HasPrefix(raw, "```") {
@@ -222,6 +248,26 @@ func safeAPIResults(results []APICheckResult) []map[string]any {
 			"response_size_bytes":   result.ResponseSizeBytes,
 			"error":                 firstLine(result.ErrorMessage),
 			"skipped_reason":        result.SkippedReason,
+		})
+	}
+	return output
+}
+
+func safeQualityResults(results []QualityCheckResult) []map[string]any {
+	output := make([]map[string]any, 0, min(len(results), 200))
+	for i, result := range results {
+		if i >= 200 {
+			break
+		}
+		output = append(output, map[string]any{
+			"category":       result.Category,
+			"rule_id":        result.RuleID,
+			"severity":       result.Severity,
+			"title":          result.Title,
+			"summary":        firstLine(result.Description),
+			"recommendation": result.Recommendation,
+			"url":            result.URL,
+			"evidence":       sanitizeValue(result.Evidence),
 		})
 	}
 	return output
@@ -450,7 +496,7 @@ func sanitizePotentialURL(value string) string {
 
 func sensitiveKey(key string) bool {
 	key = strings.ToLower(key)
-	for _, part := range []string{"authorization", "password", "passwd", "username", "token", "secret", "api_key", "apikey", "cookie", "session", "body", "html"} {
+	for _, part := range []string{"authorization", "password", "passwd", "username", "token", "secret", "api_key", "apikey", "cookie", "session", "local_storage", "session_storage", "browser_storage", "body", "html"} {
 		if strings.Contains(key, part) {
 			return true
 		}
