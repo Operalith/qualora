@@ -4,6 +4,37 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.15.0-alpha] - 2026-07-17
+
+### Added
+
+- Guided project setup API at `POST /api/v1/onboarding/project-setup`.
+- Web UI setup wizard for project basics, optional AI provider, optional credential profile, optional OpenAPI import, workflow selection, and result links.
+- Dashboard quick-start cards, version badge, status indicators, recent projects, and recent Safe QA runs.
+- Local demo workflow shortcut for `demo-web`, `demo-api`, and `fake-llm`.
+- Project readiness checklist on project detail pages.
+- Reports landing page for recent browser, API, discovery, quality, and Safe QA reports.
+- Smoke coverage for guided project setup, dashboard/readiness/report UI discoverability, report links, and secret redaction.
+
+### Changed
+
+- Package metadata has been updated to `0.15.0-alpha`.
+- The web UI navigation now surfaces Guided Setup, Browser Testing, Reports, Projects, AI Providers, and Test Plans more clearly.
+- The smoke script now validates the guided setup flow in addition to existing browser, authenticated browser, API, AI, discovery, quality, Safe QA, authorization, and safe plan execution paths.
+
+### Security
+
+- Guided setup rejects destructive project setup and starts only existing safe workflows.
+- Guided setup responses return IDs, safe metadata, skipped reasons, and report links only.
+- Raw passwords, provider secrets, cookies, browser storage, authorization headers, tokens, and encrypted secret payloads are not returned by onboarding responses or sent to AI.
+
+### Known Limitations
+
+- Guided setup is alpha orchestration over existing Qualora capabilities.
+- Demo workflow is intended for the local Docker Compose demo services.
+- Reports index currently focuses on recent browser/API smoke, discovery, quality, and Safe QA reports.
+- No autonomous AI browser control, arbitrary form submission, active security scanning, fuzzing, destructive testing, SSO/OIDC/SAML, multi-tenancy, or enterprise RBAC was added.
+
 ## [v0.14.0-alpha] - 2026-07-16
 
 ### Added

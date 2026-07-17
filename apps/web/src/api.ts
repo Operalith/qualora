@@ -27,6 +27,8 @@ import type {
   LoginInput,
   MeResponse,
   Project,
+  ProjectSetupInput,
+  ProjectSetupResponse,
   QualityCheckReport,
   QualityCheckRun,
   QualityCheckRunInput,
@@ -128,6 +130,13 @@ export async function getProject(projectID: string): Promise<Project> {
 
 export async function createProject(input: CreateProjectInput): Promise<Project> {
   return request<Project>("/api/v1/projects", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function runProjectSetup(input: ProjectSetupInput): Promise<ProjectSetupResponse> {
+  return request<ProjectSetupResponse>("/api/v1/onboarding/project-setup", {
     method: "POST",
     body: JSON.stringify(input)
   });

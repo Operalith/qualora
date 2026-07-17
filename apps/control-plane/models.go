@@ -73,6 +73,76 @@ type Project struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
+type ProjectSetupRequest struct {
+	Project    CreateProjectRequest          `json:"project"`
+	AI         ProjectSetupAIConfig          `json:"ai,omitempty"`
+	Credential ProjectSetupCredentialConfig  `json:"credential,omitempty"`
+	APISpec    ProjectSetupAPISpecConfig     `json:"api_spec,omitempty"`
+	Workflow   ProjectSetupWorkflowSelection `json:"workflow,omitempty"`
+}
+
+type ProjectSetupAIConfig struct {
+	Mode       string             `json:"mode,omitempty"`
+	ProviderID string             `json:"provider_id,omitempty"`
+	Provider   *AIProviderRequest `json:"provider,omitempty"`
+}
+
+type ProjectSetupCredentialConfig struct {
+	Mode    string                    `json:"mode,omitempty"`
+	Profile *CredentialProfileRequest `json:"profile,omitempty"`
+}
+
+type ProjectSetupAPISpecConfig struct {
+	Mode string                `json:"mode,omitempty"`
+	Spec *APISpecImportRequest `json:"spec,omitempty"`
+}
+
+type ProjectSetupWorkflowSelection struct {
+	BrowserSmoke       bool `json:"browser_smoke,omitempty"`
+	Discovery          bool `json:"discovery,omitempty"`
+	QualityChecks      bool `json:"quality_checks,omitempty"`
+	SafeQARun          bool `json:"safe_qa_run,omitempty"`
+	ExecuteSafeQA      bool `json:"execute_safe_qa,omitempty"`
+	APISmoke           bool `json:"api_smoke,omitempty"`
+	AuthenticatedSmoke bool `json:"authenticated_smoke,omitempty"`
+	UseDefaults        bool `json:"use_defaults,omitempty"`
+}
+
+type ProjectSetupResponse struct {
+	Project           Project                    `json:"project"`
+	AIProvider        *AIProvider                `json:"ai_provider,omitempty"`
+	CredentialProfile *CredentialProfile         `json:"credential_profile,omitempty"`
+	APISpec           *APISpec                   `json:"api_spec,omitempty"`
+	Started           ProjectSetupStartedActions `json:"started"`
+	Skipped           []ProjectSetupSkipped      `json:"skipped"`
+	Timeline          []ProjectSetupTimelineItem `json:"timeline"`
+	NextLinks         map[string]string          `json:"next_links"`
+}
+
+type ProjectSetupStartedActions struct {
+	BrowserSmokeRunID       string `json:"browser_smoke_run_id,omitempty"`
+	AuthenticatedSmokeRunID string `json:"authenticated_smoke_run_id,omitempty"`
+	DiscoveryRunID          string `json:"discovery_run_id,omitempty"`
+	QualityCheckRunID       string `json:"quality_check_run_id,omitempty"`
+	SafeQARunID             string `json:"safe_qa_run_id,omitempty"`
+	APISmokeRunID           string `json:"api_smoke_run_id,omitempty"`
+	AIProviderID            string `json:"ai_provider_id,omitempty"`
+	CredentialProfileID     string `json:"credential_profile_id,omitempty"`
+	APISpecID               string `json:"api_spec_id,omitempty"`
+}
+
+type ProjectSetupSkipped struct {
+	Action string `json:"action"`
+	Reason string `json:"reason"`
+}
+
+type ProjectSetupTimelineItem struct {
+	Step     string `json:"step"`
+	Status   string `json:"status"`
+	Resource string `json:"resource,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
 type SetupStatusResponse struct {
 	SetupRequired bool   `json:"setup_required"`
 	Version       string `json:"version"`

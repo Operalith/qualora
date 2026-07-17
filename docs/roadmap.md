@@ -176,7 +176,7 @@ Delivered:
 
 ## v0.14.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Standalone passive quality check runs for project frontends.
 - Optional reuse of latest or selected application discovery runs as page lists.
@@ -189,7 +189,19 @@ Current alpha scope:
 - Optional Safe QA Run quality-check integration and combined report fields.
 - Smoke validation for standalone quality checks, Safe QA quality summaries, report redaction, and existing browser/API/AI/test-plan/discovery flows.
 
-## Phase 15: Run And Worker Hardening
+## v0.15.0-alpha
+
+Current alpha scope:
+
+- Guided project setup wizard for project basics, optional AI provider, optional credential profile, optional OpenAPI import, workflow selection, and result links.
+- `POST /api/v1/onboarding/project-setup` orchestration for project creation and selected safe first checks.
+- Local demo workflow against `demo-web`, `demo-api`, and `fake-llm`.
+- Dashboard quick-start actions, status indicators, recent projects, and recent Safe QA runs.
+- Project readiness checklist for frontend URL, AI provider, discovery, quality checks, credentials, OpenAPI, Safe QA, and reports.
+- Reports landing page for recent browser, API, discovery, quality, and Safe QA reports.
+- Smoke validation for guided setup, dashboard/readiness/report UI discoverability, reports, redaction, and existing browser/API/AI/test-plan/discovery/quality/Safe QA flows.
+
+## Phase 16: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -202,14 +214,14 @@ Current alpha scope:
 - Move AI analysis to an async analyzer worker.
 - Move AI-assisted test planning to an async analyzer worker.
 
-## Phase 16: Deeper API Checks
+## Phase 17: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 17: Quality Check Deepening
+## Phase 18: Quality Check Deepening
 
 - Optional axe-core integration or richer accessibility summaries.
 - Lighthouse/Core Web Vitals-style performance collection if it can stay safe and lightweight.

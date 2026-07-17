@@ -49,6 +49,7 @@ import {
   qualityCheckHTMLReportURL,
   qaRunHTMLReportURL,
   runAIAnalysis,
+  runProjectSetup,
   setupAdmin,
   startAuthorizationCheckRun,
   startAPISmokeRun,
@@ -91,6 +92,8 @@ import type {
   Evidence,
   LoginInput,
   Project,
+  ProjectSetupInput,
+  ProjectSetupResponse,
   QARun,
   QARunInput,
   QARunReport,
@@ -114,6 +117,8 @@ import type {
 type Route =
   | { name: "dashboard" }
   | { name: "new-project" }
+  | { name: "setup-project" }
+  | { name: "reports" }
   | { name: "project"; id: string }
   | { name: "runs" }
   | { name: "ai-providers" }
@@ -143,7 +148,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.14.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.15.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -250,6 +255,15 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
     await refresh();
     setRoute({ name: "run", id: run.id });
   };
+  const startDemoWorkflow = async () => {
+    const response = await runProjectSetup(demoProjectSetupPayload());
+    await refresh();
+    if (response.started.safe_qa_run_id) {
+      setRoute({ name: "qa-run", id: response.started.safe_qa_run_id });
+    } else {
+      setRoute({ name: "project", id: response.project.id });
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -260,13 +274,19 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
         </a>
         <nav>
           <a className={route.name === "dashboard" ? "active" : ""} href="#/">
-            Projects
+            Dashboard
+          </a>
+          <a className={route.name === "setup-project" ? "active" : ""} href="#/setup-project">
+            Guided Setup
           </a>
           <a className={route.name === "runs" ? "active" : ""} href="#/runs">
-            Runs
+            Browser Testing
+          </a>
+          <a className={route.name === "reports" ? "active" : ""} href="#/reports">
+            Reports
           </a>
           <a className={route.name === "new-project" ? "active" : ""} href="#/projects/new">
-            New Project
+            Projects
           </a>
           <a className={route.name === "ai-providers" ? "active" : ""} href="#/ai-providers">
             AI Providers
@@ -307,7 +327,22 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
         {(projects.error || runs.error) && <Notice tone="danger" message={projects.error || runs.error} />}
 
         {route.name === "dashboard" && (
-          <Dashboard projects={projects} runs={runs} projectByID={projectByID} onStartRun={startFullRun} />
+          <Dashboard
+            version={version}
+            projects={projects}
+            runs={runs}
+            projectByID={projectByID}
+            onStartRun={startFullRun}
+            onRunDemoWorkflow={startDemoWorkflow}
+          />
+        )}
+        {route.name === "setup-project" && (
+          <ProjectSetupWizard
+            onCompleted={async (response) => {
+              await refresh();
+              setRoute({ name: "setup-project" });
+            }}
+          />
         )}
         {route.name === "new-project" && <ProjectForm onCreated={(project) => setRoute({ name: "project", id: project.id })} />}
         {route.name === "project" && (
@@ -323,6 +358,7 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
           <APISpecPage apiSpecID={route.id} projectByID={projectByID} onOpenRun={(id) => setRoute({ name: "run", id })} />
         )}
         {route.name === "runs" && <RunsPage runs={runs} projectByID={projectByID} />}
+        {route.name === "reports" && <ReportsPage projects={projects} runs={runs} projectByID={projectByID} />}
         {route.name === "ai-providers" && <AIProvidersPage />}
         {route.name === "test-plans" && <TestPlansPage projects={projects} />}
         {route.name === "test-plan" && (
@@ -460,43 +496,564 @@ function formatVersionBadge(version: string): string {
 }
 
 function Dashboard({
+  version,
   projects,
   runs,
   projectByID,
-  onStartRun
+  onStartRun,
+  onRunDemoWorkflow
 }: {
+  version: string;
   projects: LoadState<Project[]>;
   runs: LoadState<TestRun[]>;
   projectByID: Map<string, Project>;
   onStartRun: (projectID: string) => Promise<void>;
+  onRunDemoWorkflow: () => Promise<void>;
 }) {
+  const [providers, setProviders] = useState<LoadState<AIProvider[]>>({ data: [], loading: true, error: "" });
+  const [qaRuns, setQARuns] = useState<LoadState<QARun[]>>({ data: [], loading: true, error: "" });
+  const [demoBusy, setDemoBusy] = useState(false);
+
+  useEffect(() => {
+    let canceled = false;
+    async function loadDashboardDetails() {
+      setProviders((current) => ({ ...current, loading: true, error: "" }));
+      setQARuns((current) => ({ ...current, loading: true, error: "" }));
+      try {
+        const nextProviders = await listAIProviders();
+        const nextQARuns = projects.data.length > 0 ? (await Promise.all(projects.data.map((project) => listQARuns(project.id)))).flat() : [];
+        nextQARuns.sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+        if (!canceled) {
+          setProviders({ data: nextProviders, loading: false, error: "" });
+          setQARuns({ data: nextQARuns, loading: false, error: "" });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!canceled) {
+          setProviders((current) => ({ ...current, loading: false, error: message }));
+          setQARuns((current) => ({ ...current, loading: false, error: message }));
+        }
+      }
+    }
+    if (!projects.loading) {
+      void loadDashboardDetails();
+    }
+    return () => {
+      canceled = true;
+    };
+  }, [projects.data, projects.loading]);
+
+  const latestRun = runs.data[0];
+  const totalFindings = runs.data.reduce((total, run) => total + (run.status === "failed" ? 1 : 0), 0);
+  async function runDemo() {
+    setDemoBusy(true);
+    try {
+      await onRunDemoWorkflow();
+    } finally {
+      setDemoBusy(false);
+    }
+  }
+
   return (
     <div className="grid">
       <section>
         <div className="section-heading">
           <div>
-            <h2>Projects</h2>
+            <p className="eyebrow">Guided first run</p>
+            <h2>Qualora version badge: {formatVersionBadge(version)}</h2>
+            <p>Configure a real project, optional AI, optional login, optional OpenAPI, and start the first safe workflow.</p>
+          </div>
+          <span className="pill">v0.15 onboarding</span>
+        </div>
+        <div className="quick-grid">
+          <a className="quick-card" href="#/setup-project">
+            <strong>Create project with guided setup</strong>
+            <span>Use the wizard for target URLs, AI, credentials, OpenAPI, and first checks.</span>
+          </a>
+          <button type="button" className="quick-card button-reset" disabled={demoBusy} onClick={() => void runDemo()}>
+            <strong>{demoBusy ? "Starting demo workflow" : "Run demo workflow"}</strong>
+            <span>Use demo-web, demo-api, and fake-llm for deterministic local verification.</span>
+          </button>
+        </div>
+      </section>
+
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>Status</h2>
+            <p>Local self-hosted health and setup snapshot.</p>
+          </div>
+        </div>
+        <div className="detail-grid compact">
+          <Field label="API status" value="Reachable" />
+          <Field label="Web status" value="Reachable" />
+          <Field label="AI configured" value={providers.loading ? "Checking" : providers.data.length > 0 ? "Yes" : "No"} />
+          <Field label="Projects" value={String(projects.data.length)} />
+          <Field label="Latest run" value={latestRun ? `${formatRunType(latestRun.run_type)} ${latestRun.status}` : "No runs yet"} />
+          <Field label="Recent failed runs" value={String(totalFindings)} />
+        </div>
+        {!projects.loading && projects.data.length === 0 && <EmptyState title="Start by creating your first project." body="The guided setup is the fastest way to get a useful first report." />}
+      </section>
+
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>Recent Projects</h2>
             <p>Configured frontend and API targets.</p>
           </div>
-          <a className="button" href="#/projects/new">
-            Create Project
+          <a className="button" href="#/setup-project">
+            Guided Setup
           </a>
         </div>
-        {projects.loading ? <SkeletonRows /> : <ProjectTable projects={projects.data} onStartRun={onStartRun} />}
+        {projects.loading ? <SkeletonRows /> : <ProjectTable projects={projects.data.slice(0, 6)} onStartRun={onStartRun} />}
+      </section>
+
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>Recent Safe QA Runs</h2>
+            <p>Latest guided and discovery-aware QA workflows.</p>
+          </div>
+          <a className="button secondary-link" href="#/reports">
+            Reports
+          </a>
+        </div>
+        {qaRuns.loading ? <SkeletonRows /> : <QARunDashboardTable runs={qaRuns.data.slice(0, 8)} projectByID={projectByID} />}
       </section>
 
       <section>
         <div className="section-heading">
           <div>
             <h2>Recent Runs</h2>
-            <p>Latest browser and API QA activity.</p>
+            <p>Browser, API, login, authenticated, and full run reports.</p>
           </div>
           <a className="button secondary-link" href="#/runs">
-            View All Runs
+            Browser Testing
           </a>
         </div>
         {runs.loading ? <SkeletonRows /> : <RunTable runs={runs.data.slice(0, 8)} projectByID={projectByID} />}
       </section>
+    </div>
+  );
+}
+
+function QARunDashboardTable({ runs, projectByID }: { runs: QARun[]; projectByID: Map<string, Project> }) {
+  if (runs.length === 0) {
+    return <EmptyState title="No Safe QA runs yet" body="Use guided setup or a project detail page to start a Safe QA preview." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Project</th>
+            <th>Run</th>
+            <th>Discovery</th>
+            <th>Quality</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td><StatusBadge status={run.status} /></td>
+              <td>{projectByID.get(run.project_id)?.name || run.project_id}</td>
+              <td><a href={`#/qa-runs/${run.id}`}>{shortID(run.id)}</a></td>
+              <td>{run.discovery_run_id ? shortID(run.discovery_run_id) : "Not linked"}</td>
+              <td>{run.quality_check_run_id ? shortID(run.quality_check_run_id) : "Not linked"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+type WizardWorkflowState = {
+  browser_smoke: boolean;
+  discovery: boolean;
+  quality_checks: boolean;
+  safe_qa_run: boolean;
+  execute_safe_qa: boolean;
+  api_smoke: boolean;
+  authenticated_smoke: boolean;
+};
+
+function ProjectSetupWizard({ onCompleted }: { onCompleted: (response: ProjectSetupResponse) => Promise<void> }) {
+  const [step, setStep] = useState(1);
+  const [providers, setProviders] = useState<AIProvider[]>([]);
+  const [projectForm, setProjectForm] = useState({
+    name: "My Web App",
+    frontend_url: "",
+    api_base_url: "",
+    allowed_hosts: "",
+    allow_private_targets: false
+  });
+  const [aiMode, setAIMode] = useState<"skip" | "existing" | "create" | "demo">("skip");
+  const [selectedProviderID, setSelectedProviderID] = useState("");
+  const [providerForm, setProviderForm] = useState<ProviderFormState>(() => providerFormDefaults("openai"));
+  const [credentialMode, setCredentialMode] = useState<"skip" | "create">("skip");
+  const [credentialForm, setCredentialForm] = useState<CredentialProfileInput>(() => wizardCredentialDefaults());
+  const [apiSpecMode, setAPISpecMode] = useState<"skip" | "url" | "inline" | "demo">("skip");
+  const [apiSpecForm, setAPISpecForm] = useState({ name: "OpenAPI Spec", source_url: "", raw_spec: "" });
+  const [workflow, setWorkflow] = useState<WizardWorkflowState>({
+    browser_smoke: true,
+    discovery: true,
+    quality_checks: true,
+    safe_qa_run: false,
+    execute_safe_qa: false,
+    api_smoke: false,
+    authenticated_smoke: false
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<ProjectSetupResponse | undefined>();
+
+  useEffect(() => {
+    let canceled = false;
+    async function loadProviders() {
+      try {
+        const nextProviders = await listAIProviders();
+        if (!canceled) {
+          setProviders(nextProviders);
+          const defaultProvider = nextProviders.find((provider) => provider.is_default) || nextProviders[0];
+          if (defaultProvider) {
+            setSelectedProviderID(defaultProvider.id);
+          }
+        }
+      } catch {
+        if (!canceled) {
+          setProviders([]);
+        }
+      }
+    }
+    void loadProviders();
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setWorkflow((current) => ({
+      ...current,
+      safe_qa_run: aiMode !== "skip" && current.safe_qa_run,
+      api_smoke: apiSpecMode !== "skip" && current.api_smoke,
+      authenticated_smoke: credentialMode === "create" && current.authenticated_smoke
+    }));
+  }, [aiMode, apiSpecMode, credentialMode]);
+
+  function loadDemoDefaults() {
+    setProjectForm({
+      name: "Qualora Demo Workflow",
+      frontend_url: "http://demo-web:8080",
+      api_base_url: "http://demo-api:8080",
+      allowed_hosts: "demo-web, demo-api",
+      allow_private_targets: true
+    });
+    setAIMode("demo");
+    setCredentialMode("create");
+    setCredentialForm({
+      ...wizardCredentialDefaults(),
+      name: "Qualora Demo Login",
+      username: "demo@example.com",
+      password: "qualora-demo-password",
+      login_url: "http://demo-web:8080/login",
+      success_url_contains: "/dashboard",
+      success_text_contains: "Welcome to the Qualora demo dashboard",
+      failure_text_contains: "Invalid credentials"
+    });
+    setAPISpecMode("demo");
+    setWorkflow({
+      browser_smoke: true,
+      discovery: true,
+      quality_checks: true,
+      safe_qa_run: true,
+      execute_safe_qa: false,
+      api_smoke: true,
+      authenticated_smoke: true
+    });
+    setStep(5);
+    setResult(undefined);
+    setError("");
+  }
+
+  async function submit() {
+    setSubmitting(true);
+    setError("");
+    setResult(undefined);
+    try {
+      const payload = buildProjectSetupPayload(projectForm, aiMode, selectedProviderID, providerForm, credentialMode, credentialForm, apiSpecMode, apiSpecForm, workflow);
+      const response = await runProjectSetup(payload);
+      setResult(response);
+      setStep(6);
+      await onCompleted(response);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Guided setup</p>
+            <h2>Create a project and run first checks</h2>
+            <p>Configure only what you need. AI, login, and OpenAPI are optional.</p>
+          </div>
+          <button type="button" className="secondary" onClick={loadDemoDefaults}>
+            Load demo workflow
+          </button>
+        </div>
+        <div className="wizard-steps">
+          {["Basics", "AI", "Login", "OpenAPI", "Workflow", "Results"].map((label, index) => (
+            <button key={label} type="button" className={step === index + 1 ? "" : "secondary"} onClick={() => setStep(index + 1)}>
+              {index + 1}. {label}
+            </button>
+          ))}
+        </div>
+        {error && <Notice tone="danger" message={error} />}
+      </section>
+
+      {step === 1 && (
+        <section>
+          <h2>Project basics</h2>
+          <form className="project-form">
+            <label>
+              Project name
+              <input value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} required />
+            </label>
+            <label>
+              Frontend/base URL
+              <input value={projectForm.frontend_url} onChange={(event) => setProjectForm({ ...projectForm, frontend_url: event.target.value })} placeholder="https://app.example.com" />
+            </label>
+            <label>
+              Optional API base URL
+              <input value={projectForm.api_base_url} onChange={(event) => setProjectForm({ ...projectForm, api_base_url: event.target.value })} placeholder="https://api.example.com" />
+            </label>
+            <label>
+              Allowed hosts
+              <textarea value={projectForm.allowed_hosts} onChange={(event) => setProjectForm({ ...projectForm, allowed_hosts: event.target.value })} placeholder="app.example.com, api.example.com" />
+            </label>
+            <div className="detail-grid">
+              <Field label="Safety mode" value="Safe default / passive" />
+              <Field label="Destructive actions" value="Disabled" />
+            </div>
+            <label className="check-row">
+              <input type="checkbox" checked={projectForm.allow_private_targets} onChange={(event) => setProjectForm({ ...projectForm, allow_private_targets: event.target.checked })} />
+              Allow private/local targets for this self-hosted setup
+            </label>
+          </form>
+        </section>
+      )}
+
+      {step === 2 && (
+        <section>
+          <h2>AI provider optional</h2>
+          <Notice tone="info" message="AI is optional. Qualora can still run deterministic checks without AI." />
+          <div className="toggle-grid">
+            <label className="check-row"><input type="radio" checked={aiMode === "skip"} onChange={() => setAIMode("skip")} /> Skip AI</label>
+            <label className="check-row"><input type="radio" checked={aiMode === "existing"} onChange={() => setAIMode("existing")} /> Use existing provider</label>
+            <label className="check-row"><input type="radio" checked={aiMode === "demo"} onChange={() => setAIMode("demo")} /> Configure fake/demo provider</label>
+            <label className="check-row"><input type="radio" checked={aiMode === "create"} onChange={() => setAIMode("create")} /> Configure provider</label>
+          </div>
+          {aiMode === "existing" && (
+            <label>
+              Existing provider
+              <select value={selectedProviderID} onChange={(event) => setSelectedProviderID(event.target.value)}>
+                {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name} ({provider.model})</option>)}
+              </select>
+            </label>
+          )}
+          {aiMode === "create" && (
+            <div className="project-form">
+              <label>
+                Preset
+                <select value={providerForm.preset} onChange={(event) => setProviderForm(providerFormDefaults(event.target.value))}>
+                  {providerPresets.filter((preset) => preset.value !== "disabled").map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
+                </select>
+              </label>
+              <label>Name<input value={providerForm.name} onChange={(event) => setProviderForm({ ...providerForm, name: event.target.value })} /></label>
+              <label>Base URL<input value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} /></label>
+              <label>Model<input value={providerForm.model} onChange={(event) => setProviderForm({ ...providerForm, model: event.target.value })} /></label>
+              <label>API Key<input type="password" value={providerForm.api_key} onChange={(event) => setProviderForm({ ...providerForm, api_key: event.target.value })} /></label>
+            </div>
+          )}
+        </section>
+      )}
+
+      {step === 3 && (
+        <section>
+          <h2>Login optional</h2>
+          <Notice tone="info" message="Credentials are encrypted and never sent to AI. Use dedicated test accounts." />
+          <div className="toggle-grid">
+            <label className="check-row"><input type="radio" checked={credentialMode === "skip"} onChange={() => setCredentialMode("skip")} /> Skip login</label>
+            <label className="check-row"><input type="radio" checked={credentialMode === "create"} onChange={() => setCredentialMode("create")} /> Add credential profile</label>
+          </div>
+          {credentialMode === "create" && (
+            <form className="project-form">
+              <div className="form-grid two">
+                <label>Profile name<input value={credentialForm.name} onChange={(event) => setCredentialForm({ ...credentialForm, name: event.target.value })} /></label>
+                <label>Role name optional<input value={credentialForm.role_name || ""} onChange={(event) => setCredentialForm({ ...credentialForm, role_name: event.target.value })} /></label>
+              </div>
+              <div className="form-grid two">
+                <label>Username<input value={credentialForm.username || ""} onChange={(event) => setCredentialForm({ ...credentialForm, username: event.target.value })} /></label>
+                <label>Password<input type="password" value={credentialForm.password || ""} onChange={(event) => setCredentialForm({ ...credentialForm, password: event.target.value })} /></label>
+              </div>
+              <label>Login URL<input value={credentialForm.login_url} onChange={(event) => setCredentialForm({ ...credentialForm, login_url: event.target.value })} /></label>
+              <div className="form-grid three">
+                <label>Username selector<input value={credentialForm.username_selector} onChange={(event) => setCredentialForm({ ...credentialForm, username_selector: event.target.value })} /></label>
+                <label>Password selector<input value={credentialForm.password_selector} onChange={(event) => setCredentialForm({ ...credentialForm, password_selector: event.target.value })} /></label>
+                <label>Submit selector<input value={credentialForm.submit_selector} onChange={(event) => setCredentialForm({ ...credentialForm, submit_selector: event.target.value })} /></label>
+              </div>
+              <div className="form-grid three">
+                <label>Success URL contains<input value={credentialForm.success_url_contains} onChange={(event) => setCredentialForm({ ...credentialForm, success_url_contains: event.target.value })} /></label>
+                <label>Success text contains<input value={credentialForm.success_text_contains} onChange={(event) => setCredentialForm({ ...credentialForm, success_text_contains: event.target.value })} /></label>
+                <label>Failure text contains<input value={credentialForm.failure_text_contains} onChange={(event) => setCredentialForm({ ...credentialForm, failure_text_contains: event.target.value })} /></label>
+              </div>
+            </form>
+          )}
+        </section>
+      )}
+
+      {step === 4 && (
+        <section>
+          <h2>OpenAPI optional</h2>
+          <Notice tone="info" message="Only safe read-only operations are executed by default." />
+          <div className="toggle-grid">
+            <label className="check-row"><input type="radio" checked={apiSpecMode === "skip"} onChange={() => setAPISpecMode("skip")} /> Skip API testing</label>
+            <label className="check-row"><input type="radio" checked={apiSpecMode === "url"} onChange={() => setAPISpecMode("url")} /> Import OpenAPI URL</label>
+            <label className="check-row"><input type="radio" checked={apiSpecMode === "inline"} onChange={() => setAPISpecMode("inline")} /> Paste OpenAPI JSON/YAML</label>
+            <label className="check-row"><input type="radio" checked={apiSpecMode === "demo"} onChange={() => setAPISpecMode("demo")} /> Use demo API spec</label>
+          </div>
+          {apiSpecMode !== "skip" && apiSpecMode !== "demo" && (
+            <form className="project-form">
+              <label>Spec name<input value={apiSpecForm.name} onChange={(event) => setAPISpecForm({ ...apiSpecForm, name: event.target.value })} /></label>
+              {apiSpecMode === "url" ? (
+                <label>Source URL<input value={apiSpecForm.source_url} onChange={(event) => setAPISpecForm({ ...apiSpecForm, source_url: event.target.value })} /></label>
+              ) : (
+                <label>Inline spec<textarea className="spec-textarea" value={apiSpecForm.raw_spec} onChange={(event) => setAPISpecForm({ ...apiSpecForm, raw_spec: event.target.value })} /></label>
+              )}
+            </form>
+          )}
+        </section>
+      )}
+
+      {step === 5 && (
+        <section>
+          <h2>Select first workflow</h2>
+          <div className="checkbox-grid wizard-checks">
+            <label className="check-row"><input type="checkbox" checked={workflow.browser_smoke} onChange={(event) => setWorkflow({ ...workflow, browser_smoke: event.target.checked })} /> Browser smoke</label>
+            <label className="check-row"><input type="checkbox" checked={workflow.discovery} onChange={(event) => setWorkflow({ ...workflow, discovery: event.target.checked })} /> Discovery</label>
+            <label className="check-row"><input type="checkbox" checked={workflow.quality_checks} onChange={(event) => setWorkflow({ ...workflow, quality_checks: event.target.checked })} /> Quality checks</label>
+            <label className="check-row"><input type="checkbox" checked={workflow.safe_qa_run} disabled={aiMode === "skip"} onChange={(event) => setWorkflow({ ...workflow, safe_qa_run: event.target.checked })} /> Safe QA run</label>
+            <label className="check-row"><input type="checkbox" checked={workflow.api_smoke} disabled={apiSpecMode === "skip"} onChange={(event) => setWorkflow({ ...workflow, api_smoke: event.target.checked })} /> API smoke</label>
+            <label className="check-row"><input type="checkbox" checked={workflow.authenticated_smoke} disabled={credentialMode === "skip"} onChange={(event) => setWorkflow({ ...workflow, authenticated_smoke: event.target.checked })} /> Authenticated smoke</label>
+            <label className="check-row"><input type="checkbox" checked={workflow.execute_safe_qa} disabled={!workflow.safe_qa_run} onChange={(event) => setWorkflow({ ...workflow, execute_safe_qa: event.target.checked })} /> Execute Safe QA after preview</label>
+          </div>
+          {aiMode === "skip" && <Notice tone="info" message="Safe QA Run is disabled because AI was skipped. Deterministic browser, discovery, quality, and API checks can still run." />}
+          <div className="form-actions">
+            <button type="button" disabled={submitting} onClick={() => void submit()}>
+              {submitting ? "Creating" : "Create project and run checks"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {step === 6 && (
+        <section>
+          <h2>Progress and results</h2>
+          {!result ? (
+            <EmptyState title="No setup run yet" body="Complete the workflow step to create a project and start checks." />
+          ) : (
+            <SetupResultPanel response={result} />
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function SetupResultPanel({ response }: { response: ProjectSetupResponse }) {
+  return (
+    <div className="metadata-stack">
+      <div className="detail-grid compact">
+        <Field label="Project" value={response.project.name} />
+        <Field label="Project ID" value={shortID(response.project.id)} />
+        <Field label="AI provider" value={response.ai_provider ? response.ai_provider.name : "Skipped"} />
+        <Field label="OpenAPI" value={response.api_spec ? response.api_spec.status : "Skipped"} />
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Step</th><th>Status</th><th>Resource</th><th>Reason</th></tr></thead>
+          <tbody>
+            {response.timeline.map((item, index) => (
+              <tr key={`${item.step}-${index}`}>
+                <td>{humanizeIdentifier(item.step)}</td>
+                <td><StatusBadge status={item.status} /></td>
+                <td>{item.resource ? shortID(item.resource) : "None"}</td>
+                <td>{item.reason || "None"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {response.skipped.length > 0 && (
+        <Notice tone="info" message={`Skipped: ${response.skipped.map((item) => `${humanizeIdentifier(item.action)} (${item.reason})`).join("; ")}`} />
+      )}
+      <div className="button-row">
+        <a className="button" href={`#/projects/${response.project.id}`}>Project details</a>
+        {response.started.safe_qa_run_id && <a className="button secondary-link" href={`#/qa-runs/${response.started.safe_qa_run_id}`}>Safe QA report</a>}
+        {response.started.discovery_run_id && <a className="button secondary-link" href={`#/discovery-runs/${response.started.discovery_run_id}`}>Discovery report</a>}
+        {response.started.quality_check_run_id && <a className="button secondary-link" href={`#/quality-check-runs/${response.started.quality_check_run_id}`}>Quality report</a>}
+        {response.started.browser_smoke_run_id && <a className="button secondary-link" href={`#/runs/${response.started.browser_smoke_run_id}`}>Browser report</a>}
+        {response.started.api_smoke_run_id && <a className="button secondary-link" href={`#/runs/${response.started.api_smoke_run_id}`}>API report</a>}
+      </div>
+    </div>
+  );
+}
+
+function ProjectReadinessChecklist({
+  project,
+  providers,
+  runs,
+  credentialProfiles,
+  apiSpecs,
+  discoveryRuns,
+  qualityRuns,
+  qaRuns
+}: {
+  project: Project;
+  providers: AIProvider[];
+  runs: TestRun[];
+  credentialProfiles: CredentialProfile[];
+  apiSpecs: APISpec[];
+  discoveryRuns: DiscoveryRun[];
+  qualityRuns: QualityCheckRun[];
+  qaRuns: QARun[];
+}) {
+  const latestCompletedRun = runs.find((run) => run.status === "completed");
+  const items = [
+    { label: "Frontend URL configured", ready: Boolean(project.frontend_url), action: "Edit via guided setup", href: "#/setup-project" },
+    { label: "AI provider configured", ready: providers.length > 0, action: "Configure AI", href: "#/ai-providers" },
+    { label: "Discovery run exists", ready: discoveryRuns.length > 0, action: "Run discovery", href: `#/projects/${project.id}` },
+    { label: "Quality check exists", ready: qualityRuns.length > 0, action: "Run quality checks", href: `#/projects/${project.id}` },
+    { label: "Credential profile exists", ready: credentialProfiles.length > 0, action: "Add credentials", href: `#/projects/${project.id}` },
+    { label: "OpenAPI spec imported", ready: apiSpecs.length > 0, action: "Import OpenAPI", href: `#/projects/${project.id}` },
+    { label: "Latest Safe QA run exists", ready: qaRuns.length > 0, action: "Start Safe QA", href: `#/projects/${project.id}` },
+    { label: "Latest report available", ready: Boolean(latestCompletedRun || qaRuns.length || qualityRuns.length || discoveryRuns.length), action: "View reports", href: "#/reports" }
+  ];
+  return (
+    <div className="readiness-grid">
+      {items.map((item) => (
+        <div className="readiness-item" key={item.label}>
+          <span className={item.ready ? "result-ok" : "result-failed"}>{item.ready ? "Ready" : "Not ready"}</span>
+          <strong>{item.label}</strong>
+          <a href={item.href}>{item.ready ? "View" : item.action}</a>
+        </div>
+      ))}
     </div>
   );
 }
@@ -541,6 +1098,145 @@ function ProjectTable({ projects, onStartRun }: { projects: Project[]; onStartRu
 
 function RunsPage({ runs, projectByID }: { runs: LoadState<TestRun[]>; projectByID: Map<string, Project> }) {
   return <section>{runs.loading ? <SkeletonRows /> : <RunTable runs={runs.data} projectByID={projectByID} />}</section>;
+}
+
+type ReportIndexItem = {
+  id: string;
+  project_id: string;
+  project_name: string;
+  type: string;
+  status: string;
+  created_at: string;
+  web_href: string;
+  html_href?: string;
+};
+
+function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Project[]>; runs: LoadState<TestRun[]>; projectByID: Map<string, Project> }) {
+  const [items, setItems] = useState<LoadState<ReportIndexItem[]>>({ data: [], loading: true, error: "" });
+
+  useEffect(() => {
+    let canceled = false;
+    async function loadReports() {
+      setItems((current) => ({ ...current, loading: true, error: "" }));
+      try {
+        const projectItems = await Promise.all(
+          projects.data.map(async (project) => {
+            const [discovery, quality, qaRuns] = await Promise.all([
+              listDiscoveryRuns(project.id),
+              listQualityCheckRuns(project.id),
+              listQARuns(project.id)
+            ]);
+            return [
+              ...discovery.map((run): ReportIndexItem => ({
+                id: run.id,
+                project_id: project.id,
+                project_name: project.name,
+                type: "Discovery",
+                status: run.status,
+                created_at: run.created_at,
+                web_href: `#/discovery-runs/${run.id}`,
+                html_href: discoveryHTMLReportURL(run.id)
+              })),
+              ...quality.map((run): ReportIndexItem => ({
+                id: run.id,
+                project_id: project.id,
+                project_name: project.name,
+                type: "Quality",
+                status: run.status,
+                created_at: run.created_at,
+                web_href: `#/quality-check-runs/${run.id}`,
+                html_href: qualityCheckHTMLReportURL(run.id)
+              })),
+              ...qaRuns.map((run): ReportIndexItem => ({
+                id: run.id,
+                project_id: project.id,
+                project_name: project.name,
+                type: "Safe QA",
+                status: run.status,
+                created_at: run.created_at,
+                web_href: `#/qa-runs/${run.id}`,
+                html_href: qaRunHTMLReportURL(run.id)
+              }))
+            ];
+          })
+        );
+        const runItems = runs.data.map((run): ReportIndexItem => ({
+          id: run.id,
+          project_id: run.project_id,
+          project_name: projectByID.get(run.project_id)?.name || run.project_id,
+          type: formatRunType(run.run_type),
+          status: run.status,
+          created_at: run.created_at,
+          web_href: `#/runs/${run.id}`,
+          html_href: htmlReportURL(run.id)
+        }));
+        const nextItems = [...runItems, ...projectItems.flat()].sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+        if (!canceled) {
+          setItems({ data: nextItems, loading: false, error: "" });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!canceled) {
+          setItems({ data: [], loading: false, error: message });
+        }
+      }
+    }
+    if (!projects.loading && !runs.loading) {
+      void loadReports();
+    }
+    return () => {
+      canceled = true;
+    };
+  }, [projectByID, projects.data, projects.loading, runs.data, runs.loading]);
+
+  return (
+    <section>
+      <div className="section-heading">
+        <div>
+          <h2>Reports</h2>
+          <p>Recent browser, API, discovery, quality, Safe QA, authorization, and test-plan execution reports.</p>
+        </div>
+        <a className="button secondary-link" href="#/setup-project">Guided Setup</a>
+      </div>
+      {items.error && <Notice tone="danger" message={items.error} />}
+      {items.loading ? <SkeletonRows /> : <ReportIndexTable items={items.data} />}
+    </section>
+  );
+}
+
+function ReportIndexTable({ items }: { items: ReportIndexItem[] }) {
+  if (items.length === 0) {
+    return <EmptyState title="No reports yet" body="Run browser, API, discovery, quality, or Safe QA checks to populate reports." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Type</th>
+            <th>Project</th>
+            <th>Report</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.slice(0, 30).map((item) => (
+            <tr key={`${item.type}-${item.id}`}>
+              <td><StatusBadge status={item.status} /></td>
+              <td>{item.type}</td>
+              <td><a href={`#/projects/${item.project_id}`}>{item.project_name}</a></td>
+              <td>
+                <a href={item.web_href}>{shortID(item.id)}</a>
+                {item.html_href && <>{" "} <a href={item.html_href} target="_blank" rel="noreferrer">HTML</a></>}
+              </td>
+              <td>{formatDate(item.created_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 type ProviderFormState = {
@@ -1207,6 +1903,28 @@ function ProjectPage({
       <section>
         <div className="section-heading">
           <div>
+            <h2>Project Readiness</h2>
+            <p>Checklist for a useful first report and repeatable Safe QA workflow.</p>
+          </div>
+          <a className="button secondary-link" href="#/setup-project">
+            Guided Setup
+          </a>
+        </div>
+        <ProjectReadinessChecklist
+          project={project}
+          providers={providers}
+          runs={runs.data}
+          credentialProfiles={credentialProfiles.data}
+          apiSpecs={apiSpecs.data}
+          discoveryRuns={discoveryRuns.data}
+          qualityRuns={qualityRuns.data}
+          qaRuns={qaRuns.data}
+        />
+      </section>
+
+      <section id="application-discovery">
+        <div className="section-heading">
+          <div>
             <h2>Application Discovery</h2>
             <p>Safely crawls same-origin pages, collects links/forms/browser signals, and builds an application map.</p>
           </div>
@@ -1230,7 +1948,7 @@ function ProjectPage({
         </div>
       </section>
 
-      <section>
+      <section id="safe-qa-runs">
         <div className="section-heading">
           <div>
             <h2>Safe QA Runs</h2>
@@ -1258,7 +1976,7 @@ function ProjectPage({
         </div>
       </section>
 
-      <section>
+      <section id="quality-checks">
         <div className="section-heading">
           <div>
             <h2>Quality Checks</h2>
@@ -1285,7 +2003,7 @@ function ProjectPage({
         </div>
       </section>
 
-      <section>
+      <section id="authorization-checks">
         <div className="section-heading">
           <div>
             <h2>Authorization Checks</h2>
@@ -1327,7 +2045,7 @@ function ProjectPage({
         </div>
       </section>
 
-      <section>
+      <section id="api-specs">
         <div className="section-heading">
           <div>
             <h2>API Specs</h2>
@@ -1348,7 +2066,7 @@ function ProjectPage({
         </div>
       </section>
 
-      <section>
+      <section id="credential-profiles">
         <div className="section-heading">
           <div>
             <h2>Credential Profiles</h2>
@@ -5400,6 +6118,12 @@ function parseHash(hash: string): Route {
   if (parts[0] === "projects" && parts[1] === "new") {
     return { name: "new-project" };
   }
+  if (parts[0] === "setup-project") {
+    return { name: "setup-project" };
+  }
+  if (parts[0] === "reports") {
+    return { name: "reports" };
+  }
   if (parts[0] === "projects" && parts[1]) {
     return { name: "project", id: parts[1] };
   }
@@ -5445,6 +6169,10 @@ function hashForRoute(route: Route): string {
       return "/";
     case "new-project":
       return "/projects/new";
+    case "setup-project":
+      return "/setup-project";
+    case "reports":
+      return "/reports";
     case "project":
       return `/projects/${route.id}`;
     case "runs":
@@ -5475,9 +6203,13 @@ function hashForRoute(route: Route): string {
 function titleForRoute(route: Route): string {
   switch (route.name) {
     case "dashboard":
-      return "Projects";
+      return "Dashboard";
     case "new-project":
       return "Create Project";
+    case "setup-project":
+      return "Guided Project Setup";
+    case "reports":
+      return "Reports";
     case "project":
       return "Project Details";
     case "runs":
@@ -5503,6 +6235,123 @@ function titleForRoute(route: Route): string {
     case "run":
       return "Run Report";
   }
+}
+
+function buildProjectSetupPayload(
+  projectForm: { name: string; frontend_url: string; api_base_url: string; allowed_hosts: string; allow_private_targets: boolean },
+  aiMode: "skip" | "existing" | "create" | "demo",
+  selectedProviderID: string,
+  providerForm: ProviderFormState,
+  credentialMode: "skip" | "create",
+  credentialForm: CredentialProfileInput,
+  apiSpecMode: "skip" | "url" | "inline" | "demo",
+  apiSpecForm: { name: string; source_url: string; raw_spec: string },
+  workflow: WizardWorkflowState
+): ProjectSetupInput {
+  const payload: ProjectSetupInput = {
+    project: {
+      name: projectForm.name.trim(),
+      frontend_url: projectForm.frontend_url.trim(),
+      api_base_url: projectForm.api_base_url.trim(),
+      openapi_url: "",
+      allowed_hosts: splitHosts(projectForm.allowed_hosts),
+      security_mode: "passive",
+      destructive_actions: false,
+      allow_private_targets: projectForm.allow_private_targets
+    },
+    ai: { mode: aiMode },
+    credential: { mode: credentialMode },
+    api_spec: { mode: apiSpecMode === "skip" ? "skip" : apiSpecMode === "demo" ? "demo" : "import" },
+    workflow
+  };
+  if (aiMode === "existing") {
+    payload.ai = { mode: "existing", provider_id: selectedProviderID };
+  } else if (aiMode === "create") {
+    payload.ai = { mode: "create", provider: inputForProviderForm(providerForm, false) };
+  }
+  if (credentialMode === "create") {
+    payload.credential = { mode: "create", profile: credentialForm };
+  }
+  if (apiSpecMode === "url") {
+    payload.api_spec = {
+      mode: "import",
+      spec: { name: apiSpecForm.name.trim() || "OpenAPI Spec", source_type: "url", source_url: apiSpecForm.source_url.trim(), raw_spec: "" }
+    };
+  } else if (apiSpecMode === "inline") {
+    payload.api_spec = {
+      mode: "import",
+      spec: { name: apiSpecForm.name.trim() || "OpenAPI Spec", source_type: "inline", source_url: "", raw_spec: apiSpecForm.raw_spec }
+    };
+  }
+  return payload;
+}
+
+function demoProjectSetupPayload(): ProjectSetupInput {
+  return {
+    project: {
+      name: "Qualora Demo Workflow",
+      frontend_url: "http://demo-web:8080",
+      api_base_url: "http://demo-api:8080",
+      openapi_url: "",
+      allowed_hosts: ["demo-web", "demo-api"],
+      security_mode: "passive",
+      destructive_actions: false,
+      allow_private_targets: true
+    },
+    ai: { mode: "demo" },
+    credential: {
+      mode: "create",
+      profile: {
+        ...wizardCredentialDefaults(),
+        name: "Qualora Demo Login",
+        username: "demo@example.com",
+        password: "qualora-demo-password",
+        login_url: "http://demo-web:8080/login",
+        success_url_contains: "/dashboard",
+        success_text_contains: "Welcome to the Qualora demo dashboard",
+        failure_text_contains: "Invalid credentials"
+      }
+    },
+    api_spec: { mode: "demo" },
+    workflow: {
+      browser_smoke: true,
+      discovery: true,
+      quality_checks: true,
+      safe_qa_run: true,
+      execute_safe_qa: false,
+      api_smoke: true,
+      authenticated_smoke: true
+    }
+  };
+}
+
+function wizardCredentialDefaults(): CredentialProfileInput {
+  return {
+    name: "Test Login",
+    type: "username_password",
+    role_name: "",
+    role_description: "",
+    subject_label: "",
+    username: "",
+    password: "",
+    login_url: "",
+    username_selector: "#email",
+    password_selector: "#password",
+    submit_selector: "button[type=submit]",
+    success_url_contains: "",
+    success_text_contains: "",
+    failure_text_contains: "",
+    post_login_wait_ms: 500,
+    is_default: true
+  };
+}
+
+function humanizeIdentifier(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function providerFormDefaults(preset: string): ProviderFormState {

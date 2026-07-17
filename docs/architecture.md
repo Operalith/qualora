@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.14.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, human-friendly reports, safe deterministic application discovery, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
+Qualora v0.15.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, human-friendly reports, safe deterministic application discovery, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,7 +10,7 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
@@ -50,6 +50,7 @@ Current endpoints:
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/me`
+- `POST /api/v1/onboarding/project-setup`
 - `POST /api/v1/projects`
 - `GET /api/v1/projects`
 - `GET /api/v1/projects/{project_id}`
@@ -125,6 +126,10 @@ Current endpoints:
 
 The React/Vite web UI is intentionally small. It calls the control-plane API from the browser and displays:
 
+- Dashboard quick-start actions, status indicators, recent projects, and recent Safe QA runs.
+- A guided project setup wizard for project basics, optional AI, optional credentials, optional OpenAPI import, workflow selection, and result links.
+- Project readiness checklist items that point users to AI, discovery, quality checks, credentials, OpenAPI, Safe QA, and reports.
+- A reports landing page for recent browser, API, discovery, quality, and Safe QA reports.
 - Projects and project details.
 - Run lists and run details.
 - Structured JSON report data as readable tables.
@@ -148,6 +153,12 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - Safe QA Run preview/execution controls and Safe QA Run JSON/HTML report pages, including quality summaries when requested.
 
 On a fresh database it shows a first-run local admin setup screen. After setup, project data, credential profiles, AI providers, runs, reports, evidence, API specs, test plans, and authorization reports require the local admin session. The UI is still alpha and should be exposed only in trusted local/self-hosted environments.
+
+### Guided Project Onboarding
+
+`POST /api/v1/onboarding/project-setup` is a thin orchestration endpoint used by the web wizard and smoke script. It validates the project request, rejects destructive actions, creates the project, optionally creates or reuses an OpenAI-compatible provider, optionally creates an encrypted credential profile, optionally imports an OpenAPI spec, and starts selected safe workflows.
+
+The endpoint returns only resource IDs, safe provider metadata, skipped-action reasons, timeline entries, and report links. It must not return raw passwords, encrypted secret payloads, provider API keys, cookies, browser storage, authorization headers, or tokens. Guided onboarding does not add a new testing engine; it coordinates existing browser smoke, authenticated smoke, discovery, quality check, Safe QA, and imported-spec API smoke paths.
 
 ### `qualora-worker-browser`
 
@@ -236,7 +247,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.14.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.15.0-alpha`.
 
 ### PostgreSQL
 

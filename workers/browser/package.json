@@ -1,6 +1,6 @@
 {
   "name": "@operalith/qualora-worker-browser",
-  "version": "0.14.0-alpha",
+  "version": "0.15.0-alpha",
   "private": true,
   "description": "Qualora browser worker for Playwright smoke checks",
   "type": "commonjs",

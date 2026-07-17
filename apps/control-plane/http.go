@@ -37,6 +37,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/auth/login", a.handleLogin)
 	mux.HandleFunc("/api/v1/auth/logout", a.handleLogout)
 	mux.HandleFunc("/api/v1/auth/me", a.handleMe)
+	mux.HandleFunc("/api/v1/onboarding/project-setup", a.handleOnboardingProjectSetup)
 	mux.HandleFunc("/api/v1/projects", a.handleProjects)
 	mux.HandleFunc("/api/v1/projects/", a.handleProjectSubroutes)
 	mux.HandleFunc("/api/v1/runs", a.handleRuns)

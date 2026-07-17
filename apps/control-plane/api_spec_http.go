@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -33,12 +34,23 @@ func (a *App) createAPISpec(w http.ResponseWriter, r *http.Request, projectID st
 		return
 	}
 
+	detail, err := a.createAPISpecFromInput(r.Context(), *project, input)
+	if err != nil {
+		a.logger.Error("create api spec failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "create_api_spec_failed", "API spec could not be imported")
+		return
+	}
+	writeJSON(w, http.StatusCreated, detail)
+}
+
+func (a *App) createAPISpecFromInput(ctx context.Context, project Project, input APISpecImportRequest) (*APISpecDetail, error) {
 	rawSpec := input.RawSpec
 	sourceStatus := "parsed"
 	errorMessage := ""
 	if input.SourceType == "url" {
 		var normalizedURL string
-		rawSpec, normalizedURL, err = FetchOpenAPISource(r.Context(), *project, input.SourceURL)
+		var err error
+		rawSpec, normalizedURL, err = FetchOpenAPISource(ctx, project, input.SourceURL)
 		if normalizedURL != "" {
 			input.SourceURL = normalizedURL
 		}
@@ -50,6 +62,7 @@ func (a *App) createAPISpec(w http.ResponseWriter, r *http.Request, projectID st
 
 	var parsed *parsedOpenAPISpec
 	if sourceStatus == "parsed" {
+		var err error
 		parsed, err = ParseOpenAPISpec(rawSpec, input.SourceURL, project.APIBaseURL)
 		if err != nil {
 			sourceStatus = "invalid"
@@ -57,13 +70,11 @@ func (a *App) createAPISpec(w http.ResponseWriter, r *http.Request, projectID st
 		}
 	}
 
-	detail, err := a.store.CreateAPISpec(r.Context(), project.ID, input, rawSpec, parsed, sourceStatus, errorMessage)
+	detail, err := a.store.CreateAPISpec(ctx, project.ID, input, rawSpec, parsed, sourceStatus, errorMessage)
 	if err != nil {
-		a.logger.Error("create api spec failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "create_api_spec_failed", "API spec could not be imported")
-		return
+		return nil, err
 	}
-	writeJSON(w, http.StatusCreated, detail)
+	return detail, nil
 }
 
 func (a *App) listAPISpecs(w http.ResponseWriter, r *http.Request, projectID string) {

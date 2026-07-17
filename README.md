@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.14.0-alpha` adds passive front-end quality checks for safe security, accessibility, and performance signals. Qualora remains useful without AI: discovery, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
+`v0.15.0-alpha` adds guided project onboarding and a clearer dashboard for first-run workflows. Qualora remains useful without AI: discovery, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
 
 ## Current Alpha Capabilities
 
@@ -14,6 +14,10 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Use HTTP-only session cookies with CSRF protection for mutating API requests.
 - Create QA projects through an API.
 - Create QA projects through a minimal web UI.
+- Create projects through a guided setup wizard that can optionally configure AI, credentials, OpenAPI import, and selected first checks.
+- Run a local demo workflow against `demo-web`, `demo-api`, and `fake-llm`.
+- View dashboard quick-start cards, recent Safe QA runs, recent projects, status indicators, and a project readiness checklist.
+- View a reports landing page for recent browser, API, discovery, quality, and Safe QA reports.
 - Start runs that can include browser and API jobs.
 - Start a browser-only smoke run for a project with `frontend_url`.
 - Store project-scoped credential profiles encrypted at rest for deterministic test-account login.
@@ -126,7 +130,7 @@ Open the web UI:
 http://localhost:3000
 ```
 
-On a fresh database, the web UI opens a first-run setup screen for the local admin account before showing project data. The smoke script performs the same setup automatically for demo environments.
+On a fresh database, the web UI opens a first-run setup screen for the local admin account before showing project data. After login, use `#/setup-project` for guided setup or `Run demo workflow` on the dashboard for the deterministic local demo. The smoke script performs the same setup automatically for demo environments.
 
 Run the smoke tests:
 
@@ -145,6 +149,7 @@ The smoke target includes:
 - AI provider smoke against a local fake OpenAI-compatible provider.
 - Discovery-aware AI test plan generation from the application map.
 - Safe QA Run preview and explicit execution against the approved safe browser DSL.
+- Guided project setup through the onboarding API, including demo AI provider setup, demo OpenAPI import, credential profile creation, browser smoke, authenticated smoke, discovery, quality checks, Safe QA, and API smoke.
 - Safe test plan execution smoke against the local `demo-web` service.
 
 Stop the stack:
@@ -191,6 +196,35 @@ PY
 ```
 
 If setup is already complete, call `POST /api/v1/auth/login` with the same cookie jar and then refresh `CSRF` from the cookie jar. Use `-b "$COOKIE_JAR"` for protected `GET` requests, and use `-b "$COOKIE_JAR" -c "$COOKIE_JAR" -H "X-Qualora-CSRF: ${CSRF}"` for protected `POST`, `PUT`, and `DELETE` requests.
+
+Create a project through guided onboarding and start safe first checks:
+
+```bash
+curl -s http://localhost:8080/api/v1/onboarding/project-setup \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "project": {
+      "name": "Guided Example",
+      "frontend_url": "https://example.com",
+      "allowed_hosts": ["example.com"],
+      "security_mode": "passive",
+      "destructive_actions": false
+    },
+    "ai": {"mode": "skip"},
+    "credential": {"mode": "skip"},
+    "api_spec": {"mode": "skip"},
+    "workflow": {
+      "browser_smoke": true,
+      "discovery": true,
+      "quality_checks": true,
+      "safe_qa": false
+    }
+  }' | python3 -m json.tool
+```
+
+Guided setup is orchestration over the existing safe features. It does not add autonomous browser control, active scanning, fuzzing, arbitrary form submission, or destructive testing.
 
 Create a browser project:
 
@@ -581,7 +615,7 @@ curl -s -X POST "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/execute" \
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.14.0-alpha`:
+Supported provider type in `v0.15.0-alpha`:
 
 - `openai-compatible`
 
@@ -601,7 +635,7 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.14.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, and application discovery are deterministic browser-worker paths and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.15.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, and guided onboarding are deterministic paths and are not AI-controlled.
 
 ## Report Example
 

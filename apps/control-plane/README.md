@@ -8,6 +8,7 @@ Responsibilities:
 - Test run lifecycle.
 - Policy validation.
 - Worker job scheduling.
+- Guided project onboarding orchestration.
 - Metadata persistence.
 - Local first-run admin setup and session authentication.
 - JSON and HTML report access.
@@ -60,6 +61,7 @@ Public endpoints:
 
 Current protected report and workflow endpoints include:
 
+- `POST /api/v1/onboarding/project-setup`
 - `GET /api/v1/runs/{run_id}/report`
 - `GET /api/v1/runs/{run_id}/report.html`
 - `GET /api/v1/evidence/{evidence_id}`

@@ -18,7 +18,7 @@ QUALORA_API_URL=http://localhost:18080 QUALORA_API_BASE_URL=http://localhost:180
 
 The web UI is exposed at `http://localhost:3000` by default. Override it with `QUALORA_WEB_PORT`.
 
-On a fresh database, open the web UI and complete first-run local admin setup before accessing projects and reports. The smoke script can also create the local admin automatically for demo stacks.
+On a fresh database, open the web UI and complete first-run local admin setup before accessing projects and reports. After login, use `#/setup-project` for guided project setup or the dashboard `Run demo workflow` action for the local demo path. The smoke script can also create the local admin automatically and exercise the guided demo flow for demo stacks.
 
 The MVP Compose stack includes:
 
@@ -35,7 +35,7 @@ The smoke profile also includes:
 - `mock-api`: older deterministic local API retained for compatibility with earlier alpha API worker checks.
 - `demo-api`: deterministic OpenAPI demo API used by safe API smoke tests.
 - `demo-web`: deterministic local frontend used by browser, login, authenticated smoke, application discovery, passive quality, role-aware authorization, and safe test plan smoke tests.
-- `fake-llm`: deterministic OpenAI-compatible provider used by AI smoke tests.
+- `fake-llm`: deterministic OpenAI-compatible provider used by AI and guided onboarding smoke tests.
 
 The control plane receives the same MinIO/S3 configuration as the browser worker so authenticated `GET /api/v1/evidence/{evidence_id}` requests can stream screenshot evidence without exposing MinIO credentials to the web UI.
 

@@ -1,14 +1,17 @@
 # Qualora Web
 
-Minimal React/Vite web UI for Qualora v0.14.0-alpha.
+Minimal React/Vite web UI for Qualora v0.15.0-alpha.
 
 The UI supports:
 
 - Listing projects.
 - First-run local admin setup.
 - Local admin login, session refresh, and logout.
+- Dashboard quick-start actions, health/status indicators, recent projects, and recent Safe QA runs.
+- Guided project setup through `#/setup-project`.
 - Creating projects.
 - Viewing project details and project runs.
+- Project readiness checklist for first-run configuration gaps.
 - Importing OpenAPI specs for projects.
 - Viewing API spec details, discovered operations, and skip reasons.
 - Starting safe API smoke runs from imported specs.
@@ -27,6 +30,7 @@ The UI supports:
 - Starting Safe QA Run previews, executing reviewed safe QA runs, and viewing Safe QA Run reports.
 - Starting runs.
 - Listing runs.
+- Reports landing page at `#/reports`.
 - Viewing run reports, findings, evidence metadata, browser metadata, API metadata, and worker job metadata.
 - Opening the self-contained HTML report served by the control plane.
 - Previewing and downloading screenshot evidence through the control-plane evidence endpoint.
@@ -73,5 +77,6 @@ QUALORA_API_BASE_URL=http://localhost:8080 docker compose up -d --build qualora-
 - Authorization checks are explicit, read-only, and limited to deterministic browser URL checks.
 - Application discovery is bounded, same-origin by default, and does not submit forms or click mutating controls.
 - Quality checks are passive alpha heuristics and do not perform active scanning, payloads, fuzzing, form submission, arbitrary clicks, or destructive actions.
+- Guided setup orchestrates existing safe flows only; it does not add autonomous browser control, active scanning, fuzzing, arbitrary form submission, or destructive testing.
 - Evidence preview/download is limited to evidence records known to Qualora.
 - No advanced filtering, pagination, or project editing yet.

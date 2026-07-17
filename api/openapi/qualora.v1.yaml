@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.14.0-alpha
-  description: API for first-run local admin setup, local session authentication, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports, and downloading protected stored evidence objects.
+  version: 0.15.0-alpha
+  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
 security:
@@ -106,6 +106,63 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MeResponse"
+  /api/v1/onboarding/project-setup:
+    post:
+      summary: Guided project setup
+      description: Creates one project, optionally configures an AI provider, credential profile, and OpenAPI spec, then starts selected existing safe workflows. Destructive actions are rejected; raw credentials and provider secrets are never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectSetupRequest"
+            example:
+              project:
+                name: Qualora Demo Workflow
+                frontend_url: http://demo-web:8080
+                api_base_url: http://demo-api:8080
+                openapi_url: ""
+                allowed_hosts: ["demo-web", "demo-api"]
+                security_mode: passive
+                destructive_actions: false
+                allow_private_targets: true
+              ai:
+                mode: demo
+              credential:
+                mode: create
+                profile:
+                  name: Demo Login
+                  type: username_password
+                  username: demo@example.com
+                  password: dedicated-test-password
+                  login_url: http://demo-web:8080/login
+                  username_selector: "#username"
+                  password_selector: "#password"
+                  submit_selector: "#login-submit"
+                  success_url_contains: /dashboard
+                  success_text_contains: Authenticated area
+                  failure_text_contains: Invalid credentials
+                  post_login_wait_ms: 100
+                  is_default: true
+              api_spec:
+                mode: demo
+              workflow:
+                browser_smoke: true
+                discovery: true
+                quality_checks: true
+                safe_qa_run: true
+                execute_safe_qa: false
+                api_smoke: true
+                authenticated_smoke: true
+      responses:
+        "201":
+          description: Guided setup result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSetupResponse"
+        "400":
+          $ref: "#/components/responses/Error"
   /api/v1/projects:
     post:
       summary: Create a project
@@ -1503,7 +1560,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.14.0-alpha
+          example: 0.15.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -1664,6 +1721,160 @@ components:
         updated_at:
           type: string
           format: date-time
+    ProjectSetupRequest:
+      type: object
+      additionalProperties: false
+      required: [project]
+      properties:
+        project:
+          $ref: "#/components/schemas/CreateProjectRequest"
+        ai:
+          $ref: "#/components/schemas/ProjectSetupAIConfig"
+        credential:
+          $ref: "#/components/schemas/ProjectSetupCredentialConfig"
+        api_spec:
+          $ref: "#/components/schemas/ProjectSetupAPISpecConfig"
+        workflow:
+          $ref: "#/components/schemas/ProjectSetupWorkflowSelection"
+    ProjectSetupAIConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [skip, existing, create, demo]
+          default: skip
+        provider_id:
+          type: string
+          format: uuid
+          description: Required when mode is existing.
+        provider:
+          $ref: "#/components/schemas/AIProviderRequest"
+    ProjectSetupCredentialConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [skip, create]
+          default: skip
+        profile:
+          $ref: "#/components/schemas/CredentialProfileRequest"
+    ProjectSetupAPISpecConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [skip, import, demo]
+          default: skip
+        spec:
+          $ref: "#/components/schemas/APISpecImportRequest"
+    ProjectSetupWorkflowSelection:
+      type: object
+      additionalProperties: false
+      properties:
+        browser_smoke:
+          type: boolean
+          default: false
+        discovery:
+          type: boolean
+          default: false
+        quality_checks:
+          type: boolean
+          default: false
+        safe_qa_run:
+          type: boolean
+          description: Requires an AI provider because Safe QA generates a reviewable plan first.
+        execute_safe_qa:
+          type: boolean
+          default: false
+          description: When true, executes only the approved deterministic safe DSL subset after preview generation.
+        api_smoke:
+          type: boolean
+          description: Requires an imported parsed OpenAPI spec.
+        authenticated_smoke:
+          type: boolean
+          description: Requires a credential profile.
+        use_defaults:
+          type: boolean
+          description: If true, Qualora chooses safe defaults from configured resources.
+    ProjectSetupResponse:
+      type: object
+      required: [project, started, skipped, timeline, next_links]
+      properties:
+        project:
+          $ref: "#/components/schemas/Project"
+        ai_provider:
+          $ref: "#/components/schemas/AIProvider"
+        credential_profile:
+          $ref: "#/components/schemas/CredentialProfile"
+        api_spec:
+          $ref: "#/components/schemas/APISpec"
+        started:
+          $ref: "#/components/schemas/ProjectSetupStartedActions"
+        skipped:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectSetupSkipped"
+        timeline:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectSetupTimelineItem"
+        next_links:
+          type: object
+          additionalProperties:
+            type: string
+    ProjectSetupStartedActions:
+      type: object
+      properties:
+        browser_smoke_run_id:
+          type: string
+          format: uuid
+        authenticated_smoke_run_id:
+          type: string
+          format: uuid
+        discovery_run_id:
+          type: string
+          format: uuid
+        quality_check_run_id:
+          type: string
+          format: uuid
+        safe_qa_run_id:
+          type: string
+          format: uuid
+        api_smoke_run_id:
+          type: string
+          format: uuid
+        ai_provider_id:
+          type: string
+          format: uuid
+        credential_profile_id:
+          type: string
+          format: uuid
+        api_spec_id:
+          type: string
+          format: uuid
+    ProjectSetupSkipped:
+      type: object
+      required: [action, reason]
+      properties:
+        action:
+          type: string
+        reason:
+          type: string
+    ProjectSetupTimelineItem:
+      type: object
+      required: [step, status]
+      properties:
+        step:
+          type: string
+        status:
+          type: string
+        resource:
+          type: string
+        reason:
+          type: string
     TestRun:
       type: object
       required:

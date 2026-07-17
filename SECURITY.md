@@ -8,7 +8,9 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
+| v0.15.0-alpha | Best-effort alpha support |
 | v0.14.0-alpha | Best-effort alpha support |
+| v0.13.0-alpha | Best-effort alpha support |
 | v0.12.0-alpha | Best-effort alpha support |
 | v0.11.0-alpha | Best-effort alpha support |
 | v0.10.0-alpha | Best-effort alpha support |
@@ -39,7 +41,7 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.14.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
+The v0.15.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
 
 See [docs/security-model.md](docs/security-model.md) for the current alpha safety model.
 
@@ -70,6 +72,7 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - Passive quality checks must remain read-only metadata checks. They must not submit forms, click arbitrary buttons, guess sensitive paths, run payloads, fuzz inputs, perform active scanning, perform destructive actions, or use autonomous AI browser control.
 - Quality check reports and AI inputs must not include cookie values, browser storage, auth headers, tokens, credentials, full HTML, request bodies, or response bodies.
 - Safe QA Runs must remain discovery-aware orchestration only: reviewable AI plans, deterministic preview, and explicit safe DSL execution without AI browser control, arbitrary clicks, form submission, active scanning, fuzzing, or destructive actions.
+- Guided project setup must remain orchestration only. It may create safe configuration and start selected safe checks, but it must not add autonomous browser control, active scanning, fuzzing, arbitrary form submission, destructive behavior, or secret exposure.
 - OpenAPI import must not execute API operations.
 - Safe API smoke execution must remain read-only by default.
 - Mutating, authenticated, request-body, unresolved-parameter, and sensitive API operations must be skipped unless a future explicit design changes this policy.

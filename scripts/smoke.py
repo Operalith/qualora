@@ -140,7 +140,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.14.0-alpha" not in status.get("version", ""):
+    if "0.15.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -850,10 +850,163 @@ def assert_quality_ui_bundle():
     for path in sorted(set(asset_paths)):
         if path.endswith((".js", ".css")):
             bundle_text += "\n" + fetch_web_text(path)
-    for expected in ("Quality Checks", "Start quality checks", "Quality Report", "Include passive quality checks"):
+    for expected in (
+        "Quality Checks",
+        "Start quality checks",
+        "Quality Report",
+        "Include passive quality checks",
+        "Create project with guided setup",
+        "Run demo workflow",
+        "Project Readiness",
+        "Guided Project Setup",
+        "Reports",
+    ):
         if expected not in bundle_text:
-            raise RuntimeError(f"web UI bundle did not include expected quality UI text: {expected}")
-    print("web UI bundle includes Quality Checks screens")
+            raise RuntimeError(f"web UI bundle did not include expected v0.15 UI text: {expected}")
+    print("web UI bundle includes guided onboarding, readiness, reports, and Quality Checks screens")
+
+
+def wait_for_discovery_report(run_id, label):
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/discovery-runs/{run_id}")
+        status = current["status"]
+        print(f"{label} discovery status: {status}")
+        if status in ("completed", "failed", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"{label} discovery run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    report = request("GET", f"/api/v1/discovery-runs/{run_id}/report")
+    assert_no_demo_secret(report, f"{label} discovery JSON report")
+    if report["run"]["status"] != "completed":
+        raise RuntimeError(f"{label} discovery did not complete: {report['run']}")
+    if int(report.get("summary", {}).get("total_pages") or 0) < 1:
+        raise RuntimeError(f"{label} discovery did not record pages: {report.get('summary')}")
+    html = fetch_text(f"/api/v1/discovery-runs/{run_id}/report.html")
+    assert_no_demo_secret(html, f"{label} discovery HTML report")
+    if "Qualora application discovery report" not in html:
+        raise RuntimeError(f"{label} discovery HTML report did not render")
+    return report
+
+
+def wait_for_quality_report(run_id, label):
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/quality-check-runs/{run_id}")
+        status = current["status"]
+        print(f"{label} quality status: {status}")
+        if status in ("completed", "failed", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"{label} quality run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    report = request("GET", f"/api/v1/quality-check-runs/{run_id}/report")
+    assert_no_demo_secret(report, f"{label} quality JSON report")
+    if report["run"]["status"] != "completed":
+        raise RuntimeError(f"{label} quality run did not complete: {report['run']}")
+    if int(report.get("summary", {}).get("total_findings") or 0) < 1:
+        raise RuntimeError(f"{label} quality report did not include findings: {report.get('summary')}")
+    html = fetch_text(f"/api/v1/quality-check-runs/{run_id}/report.html")
+    assert_no_demo_secret(html, f"{label} quality HTML report")
+    if "Qualora quality report" not in html:
+        raise RuntimeError(f"{label} quality HTML report did not render")
+    return report
+
+
+def run_guided_project_setup():
+    print("== Guided project setup smoke ==")
+    setup = request(
+        "POST",
+        "/api/v1/onboarding/project-setup",
+        {
+            "project": {
+                "name": "Qualora Guided Demo Target",
+                "frontend_url": BROWSER_TARGET_URL,
+                "api_base_url": API_SMOKE_URL,
+                "openapi_url": "",
+                "allowed_hosts": [BROWSER_ALLOWED_HOST, API_SMOKE_ALLOWED_HOST],
+                "security_mode": "passive",
+                "destructive_actions": False,
+                "allow_private_targets": True,
+            },
+            "ai": {"mode": "demo"},
+            "credential": {
+                "mode": "create",
+                "profile": {
+                    "name": "Qualora Guided Demo Login",
+                    "type": "username_password",
+                    "username": DEMO_USERNAME,
+                    "password": DEMO_PASSWORD,
+                    "login_url": f"{BROWSER_TARGET_URL.rstrip('/')}/login",
+                    "username_selector": "#username",
+                    "password_selector": "#password",
+                    "submit_selector": "#login-submit",
+                    "success_url_contains": "/dashboard",
+                    "success_text_contains": "Authenticated area",
+                    "failure_text_contains": "Invalid credentials",
+                    "post_login_wait_ms": 100,
+                    "is_default": True,
+                },
+            },
+            "api_spec": {"mode": "demo"},
+            "workflow": {
+                "browser_smoke": True,
+                "discovery": True,
+                "quality_checks": True,
+                "safe_qa_run": True,
+                "execute_safe_qa": False,
+                "api_smoke": True,
+                "authenticated_smoke": True,
+            },
+        },
+    )
+    print(f"guided setup response: {json.dumps(setup, indent=2)}")
+    assert_no_demo_secret(setup, "guided setup response")
+    project = setup.get("project") or {}
+    started = setup.get("started") or {}
+    if not project.get("id"):
+        raise RuntimeError(f"guided setup did not return project id: {setup}")
+    required = [
+        "browser_smoke_run_id",
+        "authenticated_smoke_run_id",
+        "discovery_run_id",
+        "quality_check_run_id",
+        "safe_qa_run_id",
+        "api_smoke_run_id",
+        "ai_provider_id",
+        "credential_profile_id",
+        "api_spec_id",
+    ]
+    missing = [key for key in required if not started.get(key)]
+    if missing:
+        raise RuntimeError(f"guided setup did not start/create expected resources {missing}: {setup}")
+
+    browser_report = wait_for_run_report(started["browser_smoke_run_id"], "guided browser smoke")
+    assert_browser_report(browser_report)
+    authenticated_report = wait_for_run_report(started["authenticated_smoke_run_id"], "guided authenticated smoke")
+    assert_login_report(authenticated_report, "authenticated_browser_smoke", True, "Qualora Guided Demo Login")
+    wait_for_discovery_report(started["discovery_run_id"], "guided setup")
+    wait_for_quality_report(started["quality_check_run_id"], "guided setup")
+    wait_for_qa_run(started["safe_qa_run_id"], "guided setup", expect_quality=True)
+
+    api_report = request("GET", f"/api/v1/runs/{started['api_smoke_run_id']}/report")
+    assert_no_demo_secret(api_report, "guided API smoke report")
+    if api_report.get("status") != "completed" or not api_report.get("api_summary"):
+        raise RuntimeError(f"guided API smoke report was not complete: {api_report}")
+    html = fetch_text(f"/api/v1/runs/{started['api_smoke_run_id']}/report.html")
+    if "API Smoke Results" not in html or "/broken" not in html:
+        raise RuntimeError("guided API smoke HTML report did not include API results")
+
+    project_detail = request("GET", f"/api/v1/projects/{project['id']}")
+    if project_detail.get("name") != "Qualora Guided Demo Target":
+        raise RuntimeError(f"guided project detail did not load: {project_detail}")
+    print(f"guided project: {WEB_URL}/#/projects/{project['id']}")
+    print(f"guided Safe QA report: {WEB_URL}/#/qa-runs/{started['safe_qa_run_id']}")
+    print(f"guided reports index: {WEB_URL}/#/reports")
+    return setup
 
 
 def generate_discovery_ai_test_plan(project, discovery_report, provider):
@@ -1080,6 +1233,7 @@ def main():
     wait_for_url(FAKE_LLM_HEALTH_URL)
     provider = create_ai_provider()
     test_ai_provider(provider)
+    run_guided_project_setup()
 
     print("== Browser smoke ==")
     wait_for_url(DEMO_WEB_HEALTH_URL)

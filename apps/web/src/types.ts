@@ -63,6 +63,54 @@ export type CreateProjectInput = {
   allow_private_targets: boolean;
 };
 
+export type ProjectSetupInput = {
+  project: CreateProjectInput;
+  ai?: {
+    mode?: "skip" | "existing" | "create" | "demo";
+    provider_id?: string;
+    provider?: AIProviderInput;
+  };
+  credential?: {
+    mode?: "skip" | "create";
+    profile?: CredentialProfileInput;
+  };
+  api_spec?: {
+    mode?: "skip" | "import" | "demo";
+    spec?: APISpecImportInput;
+  };
+  workflow?: {
+    browser_smoke?: boolean;
+    discovery?: boolean;
+    quality_checks?: boolean;
+    safe_qa_run?: boolean;
+    execute_safe_qa?: boolean;
+    api_smoke?: boolean;
+    authenticated_smoke?: boolean;
+    use_defaults?: boolean;
+  };
+};
+
+export type ProjectSetupResponse = {
+  project: Project;
+  ai_provider?: AIProvider;
+  credential_profile?: CredentialProfile;
+  api_spec?: APISpec;
+  started: {
+    browser_smoke_run_id?: string;
+    authenticated_smoke_run_id?: string;
+    discovery_run_id?: string;
+    quality_check_run_id?: string;
+    safe_qa_run_id?: string;
+    api_smoke_run_id?: string;
+    ai_provider_id?: string;
+    credential_profile_id?: string;
+    api_spec_id?: string;
+  };
+  skipped: Array<{ action: string; reason: string }>;
+  timeline: Array<{ step: string; status: string; resource?: string; reason?: string }>;
+  next_links: Record<string, string>;
+};
+
 export type TestRun = {
   id: string;
   project_id: string;
