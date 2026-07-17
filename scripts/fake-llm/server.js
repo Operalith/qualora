@@ -1,5 +1,6 @@
 const http = require("node:http");
 
+const port = Number(process.env.PORT || "8080");
 const analysis = {
   executive_summary: "The deterministic Qualora run completed and the observed findings should be reviewed before release.",
   technical_summary: "This fake provider analyzed only the sanitized run summary, findings, and evidence metadata supplied by Qualora.",
@@ -297,6 +298,6 @@ function writeJSON(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-server.listen(8080, "0.0.0.0", () => {
-  process.stdout.write("qualora fake llm listening on 8080\n");
+server.listen(port, "0.0.0.0", () => {
+  process.stdout.write(`qualora fake llm listening on ${port}\n`);
 });

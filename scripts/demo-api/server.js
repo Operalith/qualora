@@ -2,6 +2,7 @@ const { readFileSync } = require("node:fs");
 const http = require("node:http");
 const { join } = require("node:path");
 
+const port = Number(process.env.PORT || "8080");
 const openapi = readFileSync(join(__dirname, "openapi.yaml"), "utf8");
 const users = [
   { id: "1", name: "Ada Lovelace", role: "qa-lead" },
@@ -61,6 +62,6 @@ function writeJSON(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-server.listen(8080, "0.0.0.0", () => {
-  process.stdout.write("qualora demo api listening on 8080\n");
+server.listen(port, "0.0.0.0", () => {
+  process.stdout.write(`qualora demo api listening on ${port}\n`);
 });

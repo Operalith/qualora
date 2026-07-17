@@ -42,6 +42,17 @@ import {
   type QualityResource,
   type QualityResult
 } from "./quality";
+import {
+  buildSafeExplorerActionFinding,
+  buildSafeExplorerPageFindings,
+  classifySafeExplorerAction,
+  markSafeExplorerDuplicate,
+  normalizeSafeExplorerURL,
+  type ClassifiedSafeExplorerAction,
+  type ExtractedSafeExplorerAction,
+  type SafeExplorerPageFindingInput,
+  type SafeExplorerPolicy
+} from "./safe_explorer";
 
 type Config = {
   databaseUrl: string;
@@ -83,7 +94,12 @@ type QualityCheckRunJob = {
   project_id: string;
 };
 
-type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob & DiscoveryRunJob & QualityCheckRunJob>;
+type SafeExplorerRunJob = {
+  safe_explorer_run_id: string;
+  project_id: string;
+};
+
+type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob & DiscoveryRunJob & QualityCheckRunJob & SafeExplorerRunJob>;
 
 type Project = {
   id: string;
@@ -180,6 +196,19 @@ type QualityCheckRunContext = {
   project: Project;
 };
 
+type SafeExplorerRunContext = {
+  id: string;
+  project_id: string;
+  credential_profile_id: string;
+  status: string;
+  start_url: string;
+  max_steps: number;
+  max_depth: number;
+  same_origin_only: boolean;
+  allow_get_forms: boolean;
+  project: Project;
+};
+
 type AuthorizationCheck = {
   id: string;
   project_id: string;
@@ -245,6 +274,7 @@ type EvidenceOwner = {
   executionID?: string;
   authorizationRunID?: string;
   discoveryRunID?: string;
+  safeExplorerRunID?: string;
 };
 
 type FindingOwner = EvidenceOwner & {
@@ -319,7 +349,12 @@ async function main(): Promise<void> {
         log("invalid_job_payload", {});
         continue;
       }
-      if (job.quality_check_run_id) {
+      if (job.safe_explorer_run_id) {
+        await handleSafeExplorerRunJob({
+          safe_explorer_run_id: job.safe_explorer_run_id,
+          project_id: job.project_id ?? ""
+        });
+      } else if (job.quality_check_run_id) {
         await handleQualityCheckRunJob({
           quality_check_run_id: job.quality_check_run_id,
           project_id: job.project_id ?? ""
@@ -552,6 +587,37 @@ type DiscoveryRunTotals = {
   totalFindings: number;
 };
 
+type SafeExplorerVisitQueueItem = {
+  url: string;
+  depth: number;
+};
+
+type SafeExplorerPageSnapshot = {
+  targetURL: string;
+  finalURL: string;
+  normalizedURL: string;
+  title: string;
+  statusCode: number | null;
+  contentType: string;
+  bodyTextLength: number | null;
+  loadDurationMS: number | null;
+  loadError: string;
+  consoleErrors: BrowserResult["consoleErrors"];
+  failedRequests: BrowserResult["failedRequests"];
+  blockedRequests: BrowserResult["blockedRequests"];
+  screenshot: Buffer | null;
+  actions: ExtractedSafeExplorerAction[];
+};
+
+type SafeExplorerRunTotals = {
+  totalSteps: number;
+  totalPagesObserved: number;
+  totalActionsDetected: number;
+  totalActionsExecuted: number;
+  totalActionsSkipped: number;
+  totalFindings: number;
+};
+
 type QualityCheckRunTotals = {
   totalPages: number;
   totalFindings: number;
@@ -566,6 +632,247 @@ type QualityCheckRunTotals = {
 };
 
 type QualityDOMSummary = Pick<QualityPageSnapshot, "forms" | "accessibility">;
+
+async function handleSafeExplorerRunJob(job: SafeExplorerRunJob): Promise<void> {
+  log("safe_explorer_run_started", { safe_explorer_run_id: job.safe_explorer_run_id, project_id: job.project_id });
+
+  try {
+    if (!job.safe_explorer_run_id || !job.project_id) {
+      throw new Error("Safe Explorer run job is missing required IDs");
+    }
+    const run = await getSafeExplorerRunContext(job.safe_explorer_run_id, job.project_id);
+    const scopeCheck = await validateTargetURL(run.start_url, run.project.allowed_hosts, run.project.allow_private_targets);
+    if (!scopeCheck.ok) {
+      throw new Error(scopeCheck.reason);
+    }
+    await markSafeExplorerRunRunning(run.id);
+    const totals = await runSafeExplorer(run);
+    await finishSafeExplorerRun(run.id, "completed", "", totals);
+    log("safe_explorer_run_completed", {
+      safe_explorer_run_id: run.id,
+      pages: totals.totalPagesObserved,
+      detected: totals.totalActionsDetected,
+      executed: totals.totalActionsExecuted,
+      skipped: totals.totalActionsSkipped,
+      findings: totals.totalFindings
+    });
+  } catch (error) {
+    const message = sanitizeText(error instanceof Error ? error.message : String(error));
+    if (job.safe_explorer_run_id) {
+      await finishSafeExplorerRun(job.safe_explorer_run_id, "failed", message, emptySafeExplorerTotals()).catch(() => undefined);
+    }
+    log("safe_explorer_run_failed", { safe_explorer_run_id: job.safe_explorer_run_id, error: message });
+  }
+}
+
+async function runSafeExplorer(run: SafeExplorerRunContext): Promise<SafeExplorerRunTotals> {
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox"]
+  });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: false,
+    viewport: { width: 1365, height: 768 }
+  });
+  const page = await context.newPage();
+  const signals = createBrowserSignals(page);
+  await installAllowedHostRoutes(page, run.project, signals);
+
+  const totals = emptySafeExplorerTotals();
+  let nextStepIndex = 0;
+
+  try {
+    if (run.credential_profile_id) {
+      const profile = await getCredentialProfile(run.credential_profile_id, run.project.id);
+      const login = await executeLoginFlowOnPage(page, run.project, profile, signals, 30);
+      const loginEvidenceID = await insertEvidence({ safeExplorerRunID: run.id }, "login_observations", "inline://safe-explorer-login-observations", {
+        credential_profile_id: profile.id,
+        credential_profile_name: profile.name,
+        role_name: profile.role_name,
+        subject_label: profile.subject_label,
+        login_url: login.loginURL,
+        final_url: login.finalURL,
+        page_title: login.pageTitle,
+        login_status: login.success ? "passed" : "failed",
+        success: login.success,
+        duration_ms: login.durationMS,
+        failure_reason: login.failureReason,
+        console_errors: login.consoleErrors,
+        failed_requests: login.failedRequests,
+        blocked_requests: login.blockedRequests,
+        credentials_sent_to_ai: false,
+        browser_storage_recorded: false
+      });
+      if (!login.success) {
+        await insertFinding({ safeExplorerRunID: run.id }, {
+          title: "Safe Explorer login failed",
+          severity: login.failureCategory === "login_selector_missing" ? "medium" : "high",
+          category: login.failureCategory === "login_selector_missing" ? "missing_selector" : "login_failure",
+          confidence: "high",
+          description: [
+            `Summary: Safe Explorer could not complete the configured selector-based login: ${login.failureReason}`,
+            `Steps to reproduce: open ${login.loginURL} and run the configured credential profile login selectors.`
+          ].join("\n"),
+          recommendation: "Verify the credential profile selectors and dedicated test account before running authenticated Safe Explorer.",
+          evidenceIds: [loginEvidenceID]
+        });
+        totals.totalFindings += 1;
+        throw new Error(login.failureReason || "Safe Explorer login failed");
+      }
+    }
+
+    const visited = new Set<string>();
+    const queued = new Set<string>();
+    const queue: SafeExplorerVisitQueueItem[] = [{ url: run.start_url, depth: 0 }];
+    queued.add(normalizeSafeExplorerURL(run.start_url));
+
+    while (queue.length > 0 && totals.totalSteps < run.max_steps) {
+      const visit = queue.shift();
+      if (!visit) {
+        break;
+      }
+      const normalizedVisitURL = normalizeSafeExplorerURL(visit.url);
+      if (visited.has(normalizedVisitURL)) {
+        continue;
+      }
+      visited.add(normalizedVisitURL);
+
+      const snapshot = await captureSafeExplorerPage(page, visit.url, signals);
+      const screenshotEvidenceID = snapshot.screenshot ? await insertSafeExplorerScreenshotEvidence(run, snapshot) : "";
+      const observationEvidenceID = await insertEvidence({ safeExplorerRunID: run.id }, "browser_observations", "inline://safe-explorer-browser-observations", {
+        target_url: snapshot.targetURL,
+        final_url: snapshot.finalURL,
+        normalized_url: snapshot.normalizedURL,
+        page_title: snapshot.title,
+        status_code: snapshot.statusCode,
+        content_type: snapshot.contentType,
+        body_text_length: snapshot.bodyTextLength,
+        load_duration_ms: snapshot.loadDurationMS,
+        load_error: snapshot.loadError,
+        console_error_count: snapshot.consoleErrors.length,
+        failed_request_count: snapshot.failedRequests.length,
+        blocked_request_count: snapshot.blockedRequests.length,
+        console_errors: snapshot.consoleErrors.slice(0, 20),
+        failed_requests: snapshot.failedRequests.slice(0, 20),
+        blocked_requests: snapshot.blockedRequests.slice(0, 20),
+        action_count: snapshot.actions.length,
+        credentials_sent_to_ai: false,
+        browser_storage_recorded: false
+      });
+      const pageEvidenceIDs = [screenshotEvidenceID, observationEvidenceID].filter(Boolean);
+      const observedStepID = await insertSafeExplorerStep(run, {
+        stepIndex: nextStepIndex++,
+        pageURL: snapshot.finalURL || snapshot.targetURL,
+        normalizedURL: snapshot.normalizedURL,
+        pageTitle: snapshot.title,
+        depth: visit.depth,
+        actionID: "",
+        actionType: "",
+        actionLabel: "",
+        actionSelectorHint: "",
+        actionTargetURL: "",
+        actionSafety: "unknown",
+        actionDecision: "observed",
+        skipReason: "",
+        resultStatus: snapshot.loadError ? "error" : "ok",
+        httpStatus: snapshot.statusCode,
+        finalURL: snapshot.finalURL,
+        screenshotEvidenceID,
+        consoleErrorCount: snapshot.consoleErrors.length,
+        failedRequestCount: snapshot.failedRequests.length,
+        durationMS: snapshot.loadDurationMS
+      });
+      totals.totalSteps += 1;
+      totals.totalPagesObserved += 1;
+
+      const pageFindingInput: SafeExplorerPageFindingInput = {
+        url: snapshot.normalizedURL || snapshot.targetURL,
+        statusCode: snapshot.statusCode,
+        loadError: snapshot.loadError,
+        bodyTextLength: snapshot.bodyTextLength,
+        consoleErrorCount: snapshot.consoleErrors.length,
+        failedRequestCount: snapshot.failedRequests.length,
+        evidenceIds: pageEvidenceIDs
+      };
+      for (const finding of buildSafeExplorerPageFindings(pageFindingInput)) {
+        await insertFinding({ safeExplorerRunID: run.id }, finding);
+        totals.totalFindings += 1;
+      }
+
+      const policy: SafeExplorerPolicy = {
+        sourceURL: snapshot.finalURL || snapshot.targetURL,
+        frontendURL: run.project.frontend_url,
+        allowedHosts: run.project.allowed_hosts,
+        sameOriginOnly: run.same_origin_only,
+        allowGetForms: run.allow_get_forms
+      };
+      const decisions = snapshot.actions.map((action) => classifySafeExplorerAction(action, policy));
+      totals.totalActionsDetected += decisions.length;
+
+      for (const initialDecision of decisions) {
+        let decision = initialDecision;
+        if (
+          decision.decision === "execute" &&
+          (!decision.normalizedURL || visited.has(decision.normalizedURL) || queued.has(decision.normalizedURL))
+        ) {
+          decision = markSafeExplorerDuplicate(decision);
+        }
+        const actionID = await insertSafeExplorerAction(run, observedStepID, snapshot.normalizedURL || snapshot.targetURL, decision);
+        const finding = buildSafeExplorerActionFinding(decision, pageEvidenceIDs);
+        if (finding) {
+          await insertFinding({ safeExplorerRunID: run.id }, finding);
+          totals.totalFindings += 1;
+        }
+        if (decision.decision !== "execute") {
+          totals.totalActionsSkipped += 1;
+          continue;
+        }
+        if (visit.depth >= run.max_depth || totals.totalSteps >= run.max_steps) {
+          const blocked: ClassifiedSafeExplorerAction = { ...decision, decision: "skip", skipReason: "max_depth_or_steps_reached" };
+          await updateSafeExplorerActionDecision(actionID, blocked);
+          const blockedFinding = buildSafeExplorerActionFinding(blocked, pageEvidenceIDs);
+          if (blockedFinding) {
+            await insertFinding({ safeExplorerRunID: run.id }, blockedFinding);
+            totals.totalFindings += 1;
+          }
+          totals.totalActionsSkipped += 1;
+          continue;
+        }
+
+        await insertSafeExplorerStep(run, {
+          stepIndex: nextStepIndex++,
+          pageURL: snapshot.normalizedURL || snapshot.targetURL,
+          normalizedURL: snapshot.normalizedURL || snapshot.targetURL,
+          pageTitle: snapshot.title,
+          depth: visit.depth,
+          actionID,
+          actionType: decision.actionType,
+          actionLabel: decision.label || decision.text,
+          actionSelectorHint: decision.selectorHint,
+          actionTargetURL: decision.normalizedURL,
+          actionSafety: decision.safety,
+          actionDecision: "executed",
+          skipReason: "",
+          resultStatus: "ok",
+          httpStatus: null,
+          finalURL: decision.normalizedURL,
+          screenshotEvidenceID: "",
+          consoleErrorCount: 0,
+          failedRequestCount: 0,
+          durationMS: null
+        });
+        totals.totalSteps += 1;
+        totals.totalActionsExecuted += 1;
+        queue.push({ url: decision.normalizedURL, depth: visit.depth + 1 });
+        queued.add(decision.normalizedURL);
+      }
+    }
+
+    return totals;
+  } finally {
+    await browser.close();
+  }
+}
 
 async function handleDiscoveryRunJob(job: DiscoveryRunJob): Promise<void> {
   log("discovery_run_started", { discovery_run_id: job.discovery_run_id, project_id: job.project_id });
@@ -984,6 +1291,174 @@ async function captureQualityPage(
   };
 }
 
+async function captureSafeExplorerPage(page: Page, targetURL: string, signals: BrowserSignals): Promise<SafeExplorerPageSnapshot> {
+  const startedAt = Date.now();
+  const consoleStart = signals.consoleErrors.length;
+  const failedStart = signals.failedRequests.length;
+  const blockedStart = signals.blockedRequests.length;
+  let statusCode: number | null = null;
+  let contentType = "";
+  let finalURL = targetURL;
+  let title = "";
+  let bodyTextLength: number | null = null;
+  let loadError = "";
+
+  try {
+    const response = await page.goto(targetURL, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+    statusCode = response ? response.status() : null;
+    contentType = sanitizeText(response?.headers()["content-type"] ?? "");
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+  } catch (error) {
+    loadError = sanitizeText(error instanceof Error ? error.message : String(error));
+  }
+
+  const currentURL = page.url();
+  finalURL = sanitizeURL(currentURL.startsWith("http://") || currentURL.startsWith("https://") ? currentURL : targetURL);
+  title = sanitizeText(await page.title().catch(() => ""));
+  bodyTextLength = await page
+    .evaluate(() => (document.body?.innerText ?? "").trim().length)
+    .catch(() => null);
+  const actions = isLikelyHTML(contentType) && !loadError ? await extractSafeExplorerActions(page).catch(() => []) : [];
+  const screenshot = await captureScreenshot(page);
+  return {
+    targetURL: sanitizeURL(targetURL),
+    finalURL,
+    normalizedURL: normalizeSafeExplorerURL(finalURL || targetURL),
+    title,
+    statusCode,
+    contentType,
+    bodyTextLength,
+    loadDurationMS: Date.now() - startedAt,
+    loadError,
+    consoleErrors: signals.consoleErrors.slice(consoleStart, consoleStart + 50),
+    failedRequests: signals.failedRequests.slice(failedStart, failedStart + 50),
+    blockedRequests: signals.blockedRequests.slice(blockedStart, blockedStart + 50),
+    screenshot,
+    actions
+  };
+}
+
+async function extractSafeExplorerActions(page: Page): Promise<ExtractedSafeExplorerAction[]> {
+  return page.evaluate(() => {
+    const clean = (value: string | null | undefined, max = 240) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+    const visible = (element: Element) => {
+      const style = window.getComputedStyle(element);
+      return style.visibility !== "hidden" && style.display !== "none" && element.getClientRects().length > 0;
+    };
+    const selectorHint = (element: Element): string => {
+      const tag = element.tagName.toLowerCase();
+      const id = element.getAttribute("id");
+      if (id) {
+        return `${tag}#${id}`.slice(0, 240);
+      }
+      const name = element.getAttribute("name");
+      if (name) {
+        return `${tag}[name="${name}"]`.slice(0, 240);
+      }
+      const aria = element.getAttribute("aria-label");
+      if (aria) {
+        return `${tag}[aria-label="${clean(aria, 80)}"]`.slice(0, 240);
+      }
+      const text = clean(element.textContent, 80);
+      return text ? `${tag}:text("${text}")`.slice(0, 240) : tag;
+    };
+    const labelFor = (field: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): string => {
+      const id = field.getAttribute("id");
+      if (id) {
+        const explicit = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+        if (explicit?.textContent) {
+          return clean(explicit.textContent, 160);
+        }
+      }
+      const wrapping = field.closest("label");
+      if (wrapping?.textContent) {
+        return clean(wrapping.textContent, 160);
+      }
+      return clean(field.getAttribute("aria-label") || field.getAttribute("placeholder") || field.getAttribute("name") || "", 160);
+    };
+    const hasSensitiveHiddenField = (fields: Element[]) =>
+      fields.some((field) => {
+        const input = field as HTMLInputElement;
+        const type = clean(input.getAttribute("type") || "text", 40).toLowerCase();
+        const name = clean(input.getAttribute("name") || input.getAttribute("id") || "", 120).toLowerCase();
+        return type === "hidden" && /token|secret|password|auth|session|csrf|key/.test(name);
+      });
+
+    const actions: ExtractedSafeExplorerAction[] = [];
+    for (const anchor of Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+      if (!visible(anchor)) {
+        continue;
+      }
+      const text = clean(anchor.textContent || anchor.getAttribute("aria-label") || anchor.getAttribute("title") || "", 240);
+      actions.push({
+        actionType: "link_navigation",
+        label: text,
+        text,
+        selectorHint: selectorHint(anchor),
+        href: anchor.getAttribute("href") || "",
+        targetURL: anchor.href || anchor.getAttribute("href") || "",
+        method: "GET"
+      });
+    }
+    for (const form of Array.from(document.querySelectorAll<HTMLFormElement>("form"))) {
+      if (!visible(form)) {
+        continue;
+      }
+      const method = clean(form.getAttribute("method") || "GET", 16).toUpperCase();
+      const fields = Array.from(form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea"));
+      const fieldLabels = fields.map(labelFor).filter(Boolean).slice(0, 3).join(", ");
+      const label = clean(form.getAttribute("aria-label") || form.getAttribute("name") || fieldLabels || "Form", 180);
+      actions.push({
+        actionType: method === "GET" ? "form_get" : "form_post",
+        label,
+        text: label,
+        selectorHint: selectorHint(form),
+        href: form.getAttribute("action") || "",
+        targetURL: form.action || form.getAttribute("action") || window.location.href,
+        method,
+        fieldCount: fields.length,
+        hasPasswordField: fields.some((field) => clean(field.getAttribute("type") || "", 40).toLowerCase() === "password"),
+        hasFileField: fields.some((field) => clean(field.getAttribute("type") || "", 40).toLowerCase() === "file"),
+        hasHiddenSensitiveField: hasSensitiveHiddenField(fields)
+      });
+    }
+    for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("button, [role='button']"))) {
+      if (!visible(button)) {
+        continue;
+      }
+      const text = clean(button.textContent || button.getAttribute("aria-label") || button.getAttribute("title") || "", 240);
+      actions.push({
+        actionType: "button",
+        label: text,
+        text,
+        selectorHint: selectorHint(button),
+        href: "",
+        targetURL: "",
+        method: clean((button as HTMLButtonElement).formMethod || "", 16).toUpperCase()
+      });
+    }
+    for (const input of Array.from(document.querySelectorAll<HTMLInputElement>("input[type='submit'], input[type='button']"))) {
+      if (!visible(input)) {
+        continue;
+      }
+      const text = clean(input.value || input.getAttribute("aria-label") || input.getAttribute("title") || "", 240);
+      actions.push({
+        actionType: "input",
+        label: text,
+        text,
+        selectorHint: selectorHint(input),
+        href: "",
+        targetURL: "",
+        method: clean(input.formMethod || "", 16).toUpperCase()
+      });
+    }
+    return actions.slice(0, 300);
+  });
+}
+
 async function captureDiscoveryPage(page: Page, run: DiscoveryRunContext, targetURL: string, signals: BrowserSignals): Promise<DiscoveryPageSnapshot> {
   const startedAt = Date.now();
   const consoleStart = signals.consoleErrors.length;
@@ -1376,6 +1851,226 @@ async function insertDiscoveredForm(runID: string, pageID: string, form: Discove
   }
 }
 
+async function insertSafeExplorerScreenshotEvidence(run: SafeExplorerRunContext, snapshot: SafeExplorerPageSnapshot): Promise<string> {
+  if (!snapshot.screenshot) {
+    return "";
+  }
+  const object = await storeScreenshot("safe-explorer-runs", run.id, snapshot.screenshot);
+  return insertEvidence({ safeExplorerRunID: run.id }, "screenshot", object.uri, {
+    filename: object.filename,
+    key: object.key,
+    content_type: object.contentType,
+    size_bytes: object.sizeBytes,
+    created_at: object.createdAt,
+    storage: object.storage,
+    target_url: snapshot.targetURL,
+    final_url: snapshot.finalURL,
+    normalized_url: snapshot.normalizedURL,
+    page_title: snapshot.title,
+    status_code: snapshot.statusCode
+  });
+}
+
+type SafeExplorerStepInsert = {
+  stepIndex: number;
+  pageURL: string;
+  normalizedURL: string;
+  pageTitle: string;
+  depth: number;
+  actionID: string;
+  actionType: string;
+  actionLabel: string;
+  actionSelectorHint: string;
+  actionTargetURL: string;
+  actionSafety: string;
+  actionDecision: string;
+  skipReason: string;
+  resultStatus: string;
+  httpStatus: number | null;
+  finalURL: string;
+  screenshotEvidenceID: string;
+  consoleErrorCount: number;
+  failedRequestCount: number;
+  durationMS: number | null;
+};
+
+async function insertSafeExplorerStep(run: SafeExplorerRunContext, step: SafeExplorerStepInsert): Promise<string> {
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO safe_explorer_steps (
+       id, run_id, project_id, step_index, page_url, normalized_url, page_title, depth,
+       action_id, action_type, action_label, action_selector_hint, action_target_url,
+       action_safety, action_decision, skip_reason, result_status, http_status, final_url,
+       screenshot_evidence_id, console_error_count, failed_request_count, duration_ms
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6, $7, $8,
+       NULLIF($9, '')::uuid, $10, $11, $12, $13,
+       $14, $15, $16, $17, $18, $19,
+       NULLIF($20, '')::uuid, $21, $22, $23
+     )`,
+    [
+      id,
+      run.id,
+      run.project_id,
+      step.stepIndex,
+      sanitizeURL(step.pageURL),
+      sanitizeURL(step.normalizedURL),
+      sanitizeText(step.pageTitle),
+      step.depth,
+      step.actionID,
+      sanitizeText(step.actionType),
+      sanitizeText(step.actionLabel),
+      sanitizeText(step.actionSelectorHint),
+      sanitizeURL(step.actionTargetURL),
+      step.actionSafety,
+      step.actionDecision,
+      sanitizeText(step.skipReason),
+      step.resultStatus,
+      step.httpStatus,
+      sanitizeURL(step.finalURL),
+      step.screenshotEvidenceID,
+      step.consoleErrorCount,
+      step.failedRequestCount,
+      step.durationMS
+    ]
+  );
+  return id;
+}
+
+async function insertSafeExplorerAction(
+  run: SafeExplorerRunContext,
+  stepID: string,
+  sourceURL: string,
+  action: ClassifiedSafeExplorerAction
+): Promise<string> {
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO safe_explorer_actions (
+       id, run_id, step_id, source_url, action_type, label, text, selector_hint,
+       href, target_url, method, same_origin, safety, decision, skip_reason
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+    [
+      id,
+      run.id,
+      stepID,
+      sanitizeURL(sourceURL),
+      action.actionType,
+      sanitizeText(action.label),
+      sanitizeText(action.text),
+      sanitizeText(action.selectorHint),
+      sanitizeText(action.href),
+      sanitizeURL(action.normalizedURL || action.targetURL),
+      sanitizeText(action.method),
+      action.sameOrigin,
+      action.safety,
+      action.decision,
+      sanitizeText(action.skipReason)
+    ]
+  );
+  return id;
+}
+
+async function updateSafeExplorerActionDecision(actionID: string, action: ClassifiedSafeExplorerAction): Promise<void> {
+  await pool.query(
+    `UPDATE safe_explorer_actions SET decision = $2, safety = $3, skip_reason = $4 WHERE id = $1`,
+    [actionID, action.decision, action.safety, sanitizeText(action.skipReason)]
+  );
+}
+
+async function getSafeExplorerRunContext(runID: string, projectID: string): Promise<SafeExplorerRunContext> {
+  const result = await pool.query(
+    `SELECT s.id, s.project_id, s.credential_profile_id::text, s.status, s.start_url,
+            s.max_steps, s.max_depth, s.same_origin_only, s.allow_get_forms,
+            p.frontend_url, p.allowed_hosts, p.allow_private_targets
+     FROM safe_explorer_runs s
+     JOIN projects p ON p.id = s.project_id
+     WHERE s.id = $1 AND p.id = $2`,
+    [runID, projectID]
+  );
+  if (result.rowCount !== 1) {
+    throw new Error("Safe Explorer run was not found");
+  }
+  const row = result.rows[0] as {
+    id: string;
+    project_id: string;
+    credential_profile_id: string | null;
+    status: string;
+    start_url: string;
+    max_steps: number;
+    max_depth: number;
+    same_origin_only: boolean;
+    allow_get_forms: boolean;
+    frontend_url: string;
+    allowed_hosts: string[] | string;
+    allow_private_targets: boolean;
+  };
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    credential_profile_id: row.credential_profile_id ?? "",
+    status: row.status,
+    start_url: row.start_url,
+    max_steps: Number(row.max_steps || 10),
+    max_depth: Number(row.max_depth || 2),
+    same_origin_only: row.same_origin_only,
+    allow_get_forms: row.allow_get_forms,
+    project: {
+      id: row.project_id,
+      frontend_url: row.frontend_url,
+      allowed_hosts: Array.isArray(row.allowed_hosts) ? row.allowed_hosts : JSON.parse(row.allowed_hosts),
+      allow_private_targets: row.allow_private_targets
+    }
+  };
+}
+
+async function markSafeExplorerRunRunning(runID: string): Promise<void> {
+  await pool.query(
+    `UPDATE safe_explorer_runs
+     SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
+     WHERE id = $1`,
+    [runID]
+  );
+}
+
+async function finishSafeExplorerRun(runID: string, status: "completed" | "failed" | "error", errorMessage: string, totals: SafeExplorerRunTotals): Promise<void> {
+  await pool.query(
+    `UPDATE safe_explorer_runs
+     SET status = $2,
+         error_message = $3,
+         completed_at = now(),
+         total_steps = $4,
+         total_pages_observed = $5,
+         total_actions_detected = $6,
+         total_actions_executed = $7,
+         total_actions_skipped = $8,
+         total_findings = $9,
+         updated_at = now()
+     WHERE id = $1`,
+    [
+      runID,
+      status,
+      errorMessage,
+      totals.totalSteps,
+      totals.totalPagesObserved,
+      totals.totalActionsDetected,
+      totals.totalActionsExecuted,
+      totals.totalActionsSkipped,
+      totals.totalFindings
+    ]
+  );
+}
+
+function emptySafeExplorerTotals(): SafeExplorerRunTotals {
+  return {
+    totalSteps: 0,
+    totalPagesObserved: 0,
+    totalActionsDetected: 0,
+    totalActionsExecuted: 0,
+    totalActionsSkipped: 0,
+    totalFindings: 0
+  };
+}
+
 async function getDiscoveryRunContext(runID: string, projectID: string): Promise<DiscoveryRunContext> {
   const result = await pool.query(
     `SELECT d.id, d.project_id, d.credential_profile_id::text, d.status, d.start_url,
@@ -1759,7 +2454,7 @@ async function executeAuthorizationCheck(run: AuthorizationCheckRunContext, chec
   let targetURL = check.target_url || check.path || "";
 
   if (check.type !== "browser_url") {
-    const skipReason = "authenticated API authorization checks are not implemented in v0.15.0-alpha";
+    const skipReason = "authenticated API authorization checks are not implemented in v0.16.0-alpha";
     const evidenceID = await insertAuthorizationObservation(run, check, null, {
       target_url: targetURL,
       actual_outcome: "unknown",
@@ -3381,14 +4076,15 @@ async function captureScreenshot(page: Page): Promise<Buffer | null> {
 async function insertEvidence(owner: EvidenceOwner, type: string, uri: string, metadata: Record<string, unknown>): Promise<string> {
   const id = randomUUID();
   await pool.query(
-    `INSERT INTO evidence (id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, type, uri, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    `INSERT INTO evidence (id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, safe_explorer_run_id, type, uri, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
     [
       id,
       owner.runID ?? null,
       owner.executionID ?? null,
       owner.authorizationRunID ?? null,
       owner.discoveryRunID ?? null,
+      owner.safeExplorerRunID ?? null,
       type,
       uri,
       JSON.stringify(metadata)
@@ -3401,16 +4097,17 @@ async function insertFinding(owner: FindingOwner, finding: FindingInput): Promis
   const id = randomUUID();
   await pool.query(
     `INSERT INTO findings (
-       id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, scenario_execution_id, step_execution_id,
+       id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, safe_explorer_run_id, scenario_execution_id, step_execution_id,
        title, severity, category, confidence, description, recommendation, evidence_ids
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
     [
       id,
       owner.runID ?? null,
       owner.executionID ?? null,
       owner.authorizationRunID ?? null,
       owner.discoveryRunID ?? null,
+      owner.safeExplorerRunID ?? null,
       owner.scenarioExecutionID ?? null,
       owner.stepExecutionID ?? null,
       finding.title,
@@ -3437,7 +4134,7 @@ async function ensureS3Bucket(): Promise<void> {
   }
 }
 
-async function storeScreenshot(ownerKind: "runs" | "test-plan-executions" | "authorization-check-runs" | "discovery-runs", ownerID: string, screenshot: Buffer): Promise<StoredEvidenceObject> {
+async function storeScreenshot(ownerKind: "runs" | "test-plan-executions" | "authorization-check-runs" | "discovery-runs" | "safe-explorer-runs", ownerID: string, screenshot: Buffer): Promise<StoredEvidenceObject> {
   const filename = `${Date.now()}-${randomUUID()}.png`;
   const key = `${ownerKind}/${ownerID}/screenshots/${filename}`;
   const createdAt = new Date().toISOString();

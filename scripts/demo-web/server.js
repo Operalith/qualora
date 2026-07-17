@@ -123,6 +123,18 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (url.pathname === "/transfer") {
+    response.writeHead(200, qualityHeaders({ "content-type": "text/html; charset=utf-8" }));
+    response.end("<!doctype html><html><body><h1>Transfer funds</h1><p>Safe Explorer must skip links that look like transfers.</p></body></html>");
+    return;
+  }
+
+  if (url.pathname === "/contact" && request.method === "POST") {
+    response.writeHead(200, qualityHeaders({ "content-type": "text/html; charset=utf-8" }));
+    response.end("<!doctype html><html><body><h1>Contact submitted</h1><p>Safe Explorer should never submit this POST form.</p></body></html>");
+    return;
+  }
+
   if (url.pathname === "/reports") {
     const account = requireRole(request, response, ["admin", "readonly"]);
     if (!account) {
@@ -221,6 +233,7 @@ function writePage(response, title, heading, body, options = {}) {
       <a href="/reports">Reports</a>
       <a href="/logout">Logout</a>
       <a href="/delete-account">Delete account</a>
+      <a href="/transfer">Transfer funds</a>
       <a href="https://example.com">External example</a>
     </nav>
     <h1>${escapeHTML(heading)}</h1>
@@ -234,6 +247,15 @@ function writePage(response, title, heading, body, options = {}) {
       </label>
       <button type="submit">Subscribe</button>
     </form>
+    <form method="post" action="/contact" aria-label="Contact support">
+      <label>
+        Message
+        <input id="contact-message" name="message" type="text" placeholder="Hello">
+      </label>
+      <button type="submit">Send message</button>
+    </form>
+    <button type="button" id="open-help">Open help panel</button>
+    <button type="button" id="danger-delete">Delete workspace</button>
   </main>
   <script src="/app.js"></script>
   ${options.qualityIssues ? '<script src="/missing-quality.js"></script>' : ""}

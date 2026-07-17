@@ -36,6 +36,11 @@ type QualityCheckRunJob struct {
 	ProjectID         string `json:"project_id"`
 }
 
+type SafeExplorerRunJob struct {
+	SafeExplorerRunID string `json:"safe_explorer_run_id"`
+	ProjectID         string `json:"project_id"`
+}
+
 type APIRunJob struct {
 	JobID     string `json:"job_id"`
 	RunID     string `json:"run_id"`
@@ -106,6 +111,17 @@ func (q *Queue) EnqueueQualityCheckRun(ctx context.Context, job QualityCheckRunJ
 	}
 	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
 		return fmt.Errorf("enqueue quality check run: %w", err)
+	}
+	return nil
+}
+
+func (q *Queue) EnqueueSafeExplorerRun(ctx context.Context, job SafeExplorerRunJob) error {
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("marshal safe explorer run job: %w", err)
+	}
+	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
+		return fmt.Errorf("enqueue safe explorer run: %w", err)
 	}
 	return nil
 }

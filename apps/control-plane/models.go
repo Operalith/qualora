@@ -42,6 +42,7 @@ const (
 	RunTypeAuthenticatedBrowserSmoke = "authenticated_browser_smoke"
 	RunTypeAppDiscovery              = "app_discovery"
 	RunTypeQualityCheck              = "quality_check"
+	RunTypeSafeExplorer              = "safe_explorer"
 )
 
 const (
@@ -244,6 +245,7 @@ type Finding struct {
 	TestPlanExecutionID string    `json:"test_plan_execution_id,omitempty"`
 	AuthorizationRunID  string    `json:"authorization_check_run_id,omitempty"`
 	DiscoveryRunID      string    `json:"discovery_run_id,omitempty"`
+	SafeExplorerRunID   string    `json:"safe_explorer_run_id,omitempty"`
 	ScenarioExecutionID string    `json:"scenario_execution_id,omitempty"`
 	StepExecutionID     string    `json:"step_execution_id,omitempty"`
 	Title               string    `json:"title"`
@@ -262,6 +264,7 @@ type Evidence struct {
 	TestPlanExecutionID string         `json:"test_plan_execution_id,omitempty"`
 	AuthorizationRunID  string         `json:"authorization_check_run_id,omitempty"`
 	DiscoveryRunID      string         `json:"discovery_run_id,omitempty"`
+	SafeExplorerRunID   string         `json:"safe_explorer_run_id,omitempty"`
 	Type                string         `json:"type"`
 	URI                 string         `json:"uri"`
 	Metadata            map[string]any `json:"metadata"`
@@ -422,6 +425,123 @@ type DiscoveryReport struct {
 	SafetyNotes []string         `json:"safety_notes"`
 	Limitations []string         `json:"limitations"`
 	Metadata    map[string]any   `json:"metadata"`
+}
+
+type SafeExplorerRunRequest struct {
+	StartURL            string `json:"start_url,omitempty"`
+	CredentialProfileID string `json:"credential_profile_id,omitempty"`
+	MaxSteps            int    `json:"max_steps,omitempty"`
+	MaxDepth            int    `json:"max_depth,omitempty"`
+	SameOriginOnly      *bool  `json:"same_origin_only,omitempty"`
+	AllowGetForms       bool   `json:"allow_get_forms,omitempty"`
+}
+
+type SafeExplorerRun struct {
+	ID                   string     `json:"id"`
+	ProjectID            string     `json:"project_id"`
+	CredentialProfileID  string     `json:"credential_profile_id,omitempty"`
+	Status               string     `json:"status"`
+	StartURL             string     `json:"start_url"`
+	MaxSteps             int        `json:"max_steps"`
+	MaxDepth             int        `json:"max_depth"`
+	SameOriginOnly       bool       `json:"same_origin_only"`
+	AllowGetForms        bool       `json:"allow_get_forms"`
+	StartedAt            *time.Time `json:"started_at,omitempty"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
+	TotalSteps           int        `json:"total_steps"`
+	TotalPagesObserved   int        `json:"total_pages_observed"`
+	TotalActionsDetected int        `json:"total_actions_detected"`
+	TotalActionsExecuted int        `json:"total_actions_executed"`
+	TotalActionsSkipped  int        `json:"total_actions_skipped"`
+	TotalFindings        int        `json:"total_findings"`
+	ErrorMessage         string     `json:"error_message,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
+type SafeExplorerStep struct {
+	ID                   string    `json:"id"`
+	RunID                string    `json:"run_id"`
+	ProjectID            string    `json:"project_id"`
+	StepIndex            int       `json:"step_index"`
+	PageURL              string    `json:"page_url"`
+	NormalizedURL        string    `json:"normalized_url"`
+	PageTitle            string    `json:"page_title,omitempty"`
+	Depth                int       `json:"depth"`
+	ActionID             string    `json:"action_id,omitempty"`
+	ActionType           string    `json:"action_type,omitempty"`
+	ActionLabel          string    `json:"action_label,omitempty"`
+	ActionSelectorHint   string    `json:"action_selector_hint,omitempty"`
+	ActionTargetURL      string    `json:"action_target_url,omitempty"`
+	ActionSafety         string    `json:"action_safety"`
+	ActionDecision       string    `json:"action_decision"`
+	SkipReason           string    `json:"skip_reason,omitempty"`
+	ResultStatus         string    `json:"result_status"`
+	HTTPStatus           *int      `json:"http_status,omitempty"`
+	FinalURL             string    `json:"final_url,omitempty"`
+	ScreenshotEvidenceID string    `json:"screenshot_evidence_id,omitempty"`
+	ConsoleErrorCount    int       `json:"console_error_count"`
+	FailedRequestCount   int       `json:"failed_request_count"`
+	DurationMS           *int      `json:"duration_ms,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
+}
+
+type SafeExplorerAction struct {
+	ID           string    `json:"id"`
+	RunID        string    `json:"run_id"`
+	StepID       string    `json:"step_id"`
+	SourceURL    string    `json:"source_url"`
+	ActionType   string    `json:"action_type"`
+	Label        string    `json:"label,omitempty"`
+	Text         string    `json:"text,omitempty"`
+	SelectorHint string    `json:"selector_hint,omitempty"`
+	Href         string    `json:"href,omitempty"`
+	TargetURL    string    `json:"target_url,omitempty"`
+	Method       string    `json:"method,omitempty"`
+	SameOrigin   bool      `json:"same_origin"`
+	Safety       string    `json:"safety"`
+	Decision     string    `json:"decision"`
+	SkipReason   string    `json:"skip_reason,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type SafeExplorerSummary struct {
+	TotalSteps           int `json:"total_steps"`
+	TotalPagesObserved   int `json:"total_pages_observed"`
+	TotalActionsDetected int `json:"total_actions_detected"`
+	TotalActionsExecuted int `json:"total_actions_executed"`
+	TotalActionsSkipped  int `json:"total_actions_skipped"`
+	TotalFindings        int `json:"total_findings"`
+	SafeActions          int `json:"safe_actions"`
+	UnsafeActionsSkipped int `json:"unsafe_actions_skipped"`
+	ExternalActions      int `json:"external_actions_skipped"`
+	UnsupportedActions   int `json:"unsupported_actions"`
+	PagesWithScreenshots int `json:"pages_with_screenshots"`
+}
+
+type SafeExplorerTrace struct {
+	Run      SafeExplorerRun      `json:"run"`
+	Project  Project              `json:"project"`
+	Summary  SafeExplorerSummary  `json:"summary"`
+	Steps    []SafeExplorerStep   `json:"steps"`
+	Actions  []SafeExplorerAction `json:"actions"`
+	Findings []Finding            `json:"findings"`
+	Evidence []Evidence           `json:"evidence"`
+}
+
+type SafeExplorerReport struct {
+	GeneratedAt time.Time            `json:"generated_at"`
+	Run         SafeExplorerRun      `json:"run"`
+	Project     Project              `json:"project"`
+	Settings    map[string]any       `json:"settings"`
+	Summary     SafeExplorerSummary  `json:"summary"`
+	Steps       []SafeExplorerStep   `json:"steps"`
+	Actions     []SafeExplorerAction `json:"actions"`
+	Findings    []Finding            `json:"findings"`
+	Evidence    []Evidence           `json:"evidence"`
+	SafetyNotes []string             `json:"safety_notes"`
+	Limitations []string             `json:"limitations"`
+	Metadata    map[string]any       `json:"metadata"`
 }
 
 type QualityCheckRunRequest struct {

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.15.0-alpha
+  version: 0.16.0-alpha
   description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
@@ -666,6 +666,106 @@ paths:
       responses:
         "200":
           description: HTML discovery report
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/safe-explorer-runs:
+    get:
+      summary: List Interactive Safe Explorer runs for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Safe Explorer run list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [safe_explorer_runs]
+                properties:
+                  safe_explorer_runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SafeExplorerRun"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Start an Interactive Safe Explorer run
+      description: Queues bounded deterministic exploration of safe same-origin navigation actions. Safe Explorer records executed and skipped actions with reasons, never lets AI choose actions, does not submit POST forms, and avoids destructive-looking interactions.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SafeExplorerRunRequest"
+      responses:
+        "201":
+          description: Created Safe Explorer run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafeExplorerRun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/safe-explorer-runs/{safe_explorer_run_id}:
+    get:
+      summary: Get a Safe Explorer run
+      parameters:
+        - $ref: "#/components/parameters/SafeExplorerRunID"
+      responses:
+        "200":
+          description: Safe Explorer run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafeExplorerRun"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/safe-explorer-runs/{safe_explorer_run_id}/trace:
+    get:
+      summary: Get the Safe Explorer timeline trace
+      parameters:
+        - $ref: "#/components/parameters/SafeExplorerRunID"
+      responses:
+        "200":
+          description: Safe Explorer trace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafeExplorerTrace"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/safe-explorer-runs/{safe_explorer_run_id}/report:
+    get:
+      summary: Get a structured Safe Explorer report
+      parameters:
+        - $ref: "#/components/parameters/SafeExplorerRunID"
+      responses:
+        "200":
+          description: Safe Explorer report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafeExplorerReport"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/safe-explorer-runs/{safe_explorer_run_id}/report.html:
+    get:
+      summary: Get a self-contained HTML Safe Explorer report
+      parameters:
+        - $ref: "#/components/parameters/SafeExplorerRunID"
+      responses:
+        "200":
+          description: HTML Safe Explorer report
           content:
             text/html:
               schema:
@@ -1509,6 +1609,13 @@ components:
       schema:
         type: string
         format: uuid
+    SafeExplorerRunID:
+      name: safe_explorer_run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     QARunID:
       name: qa_run_id
       in: path
@@ -1560,7 +1667,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.15.0-alpha
+          example: 0.16.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -2585,6 +2692,259 @@ components:
             metadata:
               type: object
               additionalProperties: true
+    SafeExplorerRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        start_url:
+          type: string
+          format: uri
+        credential_profile_id:
+          type: string
+          format: uuid
+        max_steps:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+        max_depth:
+          type: integer
+          minimum: 0
+          maximum: 5
+          default: 2
+        same_origin_only:
+          type: boolean
+          default: true
+        allow_get_forms:
+          type: boolean
+          default: false
+    SafeExplorerRun:
+      type: object
+      required: [id, project_id, status, start_url, max_steps, max_depth, same_origin_only, allow_get_forms, total_steps, total_pages_observed, total_actions_detected, total_actions_executed, total_actions_skipped, total_findings, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        credential_profile_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, completed, failed, error]
+        start_url:
+          type: string
+        max_steps:
+          type: integer
+        max_depth:
+          type: integer
+        same_origin_only:
+          type: boolean
+        allow_get_forms:
+          type: boolean
+        total_steps:
+          type: integer
+        total_pages_observed:
+          type: integer
+        total_actions_detected:
+          type: integer
+        total_actions_executed:
+          type: integer
+        total_actions_skipped:
+          type: integer
+        total_findings:
+          type: integer
+        error_message:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SafeExplorerStep:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        step_index:
+          type: integer
+        page_url:
+          type: string
+        normalized_url:
+          type: string
+        page_title:
+          type: string
+        depth:
+          type: integer
+        action_id:
+          type: string
+          format: uuid
+        action_type:
+          type: string
+        action_label:
+          type: string
+        action_selector_hint:
+          type: string
+        action_target_url:
+          type: string
+        action_safety:
+          type: string
+          enum: [safe, unsafe, unsupported, unknown]
+        action_decision:
+          type: string
+          enum: [executed, skipped, observed]
+        skip_reason:
+          type: string
+        result_status:
+          type: string
+          enum: [ok, failed, skipped, error]
+        http_status:
+          type: integer
+        final_url:
+          type: string
+        screenshot_evidence_id:
+          type: string
+          format: uuid
+        console_error_count:
+          type: integer
+        failed_request_count:
+          type: integer
+        duration_ms:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    SafeExplorerAction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+        step_id:
+          type: string
+          format: uuid
+        source_url:
+          type: string
+        action_type:
+          type: string
+          enum: [link_navigation, button, form_get, form_post, input, unknown]
+        label:
+          type: string
+        text:
+          type: string
+        selector_hint:
+          type: string
+        href:
+          type: string
+        target_url:
+          type: string
+        method:
+          type: string
+        same_origin:
+          type: boolean
+        safety:
+          type: string
+          enum: [safe, unsafe, unsupported, unknown]
+        decision:
+          type: string
+          enum: [execute, skip]
+        skip_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    SafeExplorerSummary:
+      type: object
+      properties:
+        total_steps:
+          type: integer
+        total_pages_observed:
+          type: integer
+        total_actions_detected:
+          type: integer
+        total_actions_executed:
+          type: integer
+        total_actions_skipped:
+          type: integer
+        total_findings:
+          type: integer
+        safe_actions:
+          type: integer
+        unsafe_actions_skipped:
+          type: integer
+        external_actions_skipped:
+          type: integer
+        unsupported_actions:
+          type: integer
+        pages_with_screenshots:
+          type: integer
+    SafeExplorerTrace:
+      type: object
+      required: [run, project, summary, steps, actions, findings, evidence]
+      properties:
+        run:
+          $ref: "#/components/schemas/SafeExplorerRun"
+        project:
+          $ref: "#/components/schemas/Project"
+        summary:
+          $ref: "#/components/schemas/SafeExplorerSummary"
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafeExplorerStep"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafeExplorerAction"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+    SafeExplorerReport:
+      allOf:
+        - $ref: "#/components/schemas/SafeExplorerTrace"
+        - type: object
+          properties:
+            generated_at:
+              type: string
+              format: date-time
+            settings:
+              type: object
+              additionalProperties: true
+            safety_notes:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            metadata:
+              type: object
+              additionalProperties: true
     QualityCheckRunRequest:
       type: object
       additionalProperties: false
@@ -3127,6 +3487,14 @@ components:
           type: string
           format: uuid
           nullable: true
+        discovery_run_id:
+          type: string
+          format: uuid
+          nullable: true
+        safe_explorer_run_id:
+          type: string
+          format: uuid
+          nullable: true
         title:
           type: string
         severity:
@@ -3169,6 +3537,14 @@ components:
           format: uuid
           nullable: true
         authorization_check_run_id:
+          type: string
+          format: uuid
+          nullable: true
+        discovery_run_id:
+          type: string
+          format: uuid
+          nullable: true
+        safe_explorer_run_id:
           type: string
           format: uuid
           nullable: true

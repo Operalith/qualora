@@ -191,7 +191,7 @@ Delivered:
 
 ## v0.15.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Guided project setup wizard for project basics, optional AI provider, optional credential profile, optional OpenAPI import, workflow selection, and result links.
 - `POST /api/v1/onboarding/project-setup` orchestration for project creation and selected safe first checks.
@@ -201,7 +201,21 @@ Current alpha scope:
 - Reports landing page for recent browser, API, discovery, quality, and Safe QA reports.
 - Smoke validation for guided setup, dashboard/readiness/report UI discoverability, reports, redaction, and existing browser/API/AI/test-plan/discovery/quality/Safe QA flows.
 
-## Phase 16: Run And Worker Hardening
+## v0.16.0-alpha
+
+Current alpha scope:
+
+- Interactive Safe Explorer run API and browser-worker queue job.
+- Project-scoped Safe Explorer settings: start URL, optional credential profile, max steps, max depth, same-origin-only, and optional GET-form policy.
+- Deterministic action extraction for visible links, forms, submit controls, buttons, and inputs without storing full HTML.
+- Safety classifier for same-origin navigation, allowed hosts, dangerous labels, sensitive query values, unsupported schemes, mutating forms, duplicate URLs, and policy limits.
+- Safe execution of classified navigation actions only; unsafe/external/unsupported/duplicate/policy-blocked actions are skipped with reasons.
+- Persistent Safe Explorer runs, steps, actions, findings, screenshot evidence, trace endpoint, JSON report, and self-contained HTML report.
+- Web UI project card/form, run list, report page, and reports landing-page integration.
+- Demo-web fixtures for safe links, unsafe links, external links, GET forms, POST forms, unsupported buttons, and dangerous buttons.
+- Smoke validation for Safe Explorer completion, executed/skipped actions, skip reasons, screenshot evidence, JSON/HTML reports, UI text, and secret redaction.
+
+## Phase 17: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -213,15 +227,16 @@ Current alpha scope:
 - Better operational logs and container health checks.
 - Move AI analysis to an async analyzer worker.
 - Move AI-assisted test planning to an async analyzer worker.
+- Safe QA Run integration for Safe Explorer summaries if it can remain explicit and non-autonomous.
 
-## Phase 17: Deeper API Checks
+## Phase 18: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 18: Quality Check Deepening
+## Phase 19: Quality Check Deepening
 
 - Optional axe-core integration or richer accessibility summaries.
 - Lighthouse/Core Web Vitals-style performance collection if it can stay safe and lightweight.

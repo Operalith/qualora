@@ -146,6 +146,8 @@ export type Finding = {
   run_id?: string;
   test_plan_execution_id?: string;
   authorization_check_run_id?: string;
+  discovery_run_id?: string;
+  safe_explorer_run_id?: string;
   scenario_execution_id?: string;
   step_execution_id?: string;
   title: string;
@@ -164,6 +166,7 @@ export type Evidence = {
   test_plan_execution_id?: string;
   authorization_check_run_id?: string;
   discovery_run_id?: string;
+  safe_explorer_run_id?: string;
   type: string;
   uri: string;
   metadata: Record<string, unknown>;
@@ -474,6 +477,116 @@ export type DiscoveryMap = {
 };
 
 export type DiscoveryReport = DiscoveryMap & {
+  generated_at: string;
+  settings: Record<string, unknown>;
+  safety_notes: string[];
+  limitations: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type SafeExplorerRunInput = {
+  start_url?: string;
+  credential_profile_id?: string;
+  max_steps?: number;
+  max_depth?: number;
+  same_origin_only?: boolean;
+  allow_get_forms?: boolean;
+};
+
+export type SafeExplorerRun = {
+  id: string;
+  project_id: string;
+  credential_profile_id?: string;
+  status: "queued" | "running" | "completed" | "failed" | "error" | string;
+  start_url: string;
+  max_steps: number;
+  max_depth: number;
+  same_origin_only: boolean;
+  allow_get_forms: boolean;
+  started_at?: string;
+  completed_at?: string;
+  total_steps: number;
+  total_pages_observed: number;
+  total_actions_detected: number;
+  total_actions_executed: number;
+  total_actions_skipped: number;
+  total_findings: number;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SafeExplorerStep = {
+  id: string;
+  run_id: string;
+  project_id: string;
+  step_index: number;
+  page_url: string;
+  normalized_url: string;
+  page_title?: string;
+  depth: number;
+  action_id?: string;
+  action_type?: string;
+  action_label?: string;
+  action_selector_hint?: string;
+  action_target_url?: string;
+  action_safety: "safe" | "unsafe" | "unsupported" | "unknown" | string;
+  action_decision: "executed" | "skipped" | "observed" | string;
+  skip_reason?: string;
+  result_status: "ok" | "failed" | "skipped" | "error" | string;
+  http_status?: number;
+  final_url?: string;
+  screenshot_evidence_id?: string;
+  console_error_count: number;
+  failed_request_count: number;
+  duration_ms?: number;
+  created_at: string;
+};
+
+export type SafeExplorerAction = {
+  id: string;
+  run_id: string;
+  step_id: string;
+  source_url: string;
+  action_type: "link_navigation" | "button" | "form_get" | "form_post" | "input" | "unknown" | string;
+  label?: string;
+  text?: string;
+  selector_hint?: string;
+  href?: string;
+  target_url?: string;
+  method?: string;
+  same_origin: boolean;
+  safety: "safe" | "unsafe" | "unsupported" | "unknown" | string;
+  decision: "execute" | "skip" | string;
+  skip_reason?: string;
+  created_at: string;
+};
+
+export type SafeExplorerSummary = {
+  total_steps: number;
+  total_pages_observed: number;
+  total_actions_detected: number;
+  total_actions_executed: number;
+  total_actions_skipped: number;
+  total_findings: number;
+  safe_actions: number;
+  unsafe_actions_skipped: number;
+  external_actions_skipped: number;
+  unsupported_actions: number;
+  pages_with_screenshots: number;
+};
+
+export type SafeExplorerTrace = {
+  run: SafeExplorerRun;
+  project: Project;
+  summary: SafeExplorerSummary;
+  steps: SafeExplorerStep[];
+  actions: SafeExplorerAction[];
+  findings: Finding[];
+  evidence: Evidence[];
+};
+
+export type SafeExplorerReport = SafeExplorerTrace & {
   generated_at: string;
   settings: Record<string, unknown>;
   safety_notes: string[];

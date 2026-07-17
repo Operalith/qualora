@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.15.0-alpha.
+This document covers local development for Qualora v0.16.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; exercises guided project setup; starts browser, login check, authenticated browser smoke, application discovery, passive quality, authorization, Safe QA, and safe API smoke runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; prints JSON/HTML report, discovery map, API spec, credential profile, quality, authorization, test-plan, execution, Safe QA Run, project setup, and report index URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates quality finding counts; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; exercises guided project setup; starts browser, login check, authenticated browser smoke, application discovery, Interactive Safe Explorer, passive quality, authorization, Safe QA, and safe API smoke runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; prints JSON/HTML report, discovery map, Safe Explorer trace, API spec, credential profile, quality, authorization, test-plan, execution, Safe QA Run, project setup, and report index URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates Safe Explorer executed/skipped action reasons; validates quality finding counts; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -162,7 +162,7 @@ When changing guided onboarding:
 
 ## AI Provider Development
 
-The v0.15 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.16 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -242,7 +242,7 @@ Safe QA Runs are an orchestration layer over discovery, AI test planning, and ap
 
 Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
 
-The v0.15 API executor:
+The v0.16 API executor:
 
 - Supports OpenAPI 3.x JSON/YAML.
 - Executes only `GET`, `HEAD`, and `OPTIONS`.

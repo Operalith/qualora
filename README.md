@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.15.0-alpha` adds guided project onboarding and a clearer dashboard for first-run workflows. Qualora remains useful without AI: discovery, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
+`v0.16.0-alpha` adds Interactive Safe Explorer: a deterministic, bounded browser workflow that observes pages, classifies visible actions, executes only safe same-origin navigation, and records skipped unsafe/unsupported actions with reasons. Qualora remains useful without AI: discovery, Safe Explorer, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
 
 ## Current Alpha Capabilities
 
@@ -17,7 +17,7 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Create projects through a guided setup wizard that can optionally configure AI, credentials, OpenAPI import, and selected first checks.
 - Run a local demo workflow against `demo-web`, `demo-api`, and `fake-llm`.
 - View dashboard quick-start cards, recent Safe QA runs, recent projects, status indicators, and a project readiness checklist.
-- View a reports landing page for recent browser, API, discovery, quality, and Safe QA reports.
+- View a reports landing page for recent browser, API, discovery, Safe Explorer, quality, and Safe QA reports.
 - Start runs that can include browser and API jobs.
 - Start a browser-only smoke run for a project with `frontend_url`.
 - Store project-scoped credential profiles encrypted at rest for deterministic test-account login.
@@ -31,6 +31,11 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Persist discovered pages, links, forms, fields, screenshots, browser observations, findings, and skip reasons.
 - View discovery runs and application maps in the web UI.
 - Export discovery JSON reports and self-contained HTML reports.
+- Start Interactive Safe Explorer runs for projects with `frontend_url`.
+- Observe visible links, buttons, forms, submit buttons, and inputs without storing full HTML.
+- Execute only safe same-origin navigation actions by default.
+- Record skipped unsafe, external, policy-blocked, duplicate, and unsupported actions with deterministic skip reasons.
+- View Safe Explorer timelines, actions, findings, screenshot evidence, JSON reports, and self-contained HTML reports in the web UI.
 - Start passive quality check runs for project frontends.
 - Reuse latest or selected discovery runs as quality-check page lists.
 - Run safe passive security header/cookie/form checks, basic accessibility heuristics, and simple performance/resource observations.
@@ -77,7 +82,7 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
@@ -87,6 +92,7 @@ qualora-api
         |       +--> Deterministic selector-based login checks
         |       +--> Authenticated browser smoke test
         |       +--> Safe deterministic application discovery
+        |       +--> Interactive Safe Explorer
         |       +--> Passive quality checks
         |       +--> Explicit role-aware authorization checks
         |       +--> Approved safe test plan execution steps
@@ -144,6 +150,7 @@ The smoke target includes:
 - Credential profile creation, deterministic login check, and authenticated browser smoke against `demo-web`.
 - Role credential profile creation plus explicit authorization checks against demo `/admin` and customer invoice routes.
 - Application discovery against `demo-web`, including discovered pages/forms, skipped unsafe/external links, screenshots, JSON report, and HTML report.
+- Interactive Safe Explorer against `demo-web`, including observed pages/actions, executed safe navigation, skipped unsafe/external/POST/unsupported actions, screenshots, JSON report, and HTML report.
 - Passive quality checks against `demo-web`, including security, accessibility, and performance findings plus JSON/HTML quality reports.
 - OpenAPI import and safe API smoke against a local `demo-api` service started by the Makefile.
 - AI provider smoke against a local fake OpenAI-compatible provider.
@@ -354,6 +361,27 @@ curl -s "http://localhost:8080/api/v1/discovery-runs/${DISCOVERY_RUN_ID}/report"
 ```
 
 Discovery follows safe links only, skips external/unsafe/non-HTML links with recorded reasons, captures screenshots and browser observations, and never submits forms or clicks arbitrary buttons.
+
+Start an Interactive Safe Explorer run:
+
+```bash
+SAFE_EXPLORER_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/projects/${PROJECT_ID}/safe-explorer-runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "max_steps": 10,
+    "max_depth": 2,
+    "same_origin_only": true,
+    "allow_get_forms": false
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+curl -s "http://localhost:8080/api/v1/safe-explorer-runs/${SAFE_EXPLORER_RUN_ID}/report" \
+  -b "$COOKIE_JAR" | python3 -m json.tool
+open "http://localhost:8080/api/v1/safe-explorer-runs/${SAFE_EXPLORER_RUN_ID}/report.html"
+```
+
+Safe Explorer executes only safe classified navigation actions by default. It skips POST forms, unsafe labels, sensitive query values, external hosts, unsupported controls, duplicates, and policy-blocked actions with recorded reasons.
 
 Start a passive quality check run from the latest completed discovery:
 
@@ -615,7 +643,7 @@ curl -s -X POST "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/execute" \
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.15.0-alpha`:
+Supported provider type in `v0.16.0-alpha`:
 
 - `openai-compatible`
 
@@ -635,7 +663,7 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.15.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, and guided onboarding are deterministic paths and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.16.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, and guided onboarding are deterministic paths and are not AI-controlled.
 
 ## Report Example
 

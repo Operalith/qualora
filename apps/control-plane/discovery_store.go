@@ -299,7 +299,7 @@ ORDER BY ff.created_at ASC
 func (s *Store) ListFindingsForDiscoveryRun(ctx context.Context, runID string) ([]Finding, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT id, run_id::text, test_plan_execution_id::text, authorization_check_run_id::text,
-	discovery_run_id::text, scenario_execution_id::text, step_execution_id::text,
+	discovery_run_id::text, safe_explorer_run_id::text, scenario_execution_id::text, step_execution_id::text,
 	title, severity, category, confidence, description, recommendation, evidence_ids, created_at
 FROM findings
 WHERE discovery_run_id = $1
@@ -327,7 +327,7 @@ ORDER BY created_at ASC
 func (s *Store) ListEvidenceForDiscoveryRun(ctx context.Context, runID string) ([]Evidence, error) {
 	rows, err := s.db.Query(ctx, `
 SELECT id, run_id::text, test_plan_execution_id::text, authorization_check_run_id::text,
-	discovery_run_id::text, type, uri, metadata, created_at
+	discovery_run_id::text, safe_explorer_run_id::text, type, uri, metadata, created_at
 FROM evidence
 WHERE discovery_run_id = $1
 ORDER BY created_at ASC

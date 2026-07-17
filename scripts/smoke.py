@@ -140,7 +140,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.15.0-alpha" not in status.get("version", ""):
+    if "0.16.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -776,6 +776,81 @@ def run_application_discovery(project, profile=None):
     return report
 
 
+def run_safe_explorer(project, profile=None):
+    payload = {
+        "start_url": BROWSER_TARGET_URL,
+        "max_steps": 16,
+        "max_depth": 2,
+        "same_origin_only": True,
+        "allow_get_forms": False,
+    }
+    if profile:
+        payload["credential_profile_id"] = profile["id"]
+    run = request("POST", f"/api/v1/projects/{project['id']}/safe-explorer-runs", payload)
+    run_id = run["id"]
+    print(f"started Safe Explorer run: {run_id}")
+
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/safe-explorer-runs/{run_id}")
+        status = current["status"]
+        print(f"Safe Explorer status: {status}")
+        if status in ("completed", "failed", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"Safe Explorer run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    trace = request("GET", f"/api/v1/safe-explorer-runs/{run_id}/trace")
+    report = request("GET", f"/api/v1/safe-explorer-runs/{run_id}/report")
+    print(f"Safe Explorer report: {json.dumps(report, indent=2)}")
+    assert_no_demo_secret(report, "Safe Explorer JSON report")
+    if report["run"]["status"] != "completed":
+        raise RuntimeError(f"Safe Explorer run did not complete: {report['run']}")
+    summary = report.get("summary") or {}
+    if int(summary.get("total_pages_observed") or 0) <= 1:
+        raise RuntimeError(f"Safe Explorer observed too few pages: {summary}")
+    if int(summary.get("total_actions_detected") or 0) <= 1:
+        raise RuntimeError(f"Safe Explorer detected too few actions: {summary}")
+    if int(summary.get("total_actions_executed") or 0) < 1:
+        raise RuntimeError(f"Safe Explorer did not execute any safe actions: {summary}")
+    if int(summary.get("total_actions_skipped") or 0) < 1:
+        raise RuntimeError(f"Safe Explorer did not skip any actions: {summary}")
+    actions = report.get("actions") or []
+    skip_reasons = {action.get("skip_reason") for action in actions if action.get("decision") == "skip"}
+    expected_reasons = {"unsafe_action_skipped", "external_action_skipped", "form_method_not_safe", "get_forms_disabled", "unsupported_action"}
+    missing = expected_reasons.difference(skip_reasons)
+    if missing:
+        raise RuntimeError(f"Safe Explorer missed expected skip reasons {missing}: {skip_reasons}")
+    if not any(action.get("decision") == "execute" and action.get("safety") == "safe" for action in actions):
+        raise RuntimeError("Safe Explorer report did not include a safe executed action")
+    if not any(step.get("screenshot_evidence_id") for step in report.get("steps", [])):
+        raise RuntimeError("Safe Explorer steps did not include screenshot evidence IDs")
+    evidence = report.get("evidence") or []
+    if "screenshot" not in {item.get("type") for item in evidence}:
+        raise RuntimeError("Safe Explorer report did not include screenshot evidence")
+    screenshot = next(item for item in evidence if item.get("type") == "screenshot")
+    headers, body = fetch_binary(f"/api/v1/evidence/{screenshot['id']}")
+    if "image/png" not in headers.get("content-type", "") or not body.startswith(b"\x89PNG"):
+        raise RuntimeError("Safe Explorer screenshot evidence was not downloadable PNG data")
+    if trace.get("summary", {}).get("total_actions_detected") != summary.get("total_actions_detected"):
+        raise RuntimeError("Safe Explorer trace summary did not match report summary")
+
+    html = fetch_text(f"/api/v1/safe-explorer-runs/{run_id}/report.html")
+    assert_no_demo_secret(html, "Safe Explorer HTML report")
+    if "Qualora Interactive Safe Explorer report" not in html or "Actions" not in html:
+        raise RuntimeError("Safe Explorer HTML report did not include expected content")
+    listed = request("GET", f"/api/v1/projects/{project['id']}/safe-explorer-runs").get("safe_explorer_runs", [])
+    if not any(item.get("id") == run_id for item in listed):
+        raise RuntimeError("project Safe Explorer list did not include completed run")
+
+    print(f"Safe Explorer JSON report: {API_URL}/api/v1/safe-explorer-runs/{run_id}/report")
+    print(f"Safe Explorer HTML report: {API_URL}/api/v1/safe-explorer-runs/{run_id}/report.html")
+    print(f"Safe Explorer trace: {API_URL}/api/v1/safe-explorer-runs/{run_id}/trace")
+    print(f"Web Safe Explorer report: {WEB_URL}/#/safe-explorer-runs/{run_id}")
+    return report
+
+
 def run_quality_check(project, discovery_report, profile=None):
     payload = {
         "use_latest_discovery": True,
@@ -860,10 +935,13 @@ def assert_quality_ui_bundle():
         "Project Readiness",
         "Guided Project Setup",
         "Reports",
+        "Interactive Safe Explorer",
+        "Start Safe Explorer",
+        "Safe Explorer Report",
     ):
         if expected not in bundle_text:
-            raise RuntimeError(f"web UI bundle did not include expected v0.15 UI text: {expected}")
-    print("web UI bundle includes guided onboarding, readiness, reports, and Quality Checks screens")
+            raise RuntimeError(f"web UI bundle did not include expected v0.16 UI text: {expected}")
+    print("web UI bundle includes guided onboarding, readiness, reports, Quality Checks, and Safe Explorer screens")
 
 
 def wait_for_discovery_report(run_id, label):
@@ -916,7 +994,7 @@ def wait_for_quality_report(run_id, label):
     return report
 
 
-def run_guided_project_setup():
+def run_guided_project_setup(provider):
     print("== Guided project setup smoke ==")
     setup = request(
         "POST",
@@ -932,7 +1010,7 @@ def run_guided_project_setup():
                 "destructive_actions": False,
                 "allow_private_targets": True,
             },
-            "ai": {"mode": "demo"},
+            "ai": {"mode": "existing", "provider_id": provider["id"]},
             "credential": {
                 "mode": "create",
                 "profile": {
@@ -951,7 +1029,14 @@ def run_guided_project_setup():
                     "is_default": True,
                 },
             },
-            "api_spec": {"mode": "demo"},
+            "api_spec": {
+                "mode": "import",
+                "spec": {
+                    "name": "Qualora Demo API",
+                    "source_type": "url",
+                    "source_url": API_SMOKE_OPENAPI_URL,
+                },
+            },
             "workflow": {
                 "browser_smoke": True,
                 "discovery": True,
@@ -1233,7 +1318,7 @@ def main():
     wait_for_url(FAKE_LLM_HEALTH_URL)
     provider = create_ai_provider()
     test_ai_provider(provider)
-    run_guided_project_setup()
+    run_guided_project_setup(provider)
 
     print("== Browser smoke ==")
     wait_for_url(DEMO_WEB_HEALTH_URL)
@@ -1256,6 +1341,7 @@ def main():
     authenticated_report = run_ai_analysis(authenticated_report, provider)
     generate_ai_test_plan(browser_project, authenticated_report, provider)
     discovery_report = run_application_discovery(browser_project)
+    run_safe_explorer(browser_project, credential_profile)
     run_quality_check(browser_project, discovery_report, credential_profile)
     discovery_plan = generate_discovery_ai_test_plan(browser_project, discovery_report, provider)
     preview_test_plan_execution(discovery_plan)

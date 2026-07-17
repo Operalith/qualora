@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.15.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.16.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -33,7 +33,7 @@ The browser worker routes Playwright requests through the host policy:
 
 ## Application Discovery
 
-Application discovery in v0.15 is deterministic and safe by default. It is intended to build a lightweight application map, not to perform uncontrolled browser autonomy.
+Application discovery in v0.16 is deterministic and safe by default. It is intended to build a lightweight application map, not to perform uncontrolled browser autonomy.
 
 Discovery execution rules:
 
@@ -57,9 +57,38 @@ Discovery does not:
 - Crawl external domains by default.
 - Store full HTML, cookies, local/session storage, auth headers, tokens, credentials, request bodies, or response bodies.
 
+## Interactive Safe Explorer
+
+Interactive Safe Explorer in v0.16 is deterministic and safe by default. It is intended to demonstrate bounded, human-understandable page exploration, not autonomous browser control.
+
+Safe Explorer execution rules:
+
+- Starts at the project `frontend_url` or a user-provided `start_url`.
+- Defaults to `same_origin_only=true`, `max_steps=10`, `max_depth=2`, and `allow_get_forms=false`.
+- Hard caps are `max_steps<=50` and `max_depth<=5`.
+- Every navigation must pass `allowed_hosts`; same-origin runs must stay on the project frontend origin.
+- Optional authentication uses only configured credential profile selectors and never AI.
+- Visible links, forms, buttons, submit controls, and inputs may be inspected for metadata.
+- Only classified safe navigation actions are executed by default.
+- Unsafe, external, unsupported, duplicate, sensitive-query, and policy-blocked actions are skipped with reasons.
+- GET forms are skipped unless `allow_get_forms=true`; POST/PUT/PATCH/DELETE-style forms are skipped.
+- Screenshots, action metadata, browser observations, findings, and skip reasons may be stored as evidence/report data.
+
+Safe Explorer does not:
+
+- Let AI choose or execute actions.
+- Submit POST forms.
+- Fill arbitrary forms.
+- Click arbitrary buttons.
+- Execute payloads.
+- Perform destructive actions.
+- Crawl external domains by default.
+- Store full HTML, cookies, local/session storage, auth headers, tokens, credentials, request bodies, or response bodies.
+- Send credentials, cookies, browser storage, auth headers, tokens, screenshots, full HTML, request bodies, or response bodies to AI.
+
 ## Passive Quality Checks
 
-Quality checks in v0.15 are deterministic browser-worker observations. They are intended to surface obvious front-end quality issues, not to perform penetration testing, WCAG certification, Lighthouse audits, or exhaustive performance analysis.
+Quality checks in v0.16 are deterministic browser-worker observations. They are intended to surface obvious front-end quality issues, not to perform penetration testing, WCAG certification, Lighthouse audits, or exhaustive performance analysis.
 
 Quality execution rules:
 
@@ -84,7 +113,7 @@ Quality checks do not:
 
 ## API Request Enforcement
 
-The API worker and v0.15 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
+The API worker and v0.16 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
 
 Default API behavior:
 
@@ -191,7 +220,7 @@ Guided onboarding must keep these boundaries:
 
 ## Web UI Exposure
 
-The v0.15.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, discovery reports, and authorization reports require a valid local session.
+The v0.16.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, discovery reports, Safe Explorer reports, and authorization reports require a valid local session.
 
 Sessions use an HTTP-only `qualora_session` cookie. Mutating protected API requests must include a CSRF token from the `qualora_csrf` cookie in the `X-Qualora-CSRF` header. Health, setup status, first-run admin setup, login, logout, and session introspection endpoints are intentionally public.
 
@@ -221,7 +250,7 @@ The Docker Compose default `QUALORA_ENCRYPTION_KEY` is an insecure development f
 
 AI is disabled until a provider is configured. Qualora works without AI.
 
-The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API/login/authorization metadata, quality check summaries and safe quality result metadata, API smoke result summaries, and job metadata. Discovery reports can be sent to AI test planning only through sanitized discovery-aware inputs in v0.15; those inputs are limited to discovery summaries, page paths/titles/statuses, form/link metadata, finding summaries, and evidence metadata.
+The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API/login/authorization metadata, quality check summaries and safe quality result metadata, API smoke result summaries, and job metadata. Discovery reports can be sent to AI test planning only through sanitized discovery-aware inputs in v0.16; those inputs are limited to discovery summaries, page paths/titles/statuses, form/link metadata, finding summaries, and evidence metadata. Safe Explorer does not send action execution context to AI and does not allow AI action choice.
 
 The AI input builder does not send by default:
 
@@ -241,11 +270,11 @@ The AI input builder does not send by default:
 
 Redaction is enabled by default and masks common bearer/basic auth values, API keys, passwords, access/refresh tokens, session IDs, cookies, and JWT-looking values. AI output is parsed as strict JSON and redacted before storage.
 
-AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.15 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution, application discovery, and guided login setup are deterministic and user-configured, not AI-generated.
+AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.16 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution, application discovery, Interactive Safe Explorer, and guided login setup are deterministic and user-configured, not AI-generated.
 
 ## Safe QA Runs
 
-Safe QA Runs in v0.15 orchestrate discovery, AI test planning, and safe test plan execution without changing the safety boundary.
+Safe QA Runs in v0.16 orchestrate discovery, AI test planning, and safe test plan execution without changing the safety boundary.
 
 Allowed behavior:
 

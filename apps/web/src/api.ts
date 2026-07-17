@@ -35,6 +35,10 @@ import type {
   QARun,
   QARunInput,
   QARunReport,
+  SafeExplorerReport,
+  SafeExplorerRun,
+  SafeExplorerRunInput,
+  SafeExplorerTrace,
   Report,
   SetupAdminInput,
   SetupStatus,
@@ -89,6 +93,10 @@ export function qualityCheckHTMLReportURL(runID: string): string {
 
 export function qaRunHTMLReportURL(runID: string): string {
   return `${API_BASE_URL}/api/v1/qa-runs/${runID}/report.html`;
+}
+
+export function safeExplorerHTMLReportURL(runID: string): string {
+  return `${API_BASE_URL}/api/v1/safe-explorer-runs/${runID}/report.html`;
 }
 
 export async function getSetupStatus(): Promise<SetupStatus> {
@@ -269,6 +277,30 @@ export async function getDiscoveryMap(runID: string): Promise<DiscoveryMap> {
 
 export async function getDiscoveryReport(runID: string): Promise<DiscoveryReport> {
   return request<DiscoveryReport>(`/api/v1/discovery-runs/${runID}/report`);
+}
+
+export async function listSafeExplorerRuns(projectID: string): Promise<SafeExplorerRun[]> {
+  const response = await request<{ safe_explorer_runs: SafeExplorerRun[] }>(`/api/v1/projects/${projectID}/safe-explorer-runs`);
+  return response.safe_explorer_runs;
+}
+
+export async function startSafeExplorerRun(projectID: string, input: SafeExplorerRunInput): Promise<SafeExplorerRun> {
+  return request<SafeExplorerRun>(`/api/v1/projects/${projectID}/safe-explorer-runs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getSafeExplorerRun(runID: string): Promise<SafeExplorerRun> {
+  return request<SafeExplorerRun>(`/api/v1/safe-explorer-runs/${runID}`);
+}
+
+export async function getSafeExplorerTrace(runID: string): Promise<SafeExplorerTrace> {
+  return request<SafeExplorerTrace>(`/api/v1/safe-explorer-runs/${runID}/trace`);
+}
+
+export async function getSafeExplorerReport(runID: string): Promise<SafeExplorerReport> {
+  return request<SafeExplorerReport>(`/api/v1/safe-explorer-runs/${runID}/report`);
 }
 
 export async function listQualityCheckRuns(projectID: string): Promise<QualityCheckRun[]> {

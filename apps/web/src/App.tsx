@@ -25,6 +25,7 @@ import {
   getQualityCheckReport,
   getReport,
   getRun,
+  getSafeExplorerReport,
   getSetupStatus,
   getTestPlan,
   getTestPlanExecutionReport,
@@ -39,6 +40,7 @@ import {
   listProjects,
   listQARuns,
   listQualityCheckRuns,
+  listSafeExplorerRuns,
   listRuns,
   listTestPlanExecutions,
   listTestPlans,
@@ -50,6 +52,7 @@ import {
   qaRunHTMLReportURL,
   runAIAnalysis,
   runProjectSetup,
+  safeExplorerHTMLReportURL,
   setupAdmin,
   startAuthorizationCheckRun,
   startAPISmokeRun,
@@ -58,6 +61,7 @@ import {
   startDiscoveryRun,
   startQARun,
   startQualityCheckRun,
+  startSafeExplorerRun,
   startRun,
   testCredentialProfileLogin,
   testPlanExportURL,
@@ -101,6 +105,10 @@ import type {
   QualityCheckRun,
   QualityCheckRunInput,
   QualityCheckResult,
+  SafeExplorerAction,
+  SafeExplorerReport,
+  SafeExplorerRun,
+  SafeExplorerRunInput,
   Report,
   RunJob,
   SetupAdminInput,
@@ -129,6 +137,7 @@ type Route =
   | { name: "authorization-check-run"; id: string }
   | { name: "discovery-run"; id: string }
   | { name: "quality-check-run"; id: string }
+  | { name: "safe-explorer-run"; id: string }
   | { name: "qa-run"; id: string }
   | { name: "run"; id: string };
 
@@ -148,7 +157,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.15.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.16.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -372,6 +381,7 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
         {route.name === "authorization-check-run" && <AuthorizationCheckRunPage runID={route.id} />}
         {route.name === "discovery-run" && <DiscoveryRunPage runID={route.id} />}
         {route.name === "quality-check-run" && <QualityCheckRunPage runID={route.id} />}
+        {route.name === "safe-explorer-run" && <SafeExplorerRunPage runID={route.id} />}
         {route.name === "qa-run" && <QARunPage runID={route.id} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
       </main>
@@ -563,7 +573,7 @@ function Dashboard({
             <h2>Qualora version badge: {formatVersionBadge(version)}</h2>
             <p>Configure a real project, optional AI, optional login, optional OpenAPI, and start the first safe workflow.</p>
           </div>
-          <span className="pill">v0.15 onboarding</span>
+          <span className="pill">v0.16 safe explorer</span>
         </div>
         <div className="quick-grid">
           <a className="quick-card" href="#/setup-project">
@@ -1023,6 +1033,7 @@ function ProjectReadinessChecklist({
   apiSpecs,
   discoveryRuns,
   qualityRuns,
+  safeExplorerRuns,
   qaRuns
 }: {
   project: Project;
@@ -1032,6 +1043,7 @@ function ProjectReadinessChecklist({
   apiSpecs: APISpec[];
   discoveryRuns: DiscoveryRun[];
   qualityRuns: QualityCheckRun[];
+  safeExplorerRuns: SafeExplorerRun[];
   qaRuns: QARun[];
 }) {
   const latestCompletedRun = runs.find((run) => run.status === "completed");
@@ -1040,10 +1052,11 @@ function ProjectReadinessChecklist({
     { label: "AI provider configured", ready: providers.length > 0, action: "Configure AI", href: "#/ai-providers" },
     { label: "Discovery run exists", ready: discoveryRuns.length > 0, action: "Run discovery", href: `#/projects/${project.id}` },
     { label: "Quality check exists", ready: qualityRuns.length > 0, action: "Run quality checks", href: `#/projects/${project.id}` },
+    { label: "Safe Explorer run exists", ready: safeExplorerRuns.length > 0, action: "Start Safe Explorer", href: `#/projects/${project.id}` },
     { label: "Credential profile exists", ready: credentialProfiles.length > 0, action: "Add credentials", href: `#/projects/${project.id}` },
     { label: "OpenAPI spec imported", ready: apiSpecs.length > 0, action: "Import OpenAPI", href: `#/projects/${project.id}` },
     { label: "Latest Safe QA run exists", ready: qaRuns.length > 0, action: "Start Safe QA", href: `#/projects/${project.id}` },
-    { label: "Latest report available", ready: Boolean(latestCompletedRun || qaRuns.length || qualityRuns.length || discoveryRuns.length), action: "View reports", href: "#/reports" }
+    { label: "Latest report available", ready: Boolean(latestCompletedRun || qaRuns.length || qualityRuns.length || discoveryRuns.length || safeExplorerRuns.length), action: "View reports", href: "#/reports" }
   ];
   return (
     <div className="readiness-grid">
@@ -1121,9 +1134,10 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
       try {
         const projectItems = await Promise.all(
           projects.data.map(async (project) => {
-            const [discovery, quality, qaRuns] = await Promise.all([
+            const [discovery, quality, safeExplorer, qaRuns] = await Promise.all([
               listDiscoveryRuns(project.id),
               listQualityCheckRuns(project.id),
+              listSafeExplorerRuns(project.id),
               listQARuns(project.id)
             ]);
             return [
@@ -1146,6 +1160,16 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
                 created_at: run.created_at,
                 web_href: `#/quality-check-runs/${run.id}`,
                 html_href: qualityCheckHTMLReportURL(run.id)
+              })),
+              ...safeExplorer.map((run): ReportIndexItem => ({
+                id: run.id,
+                project_id: project.id,
+                project_name: project.name,
+                type: "Safe Explorer",
+                status: run.status,
+                created_at: run.created_at,
+                web_href: `#/safe-explorer-runs/${run.id}`,
+                html_href: safeExplorerHTMLReportURL(run.id)
               })),
               ...qaRuns.map((run): ReportIndexItem => ({
                 id: run.id,
@@ -1194,7 +1218,7 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
       <div className="section-heading">
         <div>
           <h2>Reports</h2>
-          <p>Recent browser, API, discovery, quality, Safe QA, authorization, and test-plan execution reports.</p>
+          <p>Recent browser, API, discovery, Safe Explorer, quality, Safe QA, authorization, and test-plan execution reports.</p>
         </div>
         <a className="button secondary-link" href="#/setup-project">Guided Setup</a>
       </div>
@@ -1206,7 +1230,7 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
 
 function ReportIndexTable({ items }: { items: ReportIndexItem[] }) {
   if (items.length === 0) {
-    return <EmptyState title="No reports yet" body="Run browser, API, discovery, quality, or Safe QA checks to populate reports." />;
+    return <EmptyState title="No reports yet" body="Run browser, API, discovery, Safe Explorer, quality, or Safe QA checks to populate reports." />;
   }
   return (
     <div className="table-wrap">
@@ -1680,6 +1704,7 @@ function ProjectPage({
   const [authorizationRuns, setAuthorizationRuns] = useState<LoadState<AuthorizationCheckRun[]>>({ data: [], loading: true, error: "" });
   const [discoveryRuns, setDiscoveryRuns] = useState<LoadState<DiscoveryRun[]>>({ data: [], loading: true, error: "" });
   const [qualityRuns, setQualityRuns] = useState<LoadState<QualityCheckRun[]>>({ data: [], loading: true, error: "" });
+  const [safeExplorerRuns, setSafeExplorerRuns] = useState<LoadState<SafeExplorerRun[]>>({ data: [], loading: true, error: "" });
   const [qaRuns, setQARuns] = useState<LoadState<QARun[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
   const [starting, setStarting] = useState("");
@@ -1693,6 +1718,7 @@ function ProjectPage({
     setAuthorizationRuns((current) => ({ ...current, loading: true, error: "" }));
     setDiscoveryRuns((current) => ({ ...current, loading: true, error: "" }));
     setQualityRuns((current) => ({ ...current, loading: true, error: "" }));
+    setSafeExplorerRuns((current) => ({ ...current, loading: true, error: "" }));
     setQARuns((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
@@ -1707,6 +1733,7 @@ function ProjectPage({
         nextAuthorizationRuns,
         nextDiscoveryRuns,
         nextQualityRuns,
+        nextSafeExplorerRuns,
         nextQARuns
       ] = await Promise.all([
         cachedProject ? Promise.resolve(cachedProject) : getProject(projectID),
@@ -1719,6 +1746,7 @@ function ProjectPage({
         listAuthorizationCheckRuns(projectID),
         listDiscoveryRuns(projectID),
         listQualityCheckRuns(projectID),
+        listSafeExplorerRuns(projectID),
         listQARuns(projectID)
       ]);
       setProject(nextProject);
@@ -1731,6 +1759,7 @@ function ProjectPage({
       setAuthorizationRuns({ data: nextAuthorizationRuns, loading: false, error: "" });
       setDiscoveryRuns({ data: nextDiscoveryRuns, loading: false, error: "" });
       setQualityRuns({ data: nextQualityRuns, loading: false, error: "" });
+      setSafeExplorerRuns({ data: nextSafeExplorerRuns, loading: false, error: "" });
       setQARuns({ data: nextQARuns, loading: false, error: "" });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError);
@@ -1743,6 +1772,7 @@ function ProjectPage({
       setAuthorizationRuns((current) => ({ ...current, loading: false, error: message }));
       setDiscoveryRuns((current) => ({ ...current, loading: false, error: message }));
       setQualityRuns((current) => ({ ...current, loading: false, error: message }));
+      setSafeExplorerRuns((current) => ({ ...current, loading: false, error: message }));
       setQARuns((current) => ({ ...current, loading: false, error: message }));
     }
   }, [cachedProject, projectID]);
@@ -1849,6 +1879,23 @@ function ProjectPage({
     }
   }
 
+  async function startProjectSafeExplorer(input: SafeExplorerRunInput) {
+    if (!project) {
+      return;
+    }
+    setStarting("safe-explorer");
+    setError("");
+    try {
+      const run = await startSafeExplorerRun(project.id, input);
+      await refresh();
+      window.location.hash = `#/safe-explorer-runs/${run.id}`;
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : String(startError));
+    } finally {
+      setStarting("");
+    }
+  }
+
   async function startSafeQARun(input: QARunInput) {
     if (!project) {
       return;
@@ -1918,6 +1965,7 @@ function ProjectPage({
           apiSpecs={apiSpecs.data}
           discoveryRuns={discoveryRuns.data}
           qualityRuns={qualityRuns.data}
+          safeExplorerRuns={safeExplorerRuns.data}
           qaRuns={qaRuns.data}
         />
       </section>
@@ -1945,6 +1993,32 @@ function ProjectPage({
         <div className="section-split">
           {discoveryRuns.error && <Notice tone="danger" message={discoveryRuns.error} />}
           {discoveryRuns.loading ? <SkeletonRows /> : <DiscoveryRunTable runs={discoveryRuns.data} />}
+        </div>
+      </section>
+
+      <section id="interactive-safe-explorer">
+        <div className="section-heading">
+          <div>
+            <h2>Interactive Safe Explorer</h2>
+            <p>Deterministically explores safe same-origin navigation actions and records executed/skipped action timelines.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="Safe Explorer does not use AI to choose actions. It skips destructive-looking links, POST forms, unsafe buttons, external hosts, sensitive queries, and unsupported interactions."
+        />
+        <SafeExplorerRunForm
+          project={project}
+          profiles={credentialProfiles.data}
+          disabled={starting !== ""}
+          onStart={(input) => void startProjectSafeExplorer(input)}
+        />
+        <div className="section-split">
+          {safeExplorerRuns.error && <Notice tone="danger" message={safeExplorerRuns.error} />}
+          {safeExplorerRuns.loading ? <SkeletonRows /> : <SafeExplorerRunTable runs={safeExplorerRuns.data} />}
         </div>
       </section>
 
@@ -2273,6 +2347,153 @@ function DiscoveryRunTable({ runs }: { runs: DiscoveryRun[] }) {
               <td>{formatDate(run.created_at)}</td>
               <td>
                 <a href={`#/discovery-runs/${run.id}`}>Open</a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SafeExplorerRunForm({
+  project,
+  profiles,
+  disabled,
+  onStart
+}: {
+  project: Project;
+  profiles: CredentialProfile[];
+  disabled: boolean;
+  onStart: (input: SafeExplorerRunInput) => void;
+}) {
+  const [form, setForm] = useState<Required<Pick<SafeExplorerRunInput, "start_url" | "credential_profile_id" | "max_steps" | "max_depth" | "same_origin_only" | "allow_get_forms">>>({
+    start_url: project.frontend_url || "",
+    credential_profile_id: "",
+    max_steps: 10,
+    max_depth: 2,
+    same_origin_only: true,
+    allow_get_forms: false
+  });
+
+  useEffect(() => {
+    setForm((current) => ({ ...current, start_url: project.frontend_url || current.start_url }));
+  }, [project.frontend_url]);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onStart({
+      start_url: form.start_url.trim() || undefined,
+      credential_profile_id: form.credential_profile_id || undefined,
+      max_steps: Number(form.max_steps || 10),
+      max_depth: Number(form.max_depth || 2),
+      same_origin_only: form.same_origin_only,
+      allow_get_forms: form.allow_get_forms
+    });
+  }
+
+  return (
+    <form className="project-form compact-form" onSubmit={submit}>
+      <label>
+        Start URL
+        <input value={form.start_url} onChange={(event) => setForm({ ...form, start_url: event.target.value })} />
+      </label>
+      <label>
+        Credential Profile
+        <select
+          value={form.credential_profile_id}
+          onChange={(event) => setForm({ ...form, credential_profile_id: event.target.value })}
+        >
+          <option value="">Unauthenticated</option>
+          {profiles.map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {credentialProfileLabel(profile)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Max Steps
+        <input
+          type="number"
+          min={1}
+          max={50}
+          value={form.max_steps}
+          onChange={(event) => setForm({ ...form, max_steps: Number(event.target.value) })}
+        />
+      </label>
+      <label>
+        Max Depth
+        <input
+          type="number"
+          min={0}
+          max={5}
+          value={form.max_depth}
+          onChange={(event) => setForm({ ...form, max_depth: Number(event.target.value) })}
+        />
+      </label>
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={form.same_origin_only}
+          onChange={(event) => setForm({ ...form, same_origin_only: event.target.checked })}
+        />
+        Same origin only
+      </label>
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={form.allow_get_forms}
+          onChange={(event) => setForm({ ...form, allow_get_forms: event.target.checked })}
+        />
+        Allow safe GET forms
+      </label>
+      <div className="form-actions">
+        <button type="submit" disabled={disabled || !project.frontend_url}>
+          {disabled ? "Starting" : "Start Safe Explorer"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function SafeExplorerRunTable({ runs }: { runs: SafeExplorerRun[] }) {
+  if (runs.length === 0) {
+    return <EmptyState title="No Safe Explorer runs" body="Start Safe Explorer to record a deterministic action timeline." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Start URL</th>
+            <th>Pages</th>
+            <th>Detected</th>
+            <th>Executed</th>
+            <th>Skipped</th>
+            <th>Findings</th>
+            <th>Created</th>
+            <th>Report</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td>
+                <StatusBadge status={run.status} />
+              </td>
+              <td>
+                <code>{run.start_url}</code>
+              </td>
+              <td>{run.total_pages_observed}</td>
+              <td>{run.total_actions_detected}</td>
+              <td>{run.total_actions_executed}</td>
+              <td>{run.total_actions_skipped}</td>
+              <td>{run.total_findings}</td>
+              <td>{formatDate(run.created_at)}</td>
+              <td>
+                <a href={`#/safe-explorer-runs/${run.id}`}>Open</a>
               </td>
             </tr>
           ))}
@@ -5022,6 +5243,224 @@ function QARunPage({ runID }: { runID: string }) {
   );
 }
 
+function SafeExplorerRunPage({ runID }: { runID: string }) {
+  const [report, setReport] = useState<SafeExplorerReport | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const nextReport = await getSafeExplorerReport(runID);
+      setReport(nextReport);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [runID]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!report || !isActiveRunStatus(report.run.status)) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => window.clearInterval(timer);
+  }, [refresh, report]);
+
+  if (error) {
+    return <Notice tone="danger" message={error} />;
+  }
+  if (loading && !report) {
+    return <SkeletonRows />;
+  }
+  if (!report) {
+    return <Notice tone="danger" message="Safe Explorer report could not be loaded." />;
+  }
+
+  const executedActions = report.actions.filter((action) => action.decision === "execute");
+  const skippedActions = report.actions.filter((action) => action.decision === "skip");
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>{report.project.name}</h2>
+            <p>
+              <StatusBadge status={report.run.status} /> <span className="muted">Safe Explorer run {report.run.id}</span>
+            </p>
+          </div>
+          <div className="button-row">
+            <a className="button secondary-link" href={`#/projects/${report.project.id}`}>
+              Project
+            </a>
+            <a className="button secondary-link" href={`${API_BASE_URL}/api/v1/safe-explorer-runs/${report.run.id}/report`} target="_blank" rel="noreferrer">
+              JSON Report
+            </a>
+            <a className="button" href={safeExplorerHTMLReportURL(report.run.id)} target="_blank" rel="noreferrer">
+              HTML Report
+            </a>
+          </div>
+        </div>
+        {report.run.error_message && <Notice tone="danger" message={report.run.error_message} />}
+        <div className="summary-grid">
+          <Metric label="Steps" value={report.summary.total_steps} />
+          <Metric label="Pages" value={report.summary.total_pages_observed} />
+          <Metric label="Detected" value={report.summary.total_actions_detected} />
+          <Metric label="Executed" value={report.summary.total_actions_executed} />
+          <Metric label="Skipped" value={report.summary.total_actions_skipped} tone="medium" />
+          <Metric label="Findings" value={report.summary.total_findings} tone="critical" />
+        </div>
+        <div className="detail-grid compact">
+          <Field label="Start URL" value={report.run.start_url} />
+          <Field label="Max Steps" value={String(report.run.max_steps)} />
+          <Field label="Max Depth" value={String(report.run.max_depth)} />
+          <Field label="Same Origin Only" value={report.run.same_origin_only ? "Yes" : "No"} />
+          <Field label="Allow GET Forms" value={report.run.allow_get_forms ? "Yes" : "No"} />
+          <Field label="Generated" value={formatDate(report.generated_at)} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Safety Scope</h2>
+        <Notice
+          tone="info"
+          message="Safe Explorer is deterministic: it executes only safe classified navigation actions, skips unsafe or unsupported actions with reasons, and does not use AI browser control."
+        />
+      </section>
+
+      <section>
+        <h2>Timeline</h2>
+        <SafeExplorerTimelineTable report={report} />
+      </section>
+
+      <section>
+        <h2>Executed Actions</h2>
+        <SafeExplorerActionsTable actions={executedActions} emptyTitle="No executed actions" emptyBody="Safe Explorer has not executed safe actions for this run yet." />
+      </section>
+
+      <section>
+        <h2>Skipped Actions</h2>
+        <SafeExplorerActionsTable actions={skippedActions} emptyTitle="No skipped actions" emptyBody="Safe Explorer has not recorded skipped actions for this run." />
+      </section>
+
+      <section>
+        <h2>Findings</h2>
+        <FindingTable findings={report.findings} />
+      </section>
+
+      <section>
+        <h2>Evidence</h2>
+        <EvidenceTable evidence={report.evidence} />
+      </section>
+
+      <section>
+        <h2>Safety Notes</h2>
+        <div className="grid two-column">
+          <AnalysisList title="Safety Notes" items={report.safety_notes} />
+          <AnalysisList title="Limitations" items={report.limitations} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SafeExplorerTimelineTable({ report }: { report: SafeExplorerReport }) {
+  if (report.steps.length === 0) {
+    return <EmptyState title="No timeline" body="The Safe Explorer worker has not recorded steps yet." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Decision</th>
+            <th>Depth</th>
+            <th>Status</th>
+            <th>Title / Action</th>
+            <th>URL</th>
+            <th>Signals</th>
+            <th>Screenshot</th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.steps.map((step) => (
+            <tr key={step.id}>
+              <td>{step.step_index}</td>
+              <td>{step.action_decision}</td>
+              <td>{step.depth}</td>
+              <td>
+                {step.result_status} {step.http_status ?? ""}
+              </td>
+              <td>{step.action_label || step.page_title || "Untitled"}</td>
+              <td>
+                <code>{step.action_target_url || step.normalized_url}</code>
+              </td>
+              <td>
+                {step.console_error_count} console, {step.failed_request_count} network
+              </td>
+              <td>{step.screenshot_evidence_id ? <a href={evidenceDownloadURL(step.screenshot_evidence_id)}>Open</a> : "None"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SafeExplorerActionsTable({
+  actions,
+  emptyTitle,
+  emptyBody
+}: {
+  actions: SafeExplorerAction[];
+  emptyTitle: string;
+  emptyBody: string;
+}) {
+  if (actions.length === 0) {
+    return <EmptyState title={emptyTitle} body={emptyBody} />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Decision</th>
+            <th>Safety</th>
+            <th>Type</th>
+            <th>Label</th>
+            <th>Target</th>
+            <th>Skip Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {actions.map((action) => (
+            <tr key={action.id}>
+              <td>{action.decision}</td>
+              <td>
+                <StatusBadge status={action.safety} />
+              </td>
+              <td>{action.action_type}</td>
+              <td>{action.label || action.text || ""}</td>
+              <td>
+                <code>{action.target_url || action.href || ""}</code>
+              </td>
+              <td>{action.skip_reason || "None"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function DiscoveryRunPage({ runID }: { runID: string }) {
   const [report, setReport] = useState<DiscoveryReport | undefined>();
   const [providers, setProviders] = useState<AIProvider[]>([]);
@@ -6157,6 +6596,9 @@ function parseHash(hash: string): Route {
   if (parts[0] === "quality-check-runs" && parts[1]) {
     return { name: "quality-check-run", id: parts[1] };
   }
+  if (parts[0] === "safe-explorer-runs" && parts[1]) {
+    return { name: "safe-explorer-run", id: parts[1] };
+  }
   if (parts[0] === "qa-runs" && parts[1]) {
     return { name: "qa-run", id: parts[1] };
   }
@@ -6193,6 +6635,8 @@ function hashForRoute(route: Route): string {
       return `/discovery-runs/${route.id}`;
     case "quality-check-run":
       return `/quality-check-runs/${route.id}`;
+    case "safe-explorer-run":
+      return `/safe-explorer-runs/${route.id}`;
     case "qa-run":
       return `/qa-runs/${route.id}`;
     case "run":
@@ -6230,6 +6674,8 @@ function titleForRoute(route: Route): string {
       return "Discovery Report";
     case "quality-check-run":
       return "Quality Report";
+    case "safe-explorer-run":
+      return "Safe Explorer Report";
     case "qa-run":
       return "Safe QA Report";
     case "run":

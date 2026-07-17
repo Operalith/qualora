@@ -4,6 +4,37 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.16.0-alpha] - 2026-07-17
+
+### Added
+
+- Interactive Safe Explorer run API, trace endpoint, JSON report, and self-contained HTML report.
+- Browser-worker Safe Explorer job for bounded deterministic navigation from a frontend start URL.
+- Persistent `safe_explorer_runs`, `safe_explorer_steps`, and `safe_explorer_actions` tables.
+- Safe action extraction for visible links, forms, submit controls, buttons, and inputs without storing full HTML.
+- Deterministic safety classification for safe same-origin navigation, unsafe labels, sensitive query values, external hosts, mutating forms, unsupported controls, duplicates, and policy limits.
+- Web UI Safe Explorer project card, run form, run list, report page, and reports index integration.
+- Demo-web fixtures and smoke coverage for executed safe actions, skipped unsafe/external/POST/unsupported actions, screenshot evidence, reports, and redaction.
+
+### Changed
+
+- Package metadata has been updated to `0.16.0-alpha`.
+- The project readiness checklist and reports index now include Safe Explorer runs.
+- Browser worker evidence and finding ownership supports Safe Explorer report artifacts.
+
+### Security
+
+- Safe Explorer never lets AI choose actions and never uses autonomous AI browser control.
+- Safe Explorer skips destructive-looking links, external hosts, sensitive query URLs, POST forms, unsafe form fields, arbitrary buttons, unsupported controls, duplicates, and policy-blocked actions with recorded reasons.
+- Safe Explorer evidence stores metadata and screenshots only; it does not store cookies, browser storage, auth headers, tokens, credentials, full HTML, request bodies, or response bodies.
+
+### Known Limitations
+
+- Safe Explorer is alpha coverage, not exhaustive crawling or active scanning.
+- Only safe navigation actions are executed by default.
+- GET forms remain disabled by default and POST/mutating forms are skipped.
+- Safe QA Run integration for Safe Explorer summaries is planned for a later release.
+
 ## [v0.15.0-alpha] - 2026-07-17
 
 ### Added

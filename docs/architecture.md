@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.15.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, human-friendly reports, safe deterministic application discovery, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
+Qualora v0.16.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, human-friendly reports, safe deterministic application discovery, Interactive Safe Explorer, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,7 +10,7 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
@@ -22,6 +22,7 @@ qualora-api
         |       +--> Deterministic selector-based login checks
         |       +--> Authenticated browser smoke test
         |       +--> Safe deterministic application discovery
+        |       +--> Interactive Safe Explorer
         |       +--> Passive quality checks
         |       +--> Explicit role-aware authorization checks
         |       +--> Approved safe test plan execution
@@ -85,6 +86,12 @@ Current endpoints:
 - `GET /api/v1/discovery-runs/{discovery_run_id}/map`
 - `GET /api/v1/discovery-runs/{discovery_run_id}/report`
 - `GET /api/v1/discovery-runs/{discovery_run_id}/report.html`
+- `GET /api/v1/projects/{project_id}/safe-explorer-runs`
+- `POST /api/v1/projects/{project_id}/safe-explorer-runs`
+- `GET /api/v1/safe-explorer-runs/{safe_explorer_run_id}`
+- `GET /api/v1/safe-explorer-runs/{safe_explorer_run_id}/trace`
+- `GET /api/v1/safe-explorer-runs/{safe_explorer_run_id}/report`
+- `GET /api/v1/safe-explorer-runs/{safe_explorer_run_id}/report.html`
 - `GET /api/v1/projects/{project_id}/qa-runs`
 - `POST /api/v1/projects/{project_id}/qa-runs`
 - `GET /api/v1/qa-runs/{qa_run_id}`
@@ -170,6 +177,8 @@ For role-aware authorization runs, the worker logs in with the configured actor 
 
 For application discovery runs, the worker performs bounded deterministic navigation from the project frontend or requested start URL. It defaults to same-origin only, enforces `allowed_hosts`, strips fragments, redacts sensitive query values, avoids duplicate visits, records pages/links/forms/fields, stores screenshot evidence, and creates findings for obvious load, console, network, skipped-link, and form issues. It never submits forms, clicks arbitrary buttons, runs payloads, performs destructive actions, or uses AI browser control.
 
+For Interactive Safe Explorer runs, the worker logs in only through an optional configured credential profile, starts from the project frontend or requested start URL, observes visible links/buttons/forms/inputs, classifies actions with a deterministic safety policy, and executes only safe same-origin navigation actions. It records a step timeline, action metadata, screenshots, findings, and skip reasons for unsafe, external, unsupported, duplicate, sensitive-query, and policy-blocked actions. It does not let AI choose actions, does not submit POST forms, does not click arbitrary buttons, does not expose cookies/storage/auth headers/tokens, and does not store full HTML or response bodies.
+
 For quality check runs, the worker visits only the project frontend origin or pages from a completed discovery run. It can optionally perform the same deterministic selector-based credential-profile login before checking pages. It collects safe metadata for passive security checks, accessibility heuristics, and performance/front-end observations. Quality evidence stores metadata only; it must not contain cookie values, browser storage, auth headers, tokens, credentials, request bodies, response bodies, or full HTML. Quality checks never submit forms, click arbitrary buttons, guess sensitive paths, run payloads, fuzz inputs, perform active scans, perform destructive actions, or use autonomous AI browser control.
 
 The same worker also consumes safe test plan execution jobs. It executes only persisted mapped actions from the supported DSL:
@@ -199,6 +208,7 @@ It currently captures:
 - Console errors.
 - Failed network requests.
 - Blocked out-of-scope browser requests.
+- Safe Explorer observed pages, executed actions, skipped actions, selector hints, skip reasons, action safety decisions, and screenshots.
 - Basic findings for obvious load, timeout, non-success status, console, request, empty page, and scope issues.
 - Login findings for failed login, missing selectors, timeouts, console errors, failed requests, and authenticated navigation failures.
 - Quality findings for missing security headers, cookie flag observations, mixed content, sensitive query names, source maps, password/form issues, basic accessibility issues, slow loads, console errors, failed resources, request-count issues, large JavaScript resources, and image dimension issues.
@@ -247,7 +257,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.15.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.16.0-alpha`.
 
 ### PostgreSQL
 
