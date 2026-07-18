@@ -243,7 +243,7 @@ func (s *Store) GetAuthorizationCheckReport(ctx context.Context, id string) (*Au
 	if err != nil {
 		return nil, err
 	}
-	return &AuthorizationCheckReport{
+	report := &AuthorizationCheckReport{
 		Run:      detail.Run,
 		Project:  *project,
 		Checks:   detail.Checks,
@@ -260,7 +260,21 @@ func (s *Store) GetAuthorizationCheckReport(ctx context.Context, id string) (*Au
 			"destructive_actions":    false,
 		},
 		GeneratedAt: time.Now().UTC(),
-	}, nil
+	}
+	report.ReportIntelligence = BuildReportIntelligence(ReportIntelligenceInput{
+		ReportType:        "authorization_check",
+		ReportID:          detail.Run.ID,
+		Status:            detail.Run.Status,
+		Project:           project,
+		Findings:          findings,
+		Evidence:          evidence,
+		ChecksCompleted:   []string{"Configured browser URL authorization checks"},
+		ChecksSkipped:     []string{"Authenticated API authorization checks", "Broad access-control crawling", "Destructive actions"},
+		WhatWasTested:     []string{"Explicit browser URL targets", "Expected allowed or denied outcomes per configured role"},
+		WhatWasNotTested:  defaultWhatWasNotTested("authorization_check"),
+		SafetyLimitations: defaultReportSafetyLimitations("authorization_check"),
+	})
+	return report, nil
 }
 
 func (s *Store) ListAuthorizationCheckResults(ctx context.Context, runID string) ([]AuthorizationCheckResult, error) {

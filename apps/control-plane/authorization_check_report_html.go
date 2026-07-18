@@ -11,9 +11,10 @@ type authorizationCheckHTMLReportData struct {
 }
 
 var authorizationCheckHTMLReportTemplate = template.Must(template.New("authorization-check-report").Funcs(template.FuncMap{
-	"json":       prettyJSON,
-	"formatTime": formatReportTime,
-	"intValue":   optionalIntValue,
+	"json":               prettyJSON,
+	"formatTime":         formatReportTime,
+	"intValue":           optionalIntValue,
+	"reportIntelligence": reportIntelligenceHTML,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -134,6 +135,8 @@ var authorizationCheckHTMLReportTemplate = template.Must(template.New("authoriza
     <div class="metric"><span>Findings</span><strong>{{ .Report.Summary.TotalFindings }}</strong></div>
     <div class="metric"><span>Evidence</span><strong>{{ len .Report.Evidence }}</strong></div>
   </div>
+
+  {{ reportIntelligence .Report.ReportIntelligence }}
 
   <section style="margin-bottom: 16px;">
     <h2>Safety Scope</h2>

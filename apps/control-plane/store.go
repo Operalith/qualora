@@ -328,6 +328,10 @@ func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	project, err := s.GetProject(ctx, run.ProjectID)
+	if err != nil {
+		return nil, err
+	}
 
 	findings, err := s.ListFindings(ctx, runID)
 	if err != nil {
@@ -408,6 +412,19 @@ func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 	if run.ErrorMessage != "" {
 		report.Metadata["error_message"] = run.ErrorMessage
 	}
+	report.ReportIntelligence = BuildReportIntelligence(ReportIntelligenceInput{
+		ReportType:        run.RunType,
+		ReportID:          run.ID,
+		Status:            run.Status,
+		Project:           project,
+		Findings:          findings,
+		Evidence:          evidence,
+		ChecksCompleted:   completedRunJobKinds(jobs),
+		ChecksSkipped:     skippedRunJobKinds(jobs),
+		WhatWasTested:     whatWasTestedForRun(run),
+		WhatWasNotTested:  whatWasNotTestedForRun(run),
+		SafetyLimitations: defaultReportSafetyLimitations(run.RunType),
+	})
 	return report, nil
 }
 

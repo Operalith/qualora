@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.16.0-alpha
-  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports, and downloading protected stored evidence objects.
+  version: 0.17.0-alpha
+  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
 security:
@@ -1667,7 +1667,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.16.0-alpha
+          example: 0.17.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -2450,6 +2450,32 @@ components:
         generated_at:
           type: string
           format: date-time
+        executive_summary:
+          $ref: "#/components/schemas/ReportExecutiveSummary"
+        severity_counts:
+          $ref: "#/components/schemas/ReportSummary"
+        grouped_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_affected_pages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AffectedPageSummary"
+        noise_summary:
+          $ref: "#/components/schemas/NoiseSummary"
+        raw_findings_count:
+          type: integer
+        deduplication_summary:
+          $ref: "#/components/schemas/DeduplicationSummary"
+        safety_limitations:
+          type: array
+          items:
+            type: string
     DiscoveryRunRequest:
       type: object
       additionalProperties: false
@@ -2673,6 +2699,7 @@ components:
     DiscoveryReport:
       allOf:
         - $ref: "#/components/schemas/DiscoveryMap"
+        - $ref: "#/components/schemas/ReportIntelligence"
         - type: object
           properties:
             generated_at:
@@ -2926,6 +2953,7 @@ components:
     SafeExplorerReport:
       allOf:
         - $ref: "#/components/schemas/SafeExplorerTrace"
+        - $ref: "#/components/schemas/ReportIntelligence"
         - type: object
           properties:
             generated_at:
@@ -3116,6 +3144,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/QualityCheckResult"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
         safety_notes:
           type: array
           items:
@@ -3127,6 +3159,32 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        executive_summary:
+          $ref: "#/components/schemas/ReportExecutiveSummary"
+        severity_counts:
+          $ref: "#/components/schemas/ReportSummary"
+        grouped_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_affected_pages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AffectedPageSummary"
+        noise_summary:
+          $ref: "#/components/schemas/NoiseSummary"
+        raw_findings_count:
+          type: integer
+        deduplication_summary:
+          $ref: "#/components/schemas/DeduplicationSummary"
+        safety_limitations:
+          type: array
+          items:
+            type: string
     APISpecImportRequest:
       type: object
       additionalProperties: false
@@ -3419,6 +3477,32 @@ components:
           allOf:
             - $ref: "#/components/schemas/LoginSummary"
           nullable: true
+        executive_summary:
+          $ref: "#/components/schemas/ReportExecutiveSummary"
+        severity_counts:
+          $ref: "#/components/schemas/ReportSummary"
+        grouped_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_affected_pages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AffectedPageSummary"
+        noise_summary:
+          $ref: "#/components/schemas/NoiseSummary"
+        raw_findings_count:
+          type: integer
+        deduplication_summary:
+          $ref: "#/components/schemas/DeduplicationSummary"
+        safety_limitations:
+          type: array
+          items:
+            type: string
     LoginSummary:
       type: object
       properties:
@@ -3460,6 +3544,185 @@ components:
           type: integer
         info:
           type: integer
+    ReportFindingOccurrenceRef:
+      type: object
+      properties:
+        source_type:
+          type: string
+        source_run_id:
+          type: string
+        finding_id:
+          type: string
+        quality_result_id:
+          type: string
+        evidence_id:
+          type: string
+        category:
+          type: string
+        severity:
+          type: string
+        affected_url:
+          type: string
+        affected_path:
+          type: string
+    GroupedFinding:
+      type: object
+      required: [group_id, fingerprint, category, title, normalized_severity, occurrences_count, sources, noise_level, raw_occurrence_refs]
+      properties:
+        group_id:
+          type: string
+        fingerprint:
+          type: string
+        category:
+          type: string
+        title:
+          type: string
+        normalized_severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        summary:
+          type: string
+        recommendation:
+          type: string
+        occurrences_count:
+          type: integer
+        affected_urls:
+          type: array
+          items:
+            type: string
+        affected_paths:
+          type: array
+          items:
+            type: string
+        sources:
+          type: array
+          items:
+            type: string
+        representative_evidence_id:
+          type: string
+        confidence:
+          type: string
+        noise_level:
+          type: string
+          enum: [high, medium, low]
+        raw_occurrence_refs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportFindingOccurrenceRef"
+    AffectedPageSummary:
+      type: object
+      required: [findings_count, highest_severity]
+      properties:
+        url:
+          type: string
+        path:
+          type: string
+        findings_count:
+          type: integer
+        highest_severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+    NoiseSummary:
+      type: object
+      required: [high_noise, medium_noise, low_noise, high_signal, needs_attention, informational, noisy_repeated]
+      properties:
+        high_noise:
+          type: integer
+        medium_noise:
+          type: integer
+        low_noise:
+          type: integer
+        high_signal:
+          type: integer
+        needs_attention:
+          type: integer
+        informational:
+          type: integer
+        noisy_repeated:
+          type: integer
+    DeduplicationSummary:
+      type: object
+      required: [raw_findings_count, grouped_findings_count, duplicate_findings_reduced, grouped_repeated_findings, cross_source_grouped_findings]
+      properties:
+        raw_findings_count:
+          type: integer
+        grouped_findings_count:
+          type: integer
+        duplicate_findings_reduced:
+          type: integer
+        grouped_repeated_findings:
+          type: integer
+        cross_source_grouped_findings:
+          type: integer
+    ReportExecutiveSummary:
+      type: object
+      required: [overall_status, headline, total_findings, grouped_findings, severity_counts, checks_completed, checks_skipped, recommended_next_actions, what_was_tested, what_was_not_tested, safety_limitations]
+      properties:
+        overall_status:
+          type: string
+          enum: [pass, warning, fail, unknown]
+        headline:
+          type: string
+        total_findings:
+          type: integer
+        grouped_findings:
+          type: integer
+        severity_counts:
+          $ref: "#/components/schemas/ReportSummary"
+        checks_completed:
+          type: array
+          items:
+            type: string
+        checks_skipped:
+          type: array
+          items:
+            type: string
+        recommended_next_actions:
+          type: array
+          items:
+            type: string
+        what_was_tested:
+          type: array
+          items:
+            type: string
+        what_was_not_tested:
+          type: array
+          items:
+            type: string
+        safety_limitations:
+          type: array
+          items:
+            type: string
+    ReportIntelligence:
+      type: object
+      required: [executive_summary, severity_counts, grouped_findings, top_findings, top_affected_pages, noise_summary, raw_findings_count, deduplication_summary, safety_limitations]
+      properties:
+        executive_summary:
+          $ref: "#/components/schemas/ReportExecutiveSummary"
+        severity_counts:
+          $ref: "#/components/schemas/ReportSummary"
+        grouped_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_affected_pages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AffectedPageSummary"
+        noise_summary:
+          $ref: "#/components/schemas/NoiseSummary"
+        raw_findings_count:
+          type: integer
+        deduplication_summary:
+          $ref: "#/components/schemas/DeduplicationSummary"
+        safety_limitations:
+          type: array
+          items:
+            type: string
     Finding:
       type: object
       required:
@@ -4376,6 +4639,32 @@ components:
         generated_at:
           type: string
           format: date-time
+        executive_summary:
+          $ref: "#/components/schemas/ReportExecutiveSummary"
+        severity_counts:
+          $ref: "#/components/schemas/ReportSummary"
+        grouped_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_affected_pages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AffectedPageSummary"
+        noise_summary:
+          $ref: "#/components/schemas/NoiseSummary"
+        raw_findings_count:
+          type: integer
+        deduplication_summary:
+          $ref: "#/components/schemas/DeduplicationSummary"
+        safety_limitations:
+          type: array
+          items:
+            type: string
     QARunRequest:
       type: object
       additionalProperties: false
@@ -4569,6 +4858,32 @@ components:
         generated_at:
           type: string
           format: date-time
+        executive_summary:
+          $ref: "#/components/schemas/ReportExecutiveSummary"
+        severity_counts:
+          $ref: "#/components/schemas/ReportSummary"
+        grouped_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        top_affected_pages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AffectedPageSummary"
+        noise_summary:
+          $ref: "#/components/schemas/NoiseSummary"
+        raw_findings_count:
+          type: integer
+        deduplication_summary:
+          $ref: "#/components/schemas/DeduplicationSummary"
+        safety_limitations:
+          type: array
+          items:
+            type: string
     ErrorResponse:
       type: object
       required: [error]

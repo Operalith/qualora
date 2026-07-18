@@ -350,7 +350,7 @@ export type AuthorizationCheckDetail = {
   results: AuthorizationCheckResult[];
 };
 
-export type AuthorizationCheckReport = {
+export type AuthorizationCheckReport = ReportIntelligenceFields & {
   run: AuthorizationCheckRun;
   project: Project;
   checks: AuthorizationCheck[];
@@ -476,7 +476,7 @@ export type DiscoveryMap = {
   evidence: Evidence[];
 };
 
-export type DiscoveryReport = DiscoveryMap & {
+export type DiscoveryReport = DiscoveryMap & ReportIntelligenceFields & {
   generated_at: string;
   settings: Record<string, unknown>;
   safety_notes: string[];
@@ -586,7 +586,7 @@ export type SafeExplorerTrace = {
   evidence: Evidence[];
 };
 
-export type SafeExplorerReport = SafeExplorerTrace & {
+export type SafeExplorerReport = SafeExplorerTrace & ReportIntelligenceFields & {
   generated_at: string;
   settings: Record<string, unknown>;
   safety_notes: string[];
@@ -659,13 +659,14 @@ export type QualityCheckSummary = {
   performance_findings: number;
 };
 
-export type QualityCheckReport = {
+export type QualityCheckReport = ReportIntelligenceFields & {
   generated_at: string;
   run: QualityCheckRun;
   project: Project;
   discovery_run?: DiscoveryRun;
   summary: QualityCheckSummary;
   results: QualityCheckResult[];
+  findings: Finding[];
   safety_notes: string[];
   limitations: string[];
   metadata: Record<string, unknown>;
@@ -898,7 +899,7 @@ export type TestPlanExecutionSafetyReport = {
   skipped_scenarios: number;
 };
 
-export type TestPlanExecutionReport = {
+export type TestPlanExecutionReport = ReportIntelligenceFields & {
   execution: TestPlanExecution;
   test_plan: TestPlan;
   project: Project;
@@ -947,7 +948,7 @@ export type QARun = {
   updated_at: string;
 };
 
-export type QARunReport = {
+export type QARunReport = ReportIntelligenceFields & {
   run: QARun;
   project: Project;
   discovery_run?: DiscoveryRun;
@@ -1052,7 +1053,88 @@ export type ReportSummary = {
   info: number;
 };
 
-export type Report = {
+export type ReportFindingOccurrenceRef = {
+  source_type: string;
+  source_run_id?: string;
+  finding_id?: string;
+  quality_result_id?: string;
+  evidence_id?: string;
+  category?: string;
+  severity?: string;
+  affected_url?: string;
+  affected_path?: string;
+};
+
+export type GroupedFinding = {
+  group_id: string;
+  fingerprint: string;
+  category: string;
+  title: string;
+  normalized_severity: string;
+  summary?: string;
+  recommendation?: string;
+  occurrences_count: number;
+  affected_urls?: string[];
+  affected_paths?: string[];
+  sources: string[];
+  representative_evidence_id?: string;
+  confidence?: string;
+  noise_level: string;
+  raw_occurrence_refs: ReportFindingOccurrenceRef[];
+};
+
+export type AffectedPageSummary = {
+  url?: string;
+  path?: string;
+  findings_count: number;
+  highest_severity: string;
+};
+
+export type NoiseSummary = {
+  high_noise: number;
+  medium_noise: number;
+  low_noise: number;
+  high_signal: number;
+  needs_attention: number;
+  informational: number;
+  noisy_repeated: number;
+};
+
+export type DeduplicationSummary = {
+  raw_findings_count: number;
+  grouped_findings_count: number;
+  duplicate_findings_reduced: number;
+  grouped_repeated_findings: number;
+  cross_source_grouped_findings: number;
+};
+
+export type ReportExecutiveSummary = {
+  overall_status: string;
+  headline: string;
+  total_findings: number;
+  grouped_findings: number;
+  severity_counts: ReportSummary;
+  checks_completed: string[];
+  checks_skipped: string[];
+  recommended_next_actions: string[];
+  what_was_tested: string[];
+  what_was_not_tested: string[];
+  safety_limitations: string[];
+};
+
+export type ReportIntelligenceFields = {
+  executive_summary?: ReportExecutiveSummary;
+  severity_counts?: ReportSummary;
+  grouped_findings?: GroupedFinding[];
+  top_findings?: GroupedFinding[];
+  top_affected_pages?: AffectedPageSummary[];
+  noise_summary?: NoiseSummary;
+  raw_findings_count?: number;
+  deduplication_summary?: DeduplicationSummary;
+  safety_limitations?: string[];
+};
+
+export type Report = ReportIntelligenceFields & {
   run_id: string;
   project_id: string;
   run_type: string;

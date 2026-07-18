@@ -138,13 +138,15 @@ func (s *Store) GetQualityCheckReport(ctx context.Context, id string) (*QualityC
 	if run.DiscoveryRunID != "" {
 		discoveryRun, _ = s.GetDiscoveryRun(ctx, run.DiscoveryRunID)
 	}
-	return &QualityCheckReport{
+	findings := QualityResultsToFindings(results)
+	report := &QualityCheckReport{
 		GeneratedAt:  time.Now().UTC(),
 		Run:          *run,
 		Project:      *project,
 		DiscoveryRun: discoveryRun,
 		Summary:      summarizeQualityCheckResults(*run, results),
 		Results:      results,
+		Findings:     findings,
 		SafetyNotes:  qualityCheckSafetyNotes(),
 		Limitations:  qualityCheckLimitations(),
 		Metadata: map[string]any{
@@ -156,7 +158,20 @@ func (s *Store) GetQualityCheckReport(ctx context.Context, id string) (*QualityC
 			"credentials_sent_to_ai":        false,
 			"browser_storage_exposed_to_ai": false,
 		},
-	}, nil
+	}
+	report.ReportIntelligence = BuildReportIntelligence(ReportIntelligenceInput{
+		ReportType:        RunTypeQualityCheck,
+		ReportID:          run.ID,
+		Status:            run.Status,
+		Project:           project,
+		QualityResults:    results,
+		ChecksCompleted:   qualityCheckCompletedChecks(*run),
+		ChecksSkipped:     qualityCheckSkippedChecks(*run),
+		WhatWasTested:     []string{"Passive security header heuristics", "Basic accessibility heuristics", "Front-end and performance metadata"},
+		WhatWasNotTested:  defaultWhatWasNotTested(RunTypeQualityCheck),
+		SafetyLimitations: report.Limitations,
+	})
+	return report, nil
 }
 
 func scanQualityCheckRun(row scanRow) (QualityCheckRun, error) {

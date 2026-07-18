@@ -15,10 +15,11 @@ type htmlReportData struct {
 }
 
 var htmlReportTemplate = template.Must(template.New("html-report").Funcs(template.FuncMap{
-	"json":       prettyJSON,
-	"formatTime": formatReportTime,
-	"jsonField":  jsonField,
-	"intValue":   optionalIntValue,
+	"json":               prettyJSON,
+	"formatTime":         formatReportTime,
+	"jsonField":          jsonField,
+	"intValue":           optionalIntValue,
+	"reportIntelligence": reportIntelligenceHTML,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -139,6 +140,8 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
     <div class="metric"><span>Low</span><strong>{{ .Report.Summary.Low }}</strong></div>
     <div class="metric"><span>Info</span><strong>{{ .Report.Summary.Info }}</strong></div>
   </div>
+
+  {{ reportIntelligence .Report.ReportIntelligence }}
 
   {{ with .Report.LoginSummary }}
   <section style="margin-bottom: 16px;">

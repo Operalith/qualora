@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.16.0-alpha.
+This document covers local development for Qualora v0.17.0-alpha.
 
 ## Requirements
 
@@ -162,7 +162,7 @@ When changing guided onboarding:
 
 ## AI Provider Development
 
-The v0.16 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.17 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -242,7 +242,7 @@ Safe QA Runs are an orchestration layer over discovery, AI test planning, and ap
 
 Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
 
-The v0.16 API executor:
+The v0.17 API executor:
 
 - Supports OpenAPI 3.x JSON/YAML.
 - Executes only `GET`, `HEAD`, and `OPTIONS`.
@@ -251,6 +251,12 @@ The v0.16 API executor:
 - Does not store response bodies.
 - Blocks redirects to external origins.
 - Persists `api_check_results` plus metadata-only API evidence.
+
+## Report Intelligence Development
+
+`v0.17.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
+
+When adding new finding sources, provide stable categories, titles, recommendations, evidence IDs, and safe URL metadata where practical. Do not add secrets, cookies, local/session storage, auth headers, request bodies, response bodies, full HTML, or screenshot bytes to report intelligence inputs.
 
 OpenRouter example headers:
 

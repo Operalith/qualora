@@ -94,6 +94,7 @@ import type {
   DiscoveryRun,
   DiscoveryRunInput,
   Evidence,
+  GroupedFinding,
   LoginInput,
   Project,
   ProjectSetupInput,
@@ -110,6 +111,8 @@ import type {
   SafeExplorerRun,
   SafeExplorerRunInput,
   Report,
+  ReportIntelligenceFields,
+  ReportSummary,
   RunJob,
   SetupAdminInput,
   TestPlan,
@@ -157,7 +160,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.16.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.17.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -573,7 +576,7 @@ function Dashboard({
             <h2>Qualora version badge: {formatVersionBadge(version)}</h2>
             <p>Configure a real project, optional AI, optional login, optional OpenAPI, and start the first safe workflow.</p>
           </div>
-          <span className="pill">v0.16 safe explorer</span>
+          <span className="pill">v0.17 report intelligence</span>
         </div>
         <div className="quick-grid">
           <a className="quick-card" href="#/setup-project">
@@ -1122,6 +1125,9 @@ type ReportIndexItem = {
   created_at: string;
   web_href: string;
   html_href?: string;
+  severity_counts?: ReportSummary;
+  grouped_findings_count?: number;
+  raw_findings_count?: number;
 };
 
 function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Project[]>; runs: LoadState<TestRun[]>; projectByID: Map<string, Project> }) {
@@ -1194,7 +1200,23 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
           web_href: `#/runs/${run.id}`,
           html_href: htmlReportURL(run.id)
         }));
-        const nextItems = [...runItems, ...projectItems.flat()].sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+        const sortedItems = [...runItems, ...projectItems.flat()].sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+        const hydratedItems = await Promise.all(
+          sortedItems.slice(0, 30).map(async (item) => {
+            try {
+              const intelligence = await loadReportIndexIntelligence(item);
+              return {
+                ...item,
+                severity_counts: intelligence.severity_counts || intelligence.executive_summary?.severity_counts,
+                grouped_findings_count: intelligence.grouped_findings?.length ?? intelligence.executive_summary?.grouped_findings,
+                raw_findings_count: intelligence.raw_findings_count ?? intelligence.executive_summary?.total_findings
+              };
+            } catch {
+              return item;
+            }
+          })
+        );
+        const nextItems = [...hydratedItems, ...sortedItems.slice(30)];
         if (!canceled) {
           setItems({ data: nextItems, loading: false, error: "" });
         }
@@ -1218,7 +1240,7 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
       <div className="section-heading">
         <div>
           <h2>Reports</h2>
-          <p>Recent browser, API, discovery, Safe Explorer, quality, Safe QA, authorization, and test-plan execution reports.</p>
+          <p>Recent reports with deterministic executive summaries, severity counts, grouped findings, and raw details.</p>
         </div>
         <a className="button secondary-link" href="#/setup-project">Guided Setup</a>
       </div>
@@ -1226,6 +1248,25 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
       {items.loading ? <SkeletonRows /> : <ReportIndexTable items={items.data} />}
     </section>
   );
+}
+
+async function loadReportIndexIntelligence(item: ReportIndexItem): Promise<ReportIntelligenceFields> {
+  if (item.web_href.startsWith("#/discovery-runs/")) {
+    return getDiscoveryReport(item.id);
+  }
+  if (item.web_href.startsWith("#/quality-check-runs/")) {
+    return getQualityCheckReport(item.id);
+  }
+  if (item.web_href.startsWith("#/safe-explorer-runs/")) {
+    return getSafeExplorerReport(item.id);
+  }
+  if (item.web_href.startsWith("#/qa-runs/")) {
+    return getQARunReport(item.id);
+  }
+  if (item.web_href.startsWith("#/runs/")) {
+    return getReport(item.id);
+  }
+  return {};
 }
 
 function ReportIndexTable({ items }: { items: ReportIndexItem[] }) {
@@ -1240,6 +1281,8 @@ function ReportIndexTable({ items }: { items: ReportIndexItem[] }) {
             <th>Status</th>
             <th>Type</th>
             <th>Project</th>
+            <th>Severity</th>
+            <th>Grouped</th>
             <th>Report</th>
             <th>Created</th>
           </tr>
@@ -1250,6 +1293,8 @@ function ReportIndexTable({ items }: { items: ReportIndexItem[] }) {
               <td><StatusBadge status={item.status} /></td>
               <td>{item.type}</td>
               <td><a href={`#/projects/${item.project_id}`}>{item.project_name}</a></td>
+              <td>{item.severity_counts ? `${item.severity_counts.high} high / ${item.severity_counts.medium} medium` : "Open report"}</td>
+              <td>{item.grouped_findings_count === undefined ? "Open report" : `${item.grouped_findings_count} grouped / ${item.raw_findings_count ?? 0} raw`}</td>
               <td>
                 <a href={item.web_href}>{shortID(item.id)}</a>
                 {item.html_href && <>{" "} <a href={item.html_href} target="_blank" rel="noreferrer">HTML</a></>}
@@ -4600,6 +4645,8 @@ function TestPlanExecutionPage({ executionID }: { executionID: string }) {
         </div>
       </section>
 
+      <ReportIntelligencePanel report={report} />
+
       <section>
         <h2>Safety Scope</h2>
         <div className="detail-grid compact">
@@ -4948,6 +4995,8 @@ function QualityCheckRunPage({ runID }: { runID: string }) {
         </div>
       </section>
 
+      <ReportIntelligencePanel report={report} />
+
       <section>
         <h2>Safety Scope</h2>
         <Notice
@@ -5140,6 +5189,8 @@ function QARunPage({ runID }: { runID: string }) {
         )}
       </section>
 
+      <ReportIntelligencePanel report={report} />
+
       {report.discovery_summary && (
         <section>
           <h2>Discovery Summary</h2>
@@ -5326,6 +5377,8 @@ function SafeExplorerRunPage({ runID }: { runID: string }) {
           <Field label="Generated" value={formatDate(report.generated_at)} />
         </div>
       </section>
+
+      <ReportIntelligencePanel report={report} />
 
       <section>
         <h2>Safety Scope</h2>
@@ -5628,6 +5681,8 @@ function DiscoveryRunPage({ runID }: { runID: string }) {
         </div>
       </section>
 
+      <ReportIntelligencePanel report={report} />
+
       <section>
         <h2>Safety Scope</h2>
         <Notice
@@ -5847,6 +5902,8 @@ function AuthorizationCheckRunPage({ runID }: { runID: string }) {
           <Field label="Generated" value={formatDate(report.generated_at)} />
         </div>
       </section>
+
+      <ReportIntelligencePanel report={report} />
 
       <section>
         <h2>Safety Scope</h2>
@@ -6074,6 +6131,8 @@ function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cache
         </div>
       </section>
 
+      <ReportIntelligencePanel report={report} />
+
       {report.login_summary && (
         <section>
           <div className="section-heading">
@@ -6275,6 +6334,173 @@ function AnalysisList({ title, items }: { title: string; items: string[] }) {
       )}
     </div>
   );
+}
+
+function ReportIntelligencePanel({ report }: { report: ReportIntelligenceFields }) {
+  if (!report.executive_summary && !report.grouped_findings && !report.severity_counts) {
+    return null;
+  }
+  const executive = report.executive_summary;
+  const severity = report.severity_counts || executive?.severity_counts || {
+    total_findings: report.raw_findings_count || 0,
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    info: 0
+  };
+  const topFindings = report.top_findings || [];
+  const groupedFindings = report.grouped_findings || [];
+  const topAffectedPages = report.top_affected_pages || [];
+  const noise = report.noise_summary;
+  const dedup = report.deduplication_summary;
+
+  return (
+    <>
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>Executive Summary</h2>
+            <p>{executive?.headline || "Deterministic report intelligence is available for this run."}</p>
+          </div>
+          {executive?.overall_status && <StatusBadge status={executive.overall_status} />}
+        </div>
+        <div className="summary-grid">
+          <Metric label="Raw Findings" value={report.raw_findings_count ?? severity.total_findings} />
+          <Metric label="Grouped" value={groupedFindings.length || executive?.grouped_findings || 0} />
+          <Metric label="Critical" value={severity.critical} tone="critical" />
+          <Metric label="High" value={severity.high} tone="high" />
+          <Metric label="Medium" value={severity.medium} tone="medium" />
+          <Metric label="Reduced" value={dedup?.duplicate_findings_reduced || 0} tone="info" />
+        </div>
+        <div className="analysis-grid">
+          <AnalysisList title="Recommended Next Actions" items={executive?.recommended_next_actions || []} />
+          <AnalysisList title="What Was Tested" items={executive?.what_was_tested || []} />
+          <AnalysisList title="What Was Not Tested" items={executive?.what_was_not_tested || []} />
+          <AnalysisList title="Safety Limitations" items={report.safety_limitations || executive?.safety_limitations || []} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Top Findings</h2>
+        <GroupedFindingsTable groups={topFindings} emptyTitle="No top findings" emptyBody="No grouped findings were generated for this report." />
+      </section>
+
+      <section>
+        <h2>Grouped Findings</h2>
+        <GroupedFindingsTable groups={groupedFindings} emptyTitle="No grouped findings" emptyBody="This report did not produce grouped findings." />
+      </section>
+
+      <section>
+        <h2>Affected Pages</h2>
+        <AffectedPagesTable pages={topAffectedPages} />
+      </section>
+
+      <section>
+        <h2>Noise / Repeated Findings</h2>
+        <div className="summary-grid">
+          <Metric label="High Signal" value={noise?.high_signal || 0} />
+          <Metric label="Needs Attention" value={noise?.needs_attention || 0} tone="medium" />
+          <Metric label="Informational" value={noise?.informational || 0} tone="info" />
+          <Metric label="Low Noise" value={noise?.low_noise || 0} />
+          <Metric label="Medium Noise" value={noise?.medium_noise || 0} tone="medium" />
+          <Metric label="High Noise" value={noise?.high_noise || 0} tone="info" />
+        </div>
+      </section>
+    </>
+  );
+}
+
+function GroupedFindingsTable({
+  groups,
+  emptyTitle,
+  emptyBody
+}: {
+  groups: GroupedFinding[];
+  emptyTitle: string;
+  emptyBody: string;
+}) {
+  if (groups.length === 0) {
+    return <EmptyState title={emptyTitle} body={emptyBody} />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Finding</th>
+            <th>Occurrences</th>
+            <th>Sources</th>
+            <th>Noise</th>
+            <th>Affected Paths</th>
+            <th>Recommendation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((group) => (
+            <tr key={group.group_id}>
+              <td>
+                <span className={`severity ${group.normalized_severity}`}>{group.normalized_severity}</span>
+              </td>
+              <td>
+                <strong>{group.title}</strong>
+                <p className="muted">{group.category}</p>
+              </td>
+              <td>{group.occurrences_count}</td>
+              <td>{group.sources.join(", ")}</td>
+              <td>{reportNoiseLabel(group.noise_level)}</td>
+              <td>{(group.affected_paths || []).slice(0, 4).join(", ") || "Global"}</td>
+              <td>{group.recommendation || "Review representative evidence and raw occurrence refs."}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AffectedPagesTable({ pages }: { pages: ReportIntelligenceFields["top_affected_pages"] }) {
+  const safePages = pages || [];
+  if (safePages.length === 0) {
+    return <EmptyState title="No affected page summary" body="No affected paths were available for this report." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Path</th>
+            <th>Highest Severity</th>
+            <th>Grouped Occurrences</th>
+          </tr>
+        </thead>
+        <tbody>
+          {safePages.map((page) => (
+            <tr key={page.path || page.url}>
+              <td>
+                <code>{page.path || page.url || "Global"}</code>
+              </td>
+              <td>
+                <span className={`severity ${page.highest_severity}`}>{page.highest_severity}</span>
+              </td>
+              <td>{page.findings_count}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function reportNoiseLabel(noise: string) {
+  if (noise === "high") {
+    return "Noisy / repeated";
+  }
+  if (noise === "medium") {
+    return "Informational";
+  }
+  return "High signal";
 }
 
 function FindingsTable({ report }: { report: Report }) {

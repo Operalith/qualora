@@ -12,8 +12,9 @@ type safeExplorerHTMLReportData struct {
 }
 
 var safeExplorerHTMLReportTemplate = template.Must(template.New("safe-explorer-report").Funcs(template.FuncMap{
-	"formatTime": formatReportTime,
-	"intValue":   optionalIntValue,
+	"formatTime":         formatReportTime,
+	"intValue":           optionalIntValue,
+	"reportIntelligence": reportIntelligenceHTML,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -126,6 +127,8 @@ var safeExplorerHTMLReportTemplate = template.Must(template.New("safe-explorer-r
     <div class="metric"><span>Skipped</span><strong>{{ .Report.Summary.TotalActionsSkipped }}</strong></div>
     <div class="metric"><span>Findings</span><strong>{{ .Report.Summary.TotalFindings }}</strong></div>
   </div>
+
+  {{ reportIntelligence .Report.ReportIntelligence }}
 
   <section>
     <h2>Settings</h2>

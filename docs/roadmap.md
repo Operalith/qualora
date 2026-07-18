@@ -203,7 +203,7 @@ Delivered:
 
 ## v0.16.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Interactive Safe Explorer run API and browser-worker queue job.
 - Project-scoped Safe Explorer settings: start URL, optional credential profile, max steps, max depth, same-origin-only, and optional GET-form policy.
@@ -215,7 +215,19 @@ Current alpha scope:
 - Demo-web fixtures for safe links, unsafe links, external links, GET forms, POST forms, unsupported buttons, and dangerous buttons.
 - Smoke validation for Safe Explorer completion, executed/skipped actions, skip reasons, screenshot evidence, JSON/HTML reports, UI text, and secret redaction.
 
-## Phase 17: Run And Worker Hardening
+## v0.17.0-alpha
+
+Current alpha scope:
+
+- Deterministic report intelligence for generic run, discovery, quality, Safe Explorer, authorization, safe test plan execution, and Safe QA reports.
+- Severity normalization for findings and quality results.
+- Stable finding fingerprints and grouped findings with raw details preserved.
+- Duplicate reduction metadata, top findings, top affected pages, and noise/repeated-finding summaries.
+- Executive summaries with pass/warning/fail/unknown status, checks completed/skipped, recommended next actions, what was tested, what was not tested, and safety limitations.
+- Web UI report intelligence panels and recent report index severity/grouped counts.
+- Smoke validation for report intelligence JSON fields, HTML sections, grouped findings, raw findings/results, no-secret output, and existing flows.
+
+## Phase 18: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -229,14 +241,14 @@ Current alpha scope:
 - Move AI-assisted test planning to an async analyzer worker.
 - Safe QA Run integration for Safe Explorer summaries if it can remain explicit and non-autonomous.
 
-## Phase 18: Deeper API Checks
+## Phase 19: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 19: Quality Check Deepening
+## Phase 20: Quality Check Deepening
 
 - Optional axe-core integration or richer accessibility summaries.
 - Lighthouse/Core Web Vitals-style performance collection if it can stay safe and lightweight.

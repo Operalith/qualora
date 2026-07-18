@@ -8,7 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
-| v0.16.0-alpha | Best-effort alpha support |
+| v0.17.0-alpha | Best-effort alpha support |
 | v0.15.0-alpha | Best-effort alpha support |
 | v0.14.0-alpha | Best-effort alpha support |
 | v0.13.0-alpha | Best-effort alpha support |
@@ -42,7 +42,9 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.16.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
+The v0.17.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
+
+Report intelligence is deterministic and computed from already stored findings, safe result rows, and metadata. It must not include credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, provider secrets, or encrypted secret payloads. Sensitive query values are redacted before URLs are used for grouping or fingerprints.
 
 See [docs/security-model.md](docs/security-model.md) for the current alpha safety model.
 

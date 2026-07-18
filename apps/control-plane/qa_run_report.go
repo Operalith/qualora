@@ -42,6 +42,7 @@ func (s *Store) GetQARunReport(ctx context.Context, id string) (*QARunReport, er
 		qualityRun = &qualityReport.Run
 		qualitySummary = &qualityReport.Summary
 		qualityResults = qualityReport.Results
+		findings = append(findings, qualityReport.Findings...)
 	}
 
 	var plan *TestPlan
@@ -67,7 +68,7 @@ func (s *Store) GetQARunReport(ctx context.Context, id string) (*QARunReport, er
 		evidence = append(evidence, executionReport.Evidence...)
 	}
 
-	return &QARunReport{
+	report := &QARunReport{
 		Run:              *run,
 		Project:          *project,
 		DiscoveryRun:     discoveryRun,
@@ -83,7 +84,21 @@ func (s *Store) GetQARunReport(ctx context.Context, id string) (*QARunReport, er
 		SafetyNotes:      qaRunSafetyNotes(),
 		Limitations:      qaRunLimitations(),
 		GeneratedAt:      time.Now().UTC(),
-	}, nil
+	}
+	report.ReportIntelligence = BuildReportIntelligence(ReportIntelligenceInput{
+		ReportType:        "safe_qa_run",
+		ReportID:          run.ID,
+		Status:            run.Status,
+		Project:           project,
+		Findings:          findings,
+		Evidence:          evidence,
+		ChecksCompleted:   qaRunCompletedChecks(report),
+		ChecksSkipped:     qaRunSkippedChecks(report),
+		WhatWasTested:     []string{"Application discovery", "Optional passive quality checks", "AI-assisted test plan generation from sanitized metadata", "Approved safe browser DSL execution when enabled"},
+		WhatWasNotTested:  defaultWhatWasNotTested("safe_qa_run"),
+		SafetyLimitations: report.Limitations,
+	})
+	return report, nil
 }
 
 func qaRunSafetyNotes() []string {

@@ -12,8 +12,9 @@ type discoveryHTMLReportData struct {
 }
 
 var discoveryHTMLReportTemplate = template.Must(template.New("discovery-report").Funcs(template.FuncMap{
-	"formatTime": formatReportTime,
-	"intValue":   optionalIntValue,
+	"formatTime":         formatReportTime,
+	"intValue":           optionalIntValue,
+	"reportIntelligence": reportIntelligenceHTML,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -123,6 +124,8 @@ var discoveryHTMLReportTemplate = template.Must(template.New("discovery-report")
     <div class="metric"><span>Console Errors</span><strong>{{ .Report.Summary.TotalConsoleErrors }}</strong></div>
     <div class="metric"><span>Failed Requests</span><strong>{{ .Report.Summary.TotalFailedRequests }}</strong></div>
   </div>
+
+  {{ reportIntelligence .Report.ReportIntelligence }}
 
   <section>
     <h2>Discovery Settings</h2>

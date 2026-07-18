@@ -140,7 +140,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.16.0-alpha" not in status.get("version", ""):
+    if "0.17.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -208,6 +208,45 @@ def assert_no_demo_secret(value, label):
     for secret in secrets:
         if secret and secret in text:
             raise RuntimeError(f"{label} exposed demo credential secret")
+
+
+def assert_report_intelligence(report, label, expect_repeated_group=False):
+    for key in (
+        "executive_summary",
+        "severity_counts",
+        "grouped_findings",
+        "top_findings",
+        "noise_summary",
+        "raw_findings_count",
+        "deduplication_summary",
+        "safety_limitations",
+    ):
+        if key not in report:
+            raise RuntimeError(f"{label} missed report intelligence key {key}")
+    executive = report.get("executive_summary") or {}
+    if not executive.get("overall_status") or not executive.get("headline"):
+        raise RuntimeError(f"{label} executive summary was incomplete: {executive}")
+    severity = report.get("severity_counts") or {}
+    for key in ("critical", "high", "medium", "low", "info", "total_findings"):
+        if key not in severity:
+            raise RuntimeError(f"{label} severity counts missed {key}: {severity}")
+    grouped = report.get("grouped_findings") or []
+    raw_count = int(report.get("raw_findings_count") or 0)
+    if raw_count > 0 and len(grouped) > raw_count:
+        raise RuntimeError(f"{label} grouped findings exceeded raw count: grouped={len(grouped)} raw={raw_count}")
+    dedup = report.get("deduplication_summary") or {}
+    if int(dedup.get("raw_findings_count") or 0) != raw_count:
+        raise RuntimeError(f"{label} dedup raw count did not match: {dedup}")
+    if expect_repeated_group and not any(int(group.get("occurrences_count") or 0) > 1 for group in grouped):
+        raise RuntimeError(f"{label} did not include a repeated grouped finding: {grouped}")
+    if "findings" not in report and "results" not in report:
+        raise RuntimeError(f"{label} did not keep raw findings/results available")
+
+
+def assert_report_intelligence_html(html, label):
+    for expected in ("Executive Summary", "Grouped Findings", "Noise / Repeated Findings", "Raw findings"):
+        if expected not in html:
+            raise RuntimeError(f"{label} HTML report missed report intelligence section {expected!r}")
 
 
 def create_credential_profile(project):
@@ -338,6 +377,7 @@ def run_ai_analysis(report, provider):
 
     html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
     assert_no_demo_secret(html, "AI HTML report")
+    assert_report_intelligence_html(html, "AI analysis")
     if "AI Analysis" not in html or "fake provider" not in html:
         raise RuntimeError("HTML report did not include the fake AI analysis")
     return updated_report
@@ -384,6 +424,7 @@ def generate_ai_test_plan(project, report, provider):
 
     html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
     assert_no_demo_secret(html, "AI test plan HTML report")
+    assert_report_intelligence_html(html, "AI test plan")
     if "Related AI Test Plans" not in html or "Qualora deterministic alpha test plan" not in html:
         raise RuntimeError("HTML report did not include the related AI test plan")
 
@@ -445,6 +486,7 @@ def execute_test_plan(plan):
         raise RuntimeError("safe execution did not pass any steps")
     if not report.get("scenarios"):
         raise RuntimeError("safe execution report did not include scenarios")
+    assert_report_intelligence(report, "safe execution JSON report")
 
     evidence = report.get("evidence", [])
     types = {item.get("type") for item in evidence}
@@ -457,6 +499,7 @@ def execute_test_plan(plan):
         raise RuntimeError("safe execution screenshot evidence was not downloadable PNG data")
 
     html = fetch_text(f"/api/v1/test-plan-executions/{execution_id}/report.html")
+    assert_report_intelligence_html(html, "safe execution")
     if "Qualora safe test plan execution report" not in html or "Homepage public smoke checks" not in html:
         raise RuntimeError("safe execution HTML report did not include expected content")
 
@@ -550,12 +593,14 @@ def run_api_smoke(spec):
         raise RuntimeError("API smoke report did not include deterministic 5xx finding")
     if "deterministic_failure" in json.dumps(report):
         raise RuntimeError("API smoke report exposed response body content")
+    assert_report_intelligence(report, "API smoke JSON report")
 
     api_results_endpoint = request("GET", f"/api/v1/runs/{run_id}/api-results").get("api_results", [])
     if len(api_results_endpoint) != len(api_results):
         raise RuntimeError("API results endpoint did not match report results")
 
     html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    assert_report_intelligence_html(html, "API smoke")
     if "API Smoke Results" not in html or "/broken" not in html:
         raise RuntimeError("API smoke HTML report did not include expected API result content")
     if "deterministic_failure" in html:
@@ -588,9 +633,11 @@ def run_project(project, run_path=None):
     print(json.dumps(report, indent=2))
     if report["status"] not in ("completed", "passed"):
         raise RuntimeError(f"run {run_id} finished with status {report['status']}")
+    assert_report_intelligence(report, "run JSON report")
     print(f"JSON report: {API_URL}/api/v1/runs/{run_id}/report")
     print(f"HTML report: {API_URL}/api/v1/runs/{run_id}/report.html")
     html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    assert_report_intelligence_html(html, "run")
     if "Qualora HTML report" not in html:
         raise RuntimeError(f"run {run_id} HTML report did not include the expected title")
     return report
@@ -610,6 +657,7 @@ def wait_for_run_report(run_id, label):
 
     report = request("GET", f"/api/v1/runs/{run_id}/report")
     print(f"{label} report: {json.dumps(report, indent=2)}")
+    assert_report_intelligence(report, f"{label} JSON report")
     return report
 
 
@@ -679,6 +727,7 @@ def test_credential_profile_login(profile, expected_profile_name="Qualora Demo L
     assert_login_report(report, "login_check", False, expected_profile_name)
     html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
     assert_no_demo_secret(html, "login HTML report")
+    assert_report_intelligence_html(html, "login")
     if "Login Summary" not in html or expected_profile_name not in html:
         raise RuntimeError("login HTML report did not include login summary")
     print(f"login check JSON report: {API_URL}/api/v1/runs/{run_id}/report")
@@ -704,6 +753,7 @@ def run_authenticated_browser_smoke(project, profile):
     assert_login_report(report, "authenticated_browser_smoke", True)
     html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
     assert_no_demo_secret(html, "authenticated browser smoke HTML report")
+    assert_report_intelligence_html(html, "authenticated browser smoke")
     if "Login Summary" not in html or "Authenticated Target" not in html:
         raise RuntimeError("authenticated browser smoke HTML report did not include login summary")
     print(f"authenticated browser smoke JSON report: {API_URL}/api/v1/runs/{run_id}/report")
@@ -763,9 +813,11 @@ def run_application_discovery(project, profile=None):
         raise RuntimeError("discovery screenshot evidence was not downloadable PNG data")
     if app_map.get("summary", {}).get("total_pages") != report.get("summary", {}).get("total_pages"):
         raise RuntimeError("discovery map summary did not match report summary")
+    assert_report_intelligence(report, "discovery JSON report")
 
     html = fetch_text(f"/api/v1/discovery-runs/{run_id}/report.html")
     assert_no_demo_secret(html, "discovery HTML report")
+    assert_report_intelligence_html(html, "discovery")
     if "Qualora application discovery report" not in html or "Skipped Links" not in html:
         raise RuntimeError("discovery HTML report did not include expected content")
 
@@ -835,9 +887,11 @@ def run_safe_explorer(project, profile=None):
         raise RuntimeError("Safe Explorer screenshot evidence was not downloadable PNG data")
     if trace.get("summary", {}).get("total_actions_detected") != summary.get("total_actions_detected"):
         raise RuntimeError("Safe Explorer trace summary did not match report summary")
+    assert_report_intelligence(report, "Safe Explorer JSON report")
 
     html = fetch_text(f"/api/v1/safe-explorer-runs/{run_id}/report.html")
     assert_no_demo_secret(html, "Safe Explorer HTML report")
+    assert_report_intelligence_html(html, "Safe Explorer")
     if "Qualora Interactive Safe Explorer report" not in html or "Actions" not in html:
         raise RuntimeError("Safe Explorer HTML report did not include expected content")
     listed = request("GET", f"/api/v1/projects/{project['id']}/safe-explorer-runs").get("safe_explorer_runs", [])
@@ -896,9 +950,11 @@ def run_quality_check(project, discovery_report, profile=None):
     categories = {item.get("category") for item in report.get("results", [])}
     if not {"security", "accessibility", "performance"}.issubset(categories):
         raise RuntimeError(f"quality check report missed expected categories: {categories}")
+    assert_report_intelligence(report, "quality check JSON report", expect_repeated_group=True)
 
     html = fetch_text(f"/api/v1/quality-check-runs/{run_id}/report.html")
     assert_no_demo_secret(html, "quality check HTML report")
+    assert_report_intelligence_html(html, "quality check")
     if "Qualora quality report" not in html or "Quality Findings" not in html:
         raise RuntimeError("quality check HTML report did not include expected content")
 
@@ -935,13 +991,16 @@ def assert_quality_ui_bundle():
         "Project Readiness",
         "Guided Project Setup",
         "Reports",
+        "Executive Summary",
+        "Grouped Findings",
+        "Noise / Repeated Findings",
         "Interactive Safe Explorer",
         "Start Safe Explorer",
         "Safe Explorer Report",
     ):
         if expected not in bundle_text:
-            raise RuntimeError(f"web UI bundle did not include expected v0.16 UI text: {expected}")
-    print("web UI bundle includes guided onboarding, readiness, reports, Quality Checks, and Safe Explorer screens")
+            raise RuntimeError(f"web UI bundle did not include expected v0.17 UI text: {expected}")
+    print("web UI bundle includes guided onboarding, report intelligence, Quality Checks, and Safe Explorer screens")
 
 
 def wait_for_discovery_report(run_id, label):
@@ -962,8 +1021,10 @@ def wait_for_discovery_report(run_id, label):
         raise RuntimeError(f"{label} discovery did not complete: {report['run']}")
     if int(report.get("summary", {}).get("total_pages") or 0) < 1:
         raise RuntimeError(f"{label} discovery did not record pages: {report.get('summary')}")
+    assert_report_intelligence(report, f"{label} discovery JSON report")
     html = fetch_text(f"/api/v1/discovery-runs/{run_id}/report.html")
     assert_no_demo_secret(html, f"{label} discovery HTML report")
+    assert_report_intelligence_html(html, f"{label} discovery")
     if "Qualora application discovery report" not in html:
         raise RuntimeError(f"{label} discovery HTML report did not render")
     return report
@@ -987,8 +1048,10 @@ def wait_for_quality_report(run_id, label):
         raise RuntimeError(f"{label} quality run did not complete: {report['run']}")
     if int(report.get("summary", {}).get("total_findings") or 0) < 1:
         raise RuntimeError(f"{label} quality report did not include findings: {report.get('summary')}")
+    assert_report_intelligence(report, f"{label} quality JSON report")
     html = fetch_text(f"/api/v1/quality-check-runs/{run_id}/report.html")
     assert_no_demo_secret(html, f"{label} quality HTML report")
+    assert_report_intelligence_html(html, f"{label} quality")
     if "Qualora quality report" not in html:
         raise RuntimeError(f"{label} quality HTML report did not render")
     return report
@@ -1081,7 +1144,9 @@ def run_guided_project_setup(provider):
     assert_no_demo_secret(api_report, "guided API smoke report")
     if api_report.get("status") != "completed" or not api_report.get("api_summary"):
         raise RuntimeError(f"guided API smoke report was not complete: {api_report}")
+    assert_report_intelligence(api_report, "guided API smoke report")
     html = fetch_text(f"/api/v1/runs/{started['api_smoke_run_id']}/report.html")
+    assert_report_intelligence_html(html, "guided API smoke")
     if "API Smoke Results" not in html or "/broken" not in html:
         raise RuntimeError("guided API smoke HTML report did not include API results")
 
@@ -1165,9 +1230,11 @@ def wait_for_qa_run(qa_run_id, label, require_execution=False, expect_quality=Fa
             raise RuntimeError(f"{label} QA report missed the linked quality check run")
         if not report.get("quality_results"):
             raise RuntimeError(f"{label} QA report missed quality result rows")
+    assert_report_intelligence(report, f"{label} QA JSON report", expect_repeated_group=expect_quality)
 
     html = fetch_text(f"/api/v1/qa-runs/{qa_run_id}/report.html")
     assert_no_demo_secret(html, f"{label} HTML report")
+    assert_report_intelligence_html(html, f"{label} QA")
     if "Qualora safe QA report" not in html or "Safe Execution Preview" not in html:
         raise RuntimeError(f"{label} QA HTML report did not include expected content")
     if expect_quality and "Quality Checks" not in html:
@@ -1288,6 +1355,7 @@ def run_authorization_checks(project, checks):
     types = {item.get("type") for item in evidence}
     if "screenshot" not in types or "authorization_observations" not in types:
         raise RuntimeError(f"authorization report missed expected evidence types: {types}")
+    assert_report_intelligence(report, "authorization JSON report")
     screenshot = next(item for item in evidence if item.get("type") == "screenshot")
     expect_http_error("GET", f"/api/v1/authorization-check-runs/{run_id}/report", 401)
     expect_http_error("GET", f"/api/v1/evidence/{screenshot['id']}", 401)
@@ -1298,6 +1366,7 @@ def run_authorization_checks(project, checks):
 
     html = fetch_text(f"/api/v1/authorization-check-runs/{run_id}/report.html")
     assert_no_demo_secret(html, "authorization HTML report")
+    assert_report_intelligence_html(html, "authorization")
     if "Qualora role-aware authorization report" not in html or "Check Results" not in html:
         raise RuntimeError("authorization HTML report did not include expected content")
 

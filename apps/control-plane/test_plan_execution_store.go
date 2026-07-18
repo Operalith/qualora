@@ -150,7 +150,7 @@ func (s *Store) GetTestPlanExecutionReport(ctx context.Context, id string) (*Tes
 		return nil, err
 	}
 
-	return &TestPlanExecutionReport{
+	report := &TestPlanExecutionReport{
 		Execution:     detail.Execution,
 		TestPlan:      *plan,
 		Project:       *project,
@@ -159,7 +159,21 @@ func (s *Store) GetTestPlanExecutionReport(ctx context.Context, id string) (*Tes
 		Evidence:      evidence,
 		SafetySummary: summarizeTestPlanExecutionSafety(detail.Scenarios),
 		GeneratedAt:   time.Now().UTC(),
-	}, nil
+	}
+	report.ReportIntelligence = BuildReportIntelligence(ReportIntelligenceInput{
+		ReportType:        "test_plan_execution",
+		ReportID:          detail.Execution.ID,
+		Status:            detail.Execution.Status,
+		Project:           project,
+		Findings:          findings,
+		Evidence:          evidence,
+		ChecksCompleted:   []string{"Approved safe browser DSL execution"},
+		ChecksSkipped:     testPlanExecutionSkippedChecks(report.SafetySummary),
+		WhatWasTested:     []string{"Approved deterministic browser DSL steps", "Assertions mapped during test plan preview"},
+		WhatWasNotTested:  defaultWhatWasNotTested("test_plan_execution"),
+		SafetyLimitations: defaultReportSafetyLimitations("test_plan_execution"),
+	})
+	return report, nil
 }
 
 func (s *Store) ListFindingsForTestPlanExecution(ctx context.Context, executionID string) ([]Finding, error) {

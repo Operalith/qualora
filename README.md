@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.16.0-alpha` adds Interactive Safe Explorer: a deterministic, bounded browser workflow that observes pages, classifies visible actions, executes only safe same-origin navigation, and records skipped unsafe/unsupported actions with reasons. Qualora remains useful without AI: discovery, Safe Explorer, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, JSON reports, HTML reports, and approved safe test plan execution do not depend on an LLM.
+`v0.17.0-alpha` adds deterministic report intelligence: executive summaries, severity normalization, grouped findings, duplicate reduction, affected-page summaries, and noise/repeated-finding indicators across JSON reports, HTML exports, the reports landing page, and report detail pages. Qualora remains useful without AI: discovery, Safe Explorer, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, report intelligence, HTML reports, and approved safe test plan execution do not depend on an LLM.
 
 ## Current Alpha Capabilities
 
@@ -17,7 +17,7 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Create projects through a guided setup wizard that can optionally configure AI, credentials, OpenAPI import, and selected first checks.
 - Run a local demo workflow against `demo-web`, `demo-api`, and `fake-llm`.
 - View dashboard quick-start cards, recent Safe QA runs, recent projects, status indicators, and a project readiness checklist.
-- View a reports landing page for recent browser, API, discovery, Safe Explorer, quality, and Safe QA reports.
+- View a reports landing page for recent browser, API, discovery, Safe Explorer, quality, and Safe QA reports with recent severity and grouped-finding counts.
 - Start runs that can include browser and API jobs.
 - Start a browser-only smoke run for a project with `frontend_url`.
 - Store project-scoped credential profiles encrypted at rest for deterministic test-account login.
@@ -55,8 +55,8 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Store metadata in PostgreSQL.
 - Queue worker jobs with Redis.
 - Store screenshots in MinIO/S3, with a local filesystem fallback.
-- Generate structured JSON reports.
-- Generate self-contained HTML reports at `GET /api/v1/runs/{run_id}/report.html`.
+- Generate structured JSON reports with executive summaries, normalized severity counts, grouped findings, top findings, affected-page summaries, noise summaries, raw finding counts, deduplication metadata, and safety limitations.
+- Generate self-contained HTML reports at `GET /api/v1/runs/{run_id}/report.html` with grouped findings first and raw details still available.
 - Download stored evidence objects at `GET /api/v1/evidence/{evidence_id}`.
 - Configure optional OpenAI-compatible AI providers from the web UI or API.
 - Test AI provider connectivity with a safe prompt.
@@ -72,7 +72,7 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Persist test plan execution scenarios, steps, skip reasons, findings, evidence, JSON reports, and self-contained HTML reports.
 - Start Safe QA Runs that reuse or create discovery, generate a discovery-aware plan, preview safe execution, and optionally run the approved safe DSL path.
 - Optionally include passive quality checks in Safe QA Runs.
-- View Safe QA Run JSON/HTML reports with discovery, quality checks, plan, preview, execution, and safety metadata.
+- View Safe QA Run JSON/HTML reports with discovery, quality checks, plan, preview, execution, deterministic report intelligence, and safety metadata.
 
 ## Architecture
 
@@ -643,7 +643,7 @@ curl -s -X POST "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/execute" \
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.16.0-alpha`:
+Supported provider type in `v0.17.0-alpha`:
 
 - `openai-compatible`
 
@@ -663,7 +663,18 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.16.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, and guided onboarding are deterministic paths and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.17.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, guided onboarding, and report intelligence are deterministic paths and are not AI-controlled.
+
+## Report Intelligence
+
+Every primary JSON and HTML report includes deterministic report intelligence in `v0.17.0-alpha`:
+
+- `executive_summary` with pass/warning/fail/unknown status, what was tested, what was not tested, recommended next actions, and safety limitations.
+- `severity_counts` normalized to `critical`, `high`, `medium`, `low`, and `info`.
+- `grouped_findings` and `top_findings` built from deterministic fingerprints. Raw findings and quality result rows remain available.
+- `top_affected_pages`, `noise_summary`, `raw_findings_count`, and `deduplication_summary`.
+
+This is not AI summarization. It does not send credentials, cookies, local storage, session storage, auth headers, tokens, screenshots, full HTML, request bodies, or response bodies to any model. Optional AI analysis remains a separate user-triggered feature that uses sanitized report metadata only.
 
 ## Report Example
 

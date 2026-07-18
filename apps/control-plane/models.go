@@ -286,6 +286,7 @@ type Report struct {
 	APISummary   *APISmokeSummary `json:"api_summary,omitempty"`
 	APIResults   []APICheckResult `json:"api_results,omitempty"`
 	LoginSummary *LoginSummary    `json:"login_summary,omitempty"`
+	ReportIntelligence
 }
 
 type ReportSummary struct {
@@ -425,6 +426,7 @@ type DiscoveryReport struct {
 	SafetyNotes []string         `json:"safety_notes"`
 	Limitations []string         `json:"limitations"`
 	Metadata    map[string]any   `json:"metadata"`
+	ReportIntelligence
 }
 
 type SafeExplorerRunRequest struct {
@@ -542,6 +544,7 @@ type SafeExplorerReport struct {
 	SafetyNotes []string             `json:"safety_notes"`
 	Limitations []string             `json:"limitations"`
 	Metadata    map[string]any       `json:"metadata"`
+	ReportIntelligence
 }
 
 type QualityCheckRunRequest struct {
@@ -616,9 +619,11 @@ type QualityCheckReport struct {
 	DiscoveryRun *DiscoveryRun        `json:"discovery_run,omitempty"`
 	Summary      QualityCheckSummary  `json:"summary"`
 	Results      []QualityCheckResult `json:"results"`
+	Findings     []Finding            `json:"findings"`
 	SafetyNotes  []string             `json:"safety_notes"`
 	Limitations  []string             `json:"limitations"`
 	Metadata     map[string]any       `json:"metadata"`
+	ReportIntelligence
 }
 
 type AIProvider struct {
@@ -842,6 +847,7 @@ type AuthorizationCheckReport struct {
 	Evidence    []Evidence                 `json:"evidence"`
 	Metadata    map[string]any             `json:"metadata"`
 	GeneratedAt time.Time                  `json:"generated_at"`
+	ReportIntelligence
 }
 
 type AIProviderTestResult struct {
@@ -1049,6 +1055,7 @@ type TestPlanExecutionReport struct {
 	Evidence      []Evidence                    `json:"evidence"`
 	SafetySummary TestPlanExecutionSafetyReport `json:"safety_summary"`
 	GeneratedAt   time.Time                     `json:"generated_at"`
+	ReportIntelligence
 }
 
 type QARunRequest struct {
@@ -1105,6 +1112,7 @@ type QARunReport struct {
 	SafetyNotes      []string                  `json:"safety_notes"`
 	Limitations      []string                  `json:"limitations"`
 	GeneratedAt      time.Time                 `json:"generated_at"`
+	ReportIntelligence
 }
 
 type APISpecImportRequest struct {

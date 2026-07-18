@@ -12,8 +12,9 @@ type qualityCheckHTMLReportData struct {
 }
 
 var qualityCheckHTMLReportTemplate = template.Must(template.New("quality-check-report").Funcs(template.FuncMap{
-	"json":       prettyJSON,
-	"formatTime": formatReportTime,
+	"json":               prettyJSON,
+	"formatTime":         formatReportTime,
+	"reportIntelligence": reportIntelligenceHTML,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -137,6 +138,8 @@ var qualityCheckHTMLReportTemplate = template.Must(template.New("quality-check-r
     <div class="metric"><span>Low</span><strong>{{ .Report.Summary.Low }}</strong></div>
     <div class="metric"><span>Info</span><strong>{{ .Report.Summary.Info }}</strong></div>
   </div>
+
+  {{ reportIntelligence .Report.ReportIntelligence }}
 
   <section>
     <h2>Categories</h2>

@@ -129,7 +129,7 @@ func (s *Store) GetSafeExplorerReport(ctx context.Context, id string) (*SafeExpl
 	if err != nil {
 		return nil, err
 	}
-	return &SafeExplorerReport{
+	report := &SafeExplorerReport{
 		GeneratedAt: time.Now().UTC(),
 		Run:         trace.Run,
 		Project:     trace.Project,
@@ -151,7 +151,21 @@ func (s *Store) GetSafeExplorerReport(ctx context.Context, id string) (*SafeExpl
 			"credentials_sent_to_ai":        false,
 			"browser_storage_exposed_to_ai": false,
 		},
-	}, nil
+	}
+	report.ReportIntelligence = BuildReportIntelligence(ReportIntelligenceInput{
+		ReportType:        RunTypeSafeExplorer,
+		ReportID:          trace.Run.ID,
+		Status:            trace.Run.Status,
+		Project:           &trace.Project,
+		Findings:          trace.Findings,
+		Evidence:          trace.Evidence,
+		ChecksCompleted:   []string{"Safe Explorer"},
+		ChecksSkipped:     []string{"Unsafe actions", "Unsupported actions", "Mutating forms", "External-domain navigation by default"},
+		WhatWasTested:     []string{"Policy-approved safe navigation actions", "Observed page metadata", "Action skip reasons", "Console errors and failed network requests"},
+		WhatWasNotTested:  defaultWhatWasNotTested(RunTypeSafeExplorer),
+		SafetyLimitations: report.Limitations,
+	})
+	return report, nil
 }
 
 func (s *Store) ListSafeExplorerSteps(ctx context.Context, runID string) ([]SafeExplorerStep, error) {

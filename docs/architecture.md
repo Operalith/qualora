@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.16.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, human-friendly reports, safe deterministic application discovery, Interactive Safe Explorer, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
+Qualora v0.17.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, safe deterministic application discovery, Interactive Safe Explorer, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -42,6 +42,8 @@ qualora-api
 ### `qualora-api`
 
 The Go control plane exposes the HTTP API, validates project scope, persists metadata, creates per-run jobs, queues worker jobs, renders JSON/HTML reports, and enforces local session authentication for protected API routes.
+
+Report generation now includes a deterministic intelligence layer. It normalizes finding severities, computes stable fingerprints, groups repeated findings, classifies noisy/repeated signals, summarizes affected pages, and produces executive summaries at report read/render time without changing stored finding schemas. The raw findings, evidence metadata, quality result rows, discovery maps, Safe Explorer traces, authorization results, and API result rows remain available.
 
 Current endpoints:
 
@@ -257,7 +259,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.16.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.17.0-alpha`.
 
 ### PostgreSQL
 

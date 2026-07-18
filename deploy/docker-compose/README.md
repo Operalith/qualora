@@ -41,7 +41,9 @@ The control plane receives the same MinIO/S3 configuration as the browser worker
 
 Set `QUALORA_ENCRYPTION_KEY` before storing real credential profiles or AI provider credentials. The default Compose value is intentionally insecure and only suitable for local demos.
 
-Interactive Safe Explorer is policy-gated in `v0.16.0-alpha`: it executes only safe classified same-origin navigation actions by default, records skipped unsafe/unsupported actions with reasons, and does not use AI to control the browser. It does not submit POST forms, click arbitrary buttons, run payloads, fuzz inputs, perform active scans, or perform destructive actions.
+Report intelligence in `v0.17.0-alpha` is computed inside `qualora-api` when reports are read. It adds executive summaries, severity counts, grouped findings, top findings, affected pages, noise summaries, and deduplication metadata to JSON/HTML reports without calling an AI provider.
+
+Interactive Safe Explorer remains policy-gated in `v0.17.0-alpha`: it executes only safe classified same-origin navigation actions by default, records skipped unsafe/unsupported actions with reasons, and does not use AI to control the browser. It does not submit POST forms, click arbitrary buttons, run payloads, fuzz inputs, perform active scans, or perform destructive actions.
 
 Auth-related local defaults:
 

@@ -10,7 +10,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.16.0-alpha` Docker Compose MVP working.
+- Keep the `v0.17.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
@@ -29,6 +29,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Interactive Safe Explorer for deterministic, bounded, safe navigation action exploration.
 - Guided project onboarding that creates a project, optionally configures AI, credentials, and OpenAPI specs, and starts selected safe checks.
 - Dashboard, reports, and project readiness UI that make first-run workflows discoverable without hiding alpha limitations.
+- Deterministic report intelligence with severity normalization, grouped findings, deduplication metadata, affected-page summaries, noise classification, and executive summaries.
 - Local first-run admin setup and session-protected API/web UI access.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
@@ -81,6 +82,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Keep report schemas structured enough for future UI/API consumers.
 - Add tests around orchestration, host allowlisting, secret redaction, and report generation when those areas are implemented.
 - Do not claim unsupported features in README, release notes, OpenAPI, or docs.
+- Report intelligence must remain deterministic and must not hide or delete raw findings.
 
 ## Security And Safety Rules
 

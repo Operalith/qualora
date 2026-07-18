@@ -150,7 +150,7 @@ func (s *Store) GetDiscoveryReport(ctx context.Context, id string) (*DiscoveryRe
 	if err != nil {
 		return nil, err
 	}
-	return &DiscoveryReport{
+	report := &DiscoveryReport{
 		GeneratedAt: time.Now().UTC(),
 		Run:         discoveryMap.Run,
 		Project:     discoveryMap.Project,
@@ -170,7 +170,21 @@ func (s *Store) GetDiscoveryReport(ctx context.Context, id string) (*DiscoveryRe
 			"autonomous_ai_browser_control":  false,
 			"destructive_actions":            false,
 		},
-	}, nil
+	}
+	report.ReportIntelligence = BuildReportIntelligence(ReportIntelligenceInput{
+		ReportType:        RunTypeAppDiscovery,
+		ReportID:          discoveryMap.Run.ID,
+		Status:            discoveryMap.Run.Status,
+		Project:           &discoveryMap.Project,
+		Findings:          discoveryMap.Findings,
+		Evidence:          discoveryMap.Evidence,
+		ChecksCompleted:   []string{"Application discovery"},
+		ChecksSkipped:     []string{"Form submission", "Unsafe clicks", "External-domain crawling by default"},
+		WhatWasTested:     []string{"Same-origin page discovery", "Visible links and forms", "Console errors and failed network request metadata"},
+		WhatWasNotTested:  defaultWhatWasNotTested(RunTypeAppDiscovery),
+		SafetyLimitations: report.Limitations,
+	})
+	return report, nil
 }
 
 func (s *Store) ListDiscoveredPages(ctx context.Context, runID string) ([]DiscoveredPage, error) {

@@ -11,8 +11,9 @@ type testPlanExecutionHTMLReportData struct {
 }
 
 var testPlanExecutionHTMLReportTemplate = template.Must(template.New("test-plan-execution-report").Funcs(template.FuncMap{
-	"json":       prettyJSON,
-	"formatTime": formatReportTime,
+	"json":               prettyJSON,
+	"formatTime":         formatReportTime,
+	"reportIntelligence": reportIntelligenceHTML,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -131,6 +132,8 @@ var testPlanExecutionHTMLReportTemplate = template.Must(template.New("test-plan-
     <div class="metric"><span>Steps</span><strong>{{ .Report.Execution.TotalSteps }}</strong></div>
     <div class="metric"><span>Findings</span><strong>{{ .Summary.TotalFindings }}</strong></div>
   </div>
+
+  {{ reportIntelligence .Report.ReportIntelligence }}
 
   <section style="margin-bottom: 16px;">
     <h2>Safety Scope</h2>

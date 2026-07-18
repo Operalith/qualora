@@ -11,9 +11,10 @@ type qaRunHTMLReportData struct {
 }
 
 var qaRunHTMLReportTemplate = template.Must(template.New("qa-run-report").Funcs(template.FuncMap{
-	"json":       prettyJSON,
-	"formatTime": formatReportTime,
-	"add":        func(left int, right int) int { return left + right },
+	"json":               prettyJSON,
+	"formatTime":         formatReportTime,
+	"add":                func(left int, right int) int { return left + right },
+	"reportIntelligence": reportIntelligenceHTML,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -135,6 +136,8 @@ var qaRunHTMLReportTemplate = template.Must(template.New("qa-run-report").Funcs(
     <div class="metric"><span>Low</span><strong>{{ .Summary.Low }}</strong></div>
     <div class="metric"><span>Info</span><strong>{{ .Summary.Info }}</strong></div>
   </div>
+
+  {{ reportIntelligence .Report.ReportIntelligence }}
 
   {{ with .Report.DiscoverySummary }}
   <section style="margin-bottom: 16px;">

@@ -4,6 +4,37 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.17.0-alpha] - 2026-07-18
+
+### Added
+
+- Deterministic report intelligence for generic run, discovery, quality, Safe Explorer, authorization, safe test plan execution, and Safe QA reports.
+- Executive summaries with pass/warning/fail/unknown status, severity counts, what was tested, what was not tested, safety limitations, and recommended next actions.
+- Severity normalization across stored findings and quality result rows.
+- Stable finding fingerprints, grouped findings, duplicate reduction metadata, top findings, top affected pages, and noise/repeated-finding summaries.
+- Web UI report-intelligence panels on report detail pages and recent severity/grouped counts on the reports landing page.
+- Smoke coverage for report intelligence JSON fields, HTML sections, grouped findings, raw findings/results, and no-secret report output.
+
+### Changed
+
+- Package metadata has been updated to `0.17.0-alpha`.
+- Quality check reports now include a raw `findings` projection alongside existing `results` rows.
+- Safe QA combined reports include quality findings in the raw combined finding list while preserving `quality_results`.
+- HTML reports now show grouped findings before raw findings/details.
+
+### Security
+
+- Report intelligence is deterministic and does not send data to AI providers.
+- Sensitive query parameters are redacted before URL fingerprints or affected-path summaries are produced.
+- Credentials, cookies, local/session storage, auth headers, tokens, screenshots, full HTML, request bodies, response bodies, provider secrets, and encrypted secret payloads are excluded from report-intelligence inputs.
+
+### Known Limitations
+
+- Grouping is heuristic and deterministic; it reduces noise but does not prove findings are identical root causes.
+- AI report briefs are not implemented in this release. Existing optional AI analysis remains separate and sanitized.
+- Report intelligence does not perform root-cause analysis, schema fuzzing, active security scanning, or exhaustive coverage scoring.
+- The reports landing page hydrates recent rows with intelligence counts; older rows still link to full report detail pages.
+
 ## [v0.16.0-alpha] - 2026-07-17
 
 ### Added
