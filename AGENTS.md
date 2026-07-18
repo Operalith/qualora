@@ -10,7 +10,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.17.0-alpha` Docker Compose MVP working.
+- Keep the `v0.18.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
@@ -30,6 +30,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Guided project onboarding that creates a project, optionally configures AI, credentials, and OpenAPI specs, and starts selected safe checks.
 - Dashboard, reports, and project readiness UI that make first-run workflows discoverable without hiding alpha limitations.
 - Deterministic report intelligence with severity normalization, grouped findings, deduplication metadata, affected-page summaries, noise classification, and executive summaries.
+- Deterministic Safe QA report baselines, regression comparisons, and CI quality gates.
 - Local first-run admin setup and session-protected API/web UI access.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
@@ -74,6 +75,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Safe Explorer must not use AI action choice, arbitrary clicking, arbitrary form submission, POST/mutating form execution, destructive actions, crawling external domains by default, active scanning, fuzzing, or payload execution.
 - Safe QA Runs must remain an orchestration layer over discovery, AI planning, and safe DSL execution; do not add arbitrary clicking, form submission, broad crawling, active scanning, fuzzing, or destructive actions.
 - Guided setup must orchestrate existing safe capabilities; do not add new engines, autonomous browser control, active scanning, destructive behavior, or credential leakage through onboarding.
+- Baseline comparison must stay deterministic and based on existing report intelligence fingerprints/grouped findings.
+- Quality gates must work without AI and must not start workers, execute tests, hide raw findings, or mutate tested systems.
 - API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
 - Imported OpenAPI API smoke runs must stay read-only: skip mutating methods, authenticated operations, required request bodies, unresolved parameters, sensitive paths/parameters, and external redirects.
 - Do not store API request bodies or response bodies in the current alpha API smoke path.
@@ -107,6 +110,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Authorization runs must never send credentials, cookies, local/session storage, auth headers, or tokens to AI or include them in evidence/reports.
 - Discovery runs must never send credentials, cookies, local/session storage, auth headers, tokens, full HTML, request bodies, or response bodies to AI or include them in metadata/report fields.
 - Quality checks must never send credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, or response bodies to AI or include them in metadata/report fields.
+- Baselines, comparisons, and quality gates must never include credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, provider secrets, encrypted secret payloads, or raw AI prompts.
 
 ## Contribution Style
 

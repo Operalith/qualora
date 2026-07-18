@@ -18,7 +18,7 @@ QUALORA_API_URL=http://localhost:18080 QUALORA_API_BASE_URL=http://localhost:180
 
 The web UI is exposed at `http://localhost:3000` by default. Override it with `QUALORA_WEB_PORT`.
 
-On a fresh database, open the web UI and complete first-run local admin setup before accessing projects and reports. After login, use `#/setup-project` for guided project setup or the dashboard `Run demo workflow` action for the local demo path. Project pages can start browser smoke, authenticated smoke, discovery, Interactive Safe Explorer, passive quality, Safe QA, and API smoke workflows when the required project settings are present. The smoke script can also create the local admin automatically and exercise the guided demo flow for demo stacks.
+On a fresh database, open the web UI and complete first-run local admin setup before accessing projects and reports. After login, use `#/setup-project` for guided project setup or the dashboard `Run demo workflow` action for the local demo path. Project pages can start browser smoke, authenticated smoke, discovery, Interactive Safe Explorer, passive quality, Safe QA, and API smoke workflows when the required project settings are present. Safe QA report pages can set baselines, compare against baselines, and evaluate quality gates. The smoke script can also create the local admin automatically and exercise the guided demo flow for demo stacks.
 
 The MVP Compose stack includes:
 
@@ -41,9 +41,11 @@ The control plane receives the same MinIO/S3 configuration as the browser worker
 
 Set `QUALORA_ENCRYPTION_KEY` before storing real credential profiles or AI provider credentials. The default Compose value is intentionally insecure and only suitable for local demos.
 
-Report intelligence in `v0.17.0-alpha` is computed inside `qualora-api` when reports are read. It adds executive summaries, severity counts, grouped findings, top findings, affected pages, noise summaries, and deduplication metadata to JSON/HTML reports without calling an AI provider.
+Report intelligence in `v0.18.0-alpha` is computed inside `qualora-api` when reports are read. It adds executive summaries, severity counts, grouped findings, top findings, affected pages, noise summaries, and deduplication metadata to JSON/HTML reports without calling an AI provider.
 
-Interactive Safe Explorer remains policy-gated in `v0.17.0-alpha`: it executes only safe classified same-origin navigation actions by default, records skipped unsafe/unsupported actions with reasons, and does not use AI to control the browser. It does not submit POST forms, click arbitrary buttons, run payloads, fuzz inputs, perform active scans, or perform destructive actions.
+Baselines and quality gates in `v0.18.0-alpha` are also handled by `qualora-api`. Baselines persist grouped finding fingerprints and summary metadata in PostgreSQL; comparisons and gates are computed synchronously without starting workers or requiring AI. For HTTP-based CI checks, use `scripts/qualora-ci-gate.sh` with an authenticated session cookie and CSRF token.
+
+Interactive Safe Explorer remains policy-gated in `v0.18.0-alpha`: it executes only safe classified same-origin navigation actions by default, records skipped unsafe/unsupported actions with reasons, and does not use AI to control the browser. It does not submit POST forms, click arbitrary buttons, run payloads, fuzz inputs, perform active scans, or perform destructive actions.
 
 Auth-related local defaults:
 

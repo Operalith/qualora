@@ -46,6 +46,16 @@ const (
 )
 
 const (
+	ReportTypeSafeQA        = "safe_qa"
+	ReportTypeQualityCheck  = "quality_check"
+	ReportTypeDiscovery     = "discovery"
+	ReportTypeSafeExplorer  = "safe_explorer"
+	ReportTypeAPISmoke      = "api_smoke"
+	ReportTypeBrowserSmoke  = "browser_smoke"
+	ReportTypeAuthorization = "authorization"
+)
+
+const (
 	AIProviderOpenAICompatible = "openai-compatible"
 )
 
@@ -296,6 +306,134 @@ type ReportSummary struct {
 	Medium        int `json:"medium"`
 	Low           int `json:"low"`
 	Info          int `json:"info"`
+}
+
+type ReportBaseline struct {
+	ID                   string           `json:"id"`
+	ProjectID            string           `json:"project_id"`
+	Name                 string           `json:"name"`
+	Description          string           `json:"description,omitempty"`
+	ReportType           string           `json:"report_type"`
+	ReportID             string           `json:"report_id"`
+	SourceRunID          string           `json:"source_run_id,omitempty"`
+	FingerprintSet       []GroupedFinding `json:"fingerprint_set"`
+	SeverityCounts       ReportSummary    `json:"severity_counts"`
+	GroupedFindingsCount int              `json:"grouped_findings_count"`
+	RawFindingsCount     int              `json:"raw_findings_count"`
+	CreatedByUserID      string           `json:"created_by_user_id,omitempty"`
+	IsDefault            bool             `json:"is_default"`
+	CreatedAt            time.Time        `json:"created_at"`
+	UpdatedAt            time.Time        `json:"updated_at"`
+}
+
+type ReportBaselineRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	ReportType  string `json:"report_type"`
+	ReportID    string `json:"report_id"`
+	IsDefault   bool   `json:"is_default,omitempty"`
+}
+
+type ReportBaselineUpdateRequest struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	IsDefault   *bool  `json:"is_default,omitempty"`
+}
+
+type ReportComparisonRequest struct {
+	ReportType         string `json:"report_type"`
+	CurrentReportID    string `json:"current_report_id"`
+	BaselineID         string `json:"baseline_id,omitempty"`
+	UseDefaultBaseline bool   `json:"use_default_baseline,omitempty"`
+}
+
+type SeverityChange struct {
+	Fingerprint      string `json:"fingerprint"`
+	Title            string `json:"title"`
+	PreviousSeverity string `json:"previous_severity"`
+	CurrentSeverity  string `json:"current_severity"`
+}
+
+type AffectedScopeChange struct {
+	Fingerprint           string `json:"fingerprint"`
+	Title                 string `json:"title"`
+	PreviousAffectedURLs  int    `json:"previous_affected_urls"`
+	CurrentAffectedURLs   int    `json:"current_affected_urls"`
+	PreviousAffectedPaths int    `json:"previous_affected_paths"`
+	CurrentAffectedPaths  int    `json:"current_affected_paths"`
+}
+
+type ReportComparisonSummary struct {
+	NewFindingsCount       int              `json:"new_findings_count"`
+	FixedFindingsCount     int              `json:"fixed_findings_count"`
+	UnchangedFindingsCount int              `json:"unchanged_findings_count"`
+	SeverityChanges        []SeverityChange `json:"severity_changes"`
+	NewCritical            int              `json:"new_critical"`
+	NewHigh                int              `json:"new_high"`
+	NewMedium              int              `json:"new_medium"`
+	FixedCritical          int              `json:"fixed_critical"`
+	FixedHigh              int              `json:"fixed_high"`
+	FixedMedium            int              `json:"fixed_medium"`
+}
+
+type ReportComparison struct {
+	ComparisonID       string                  `json:"comparison_id,omitempty"`
+	ProjectID          string                  `json:"project_id"`
+	ReportType         string                  `json:"report_type"`
+	BaselineID         string                  `json:"baseline_id,omitempty"`
+	CurrentReportID    string                  `json:"current_report_id"`
+	Status             string                  `json:"status"`
+	Summary            ReportComparisonSummary `json:"summary"`
+	NewFindings        []GroupedFinding        `json:"new_findings"`
+	FixedFindings      []GroupedFinding        `json:"fixed_findings"`
+	UnchangedFindings  []GroupedFinding        `json:"unchanged_findings"`
+	SeverityDelta      ReportSummary           `json:"severity_delta"`
+	AffectedPagesDelta []AffectedScopeChange   `json:"affected_pages_delta"`
+	Recommendation     string                  `json:"recommendation"`
+	GeneratedAt        time.Time               `json:"generated_at"`
+}
+
+type QualityGateConfig struct {
+	FailOnNewCritical   *bool `json:"fail_on_new_critical,omitempty"`
+	FailOnNewHigh       *bool `json:"fail_on_new_high,omitempty"`
+	FailOnNewMedium     *bool `json:"fail_on_new_medium,omitempty"`
+	MaxNewHigh          *int  `json:"max_new_high,omitempty"`
+	MaxNewMedium        *int  `json:"max_new_medium,omitempty"`
+	MaxTotalCritical    *int  `json:"max_total_critical,omitempty"`
+	MaxTotalHigh        *int  `json:"max_total_high,omitempty"`
+	FailOnRunError      *bool `json:"fail_on_run_error,omitempty"`
+	FailOnMissingReport *bool `json:"fail_on_missing_report,omitempty"`
+	IgnoreInfo          *bool `json:"ignore_info,omitempty"`
+	IgnoreNoisy         *bool `json:"ignore_noisy,omitempty"`
+}
+
+type QualityGateEvaluationRequest struct {
+	ReportType         string            `json:"report_type"`
+	CurrentReportID    string            `json:"current_report_id"`
+	BaselineID         string            `json:"baseline_id,omitempty"`
+	UseDefaultBaseline bool              `json:"use_default_baseline,omitempty"`
+	GateConfig         QualityGateConfig `json:"gate_config,omitempty"`
+	Format             string            `json:"format,omitempty"`
+}
+
+type QualityGateResult struct {
+	Status            string                  `json:"status"`
+	FailedRules       []string                `json:"failed_rules"`
+	Warnings          []string                `json:"warnings"`
+	ComparisonSummary ReportComparisonSummary `json:"comparison_summary"`
+	SeverityCounts    ReportSummary           `json:"severity_counts"`
+	Recommendation    string                  `json:"recommendation"`
+	CIExitCode        int                     `json:"ci_exit_code"`
+	GeneratedAt       time.Time               `json:"generated_at"`
+}
+
+type CIQualityGateResult struct {
+	Status        string   `json:"status"`
+	ExitCode      int      `json:"exit_code"`
+	Summary       string   `json:"summary"`
+	ReportURL     string   `json:"report_url"`
+	ComparisonURL string   `json:"comparison_url,omitempty"`
+	FailedRules   []string `json:"failed_rules"`
 }
 
 type DiscoveryRunRequest struct {
@@ -1111,6 +1249,10 @@ type QARunReport struct {
 	Evidence         []Evidence                `json:"evidence"`
 	SafetyNotes      []string                  `json:"safety_notes"`
 	Limitations      []string                  `json:"limitations"`
+	Baseline         *ReportBaseline           `json:"baseline,omitempty"`
+	Comparison       *ReportComparison         `json:"comparison,omitempty"`
+	QualityGate      *QualityGateResult        `json:"quality_gate,omitempty"`
+	BaselineMessage  string                    `json:"baseline_message,omitempty"`
 	GeneratedAt      time.Time                 `json:"generated_at"`
 	ReportIntelligence
 }

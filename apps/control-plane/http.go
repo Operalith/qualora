@@ -55,6 +55,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/quality-check-runs/", a.handleQualityCheckRunSubroutes)
 	mux.HandleFunc("/api/v1/safe-explorer-runs/", a.handleSafeExplorerRunSubroutes)
 	mux.HandleFunc("/api/v1/qa-runs/", a.handleQARunSubroutes)
+	mux.HandleFunc("/api/v1/report-baselines/", a.handleReportBaselineSubroutes)
 	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, a.withAuth(mux))))
 }
 
@@ -262,6 +263,33 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
 		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "report-baselines" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createReportBaseline(w, r, parts[0])
+		case http.MethodGet:
+			a.listReportBaselines(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "report-comparisons" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.createReportComparison(w, r, parts[0])
+		return
+	}
+	if len(parts) == 3 && parts[0] != "" && parts[1] == "quality-gates" && parts[2] == "evaluate" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+			return
+		}
+		a.evaluateQualityGate(w, r, parts[0])
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "route not found")

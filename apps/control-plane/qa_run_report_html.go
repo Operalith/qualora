@@ -139,6 +139,37 @@ var qaRunHTMLReportTemplate = template.Must(template.New("qa-run-report").Funcs(
 
   {{ reportIntelligence .Report.ReportIntelligence }}
 
+  <section style="margin-bottom: 16px;">
+    <h2>Baseline & Regression</h2>
+    {{ if .Report.Baseline }}
+    <p><strong>Baseline:</strong> {{ .Report.Baseline.Name }} <span class="subtle">({{ .Report.Baseline.ReportType }} report {{ .Report.Baseline.ReportID }})</span></p>
+    {{ with .Report.Comparison }}
+    <div class="grid six">
+      <div class="metric"><span>Status</span><strong>{{ .Status }}</strong></div>
+      <div class="metric"><span>New</span><strong>{{ .Summary.NewFindingsCount }}</strong></div>
+      <div class="metric"><span>Fixed</span><strong>{{ .Summary.FixedFindingsCount }}</strong></div>
+      <div class="metric"><span>Unchanged</span><strong>{{ .Summary.UnchangedFindingsCount }}</strong></div>
+      <div class="metric"><span>New High+</span><strong>{{ add .Summary.NewCritical .Summary.NewHigh }}</strong></div>
+      <div class="metric"><span>Fixed High+</span><strong>{{ add .Summary.FixedCritical .Summary.FixedHigh }}</strong></div>
+    </div>
+    <p>{{ .Recommendation }}</p>
+    {{ end }}
+    {{ with .Report.QualityGate }}
+    <p><strong>Quality gate:</strong> <span class="status">{{ .Status }}</span> <strong>CI exit code:</strong> {{ .CIExitCode }}</p>
+    {{ if .FailedRules }}
+    <p><strong>Failed rules:</strong></p>
+    <ul>{{ range .FailedRules }}<li><code>{{ . }}</code></li>{{ end }}</ul>
+    {{ end }}
+    {{ if .Warnings }}
+    <p><strong>Warnings:</strong></p>
+    <ul>{{ range .Warnings }}<li><code>{{ . }}</code></li>{{ end }}</ul>
+    {{ end }}
+    {{ end }}
+    {{ else }}
+    <p class="subtle">{{ .Report.BaselineMessage }}</p>
+    {{ end }}
+  </section>
+
   {{ with .Report.DiscoverySummary }}
   <section style="margin-bottom: 16px;">
     <h2>Discovery</h2>

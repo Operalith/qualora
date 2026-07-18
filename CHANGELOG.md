@@ -4,6 +4,42 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.18.0-alpha] - 2026-07-18
+
+### Added
+
+- Project-scoped report baseline model for deterministic Safe QA regression tracking.
+- Report baseline CRUD API with one default baseline per project and report type.
+- On-demand report comparison API for new, fixed, unchanged, severity-changed, and affected-scope-changed grouped findings.
+- Quality gate evaluation API with pass/fail/warning status, failed rules, recommendations, and CI exit codes.
+- Compact `format=ci` response for HTTP-based release gates.
+- `scripts/qualora-ci-gate.sh` helper for curl-based CI usage.
+- Safe QA JSON/HTML report integration for default baseline, comparison summary, and quality gate status.
+- Web UI Baselines & Regression card, Safe QA report baseline/comparison/gate actions, report baseline indicators, and v0.18 badge.
+- Smoke coverage for baseline creation, default baseline listing/detail, second Safe QA comparison, passing quality gate, compact CI response, HTML report text, UI text, and no-secret report output.
+
+### Changed
+
+- Package metadata has been updated to `0.18.0-alpha`.
+- Safe QA reports now explain when no baseline is configured.
+- Reports landing page can indicate Safe QA reports used as baselines.
+
+### Security
+
+- Baseline comparison and quality gate evaluation are deterministic control-plane operations and do not require AI.
+- Baselines store grouped finding fingerprints and summary metadata only.
+- Comparisons and gates do not start browser/API workers, execute new checks, perform active scans, fuzz inputs, run payloads, or mutate tested systems.
+- Credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, provider secrets, encrypted secret payloads, and raw AI prompts are excluded from baseline/gate data.
+
+### Known Limitations
+
+- Baseline comparison is alpha and fingerprint-based.
+- Safe QA is the primary supported baseline report type in v0.18.
+- Quality gates are conservative alpha release signals and do not replace human review.
+- CI integration is HTTP/script based, not a full CLI.
+- No autonomous AI browser control, active security scanning, payload attacks, fuzzing, or destructive testing was added.
+- Only OpenAI-compatible chat completion providers are supported for optional AI features.
+
 ## [v0.17.0-alpha] - 2026-07-18
 
 ### Added

@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.17.0-alpha` adds deterministic report intelligence: executive summaries, severity normalization, grouped findings, duplicate reduction, affected-page summaries, and noise/repeated-finding indicators across JSON reports, HTML exports, the reports landing page, and report detail pages. Qualora remains useful without AI: discovery, Safe Explorer, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, report intelligence, HTML reports, and approved safe test plan execution do not depend on an LLM.
+`v0.18.0-alpha` adds deterministic report baselines, regression comparison, and CI-friendly quality gates for Safe QA reports. A user can mark a Safe QA report as a baseline, compare later reports against it, and evaluate pass/fail gates without AI. Qualora remains useful without AI: discovery, Safe Explorer, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, report intelligence, baseline comparison, quality gates, HTML reports, and approved safe test plan execution do not depend on an LLM.
 
 ## Current Alpha Capabilities
 
@@ -57,6 +57,11 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Store screenshots in MinIO/S3, with a local filesystem fallback.
 - Generate structured JSON reports with executive summaries, normalized severity counts, grouped findings, top findings, affected-page summaries, noise summaries, raw finding counts, deduplication metadata, and safety limitations.
 - Generate self-contained HTML reports at `GET /api/v1/runs/{run_id}/report.html` with grouped findings first and raw details still available.
+- Mark Safe QA reports as project baselines.
+- Compare Safe QA reports against the default or selected baseline.
+- Classify new, fixed, unchanged, severity-changed, and affected-scope-changed grouped findings.
+- Evaluate CI-friendly quality gates for new and total critical/high/medium findings.
+- Use `scripts/qualora-ci-gate.sh` for HTTP-based CI gate checks.
 - Download stored evidence objects at `GET /api/v1/evidence/{evidence_id}`.
 - Configure optional OpenAI-compatible AI providers from the web UI or API.
 - Test AI provider connectivity with a safe prompt.
@@ -82,10 +87,11 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
+        +--> Deterministic report baseline comparison and quality gate evaluation
         |
         +--> qualora-worker-browser
         |       +--> Playwright browser smoke test
@@ -156,6 +162,7 @@ The smoke target includes:
 - AI provider smoke against a local fake OpenAI-compatible provider.
 - Discovery-aware AI test plan generation from the application map.
 - Safe QA Run preview and explicit execution against the approved safe browser DSL.
+- Safe QA baseline creation, second Safe QA report comparison, quality gate evaluation, and compact CI gate response validation.
 - Guided project setup through the onboarding API, including demo AI provider setup, demo OpenAPI import, credential profile creation, browser smoke, authenticated smoke, discovery, quality checks, Safe QA, and API smoke.
 - Safe test plan execution smoke against the local `demo-web` service.
 
@@ -629,6 +636,71 @@ curl -s "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/report" \
 open "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/report.html"
 ```
 
+Set a completed Safe QA report as the default regression baseline:
+
+```bash
+BASELINE_ID=$(curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/report-baselines" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Main Safe QA baseline",
+    "description": "Stable demo baseline for release checks",
+    "report_type": "safe_qa",
+    "report_id": "'"${QA_RUN_ID}"'",
+    "is_default": true
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+```
+
+Compare a later Safe QA report against the default baseline:
+
+```bash
+curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/report-comparisons" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "report_type": "safe_qa",
+    "current_report_id": "'"${NEXT_QA_RUN_ID}"'",
+    "use_default_baseline": true
+  }' | python3 -m json.tool
+```
+
+Evaluate the default alpha quality gate:
+
+```bash
+curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/quality-gates/evaluate" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "report_type": "safe_qa",
+    "current_report_id": "'"${NEXT_QA_RUN_ID}"'",
+    "use_default_baseline": true
+  }' | python3 -m json.tool
+```
+
+Get compact CI JSON and an exit code:
+
+```bash
+curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/quality-gates/evaluate?format=ci" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "report_type": "safe_qa",
+    "current_report_id": "'"${NEXT_QA_RUN_ID}"'",
+    "use_default_baseline": true
+  }' | python3 -m json.tool
+
+QUALORA_API_URL=http://localhost:8080 \
+QUALORA_SESSION_COOKIE="qualora_session=..." \
+QUALORA_CSRF_TOKEN="${CSRF}" \
+QUALORA_PROJECT_ID="${PROJECT_ID}" \
+QUALORA_REPORT_ID="${NEXT_QA_RUN_ID}" \
+scripts/qualora-ci-gate.sh
+```
+
 Execute a previewed Safe QA Run only after reviewing the generated plan and safe execution preview:
 
 ```bash
@@ -643,7 +715,7 @@ curl -s -X POST "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/execute" \
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.17.0-alpha`:
+Supported provider type in `v0.18.0-alpha`:
 
 - `openai-compatible`
 
@@ -663,11 +735,11 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.17.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, guided onboarding, and report intelligence are deterministic paths and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.18.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, guided onboarding, report intelligence, baseline comparison, and quality gates are deterministic paths and are not AI-controlled.
 
 ## Report Intelligence
 
-Every primary JSON and HTML report includes deterministic report intelligence in `v0.17.0-alpha`:
+Every primary JSON and HTML report includes deterministic report intelligence in `v0.18.0-alpha`:
 
 - `executive_summary` with pass/warning/fail/unknown status, what was tested, what was not tested, recommended next actions, and safety limitations.
 - `severity_counts` normalized to `critical`, `high`, `medium`, `low`, and `info`.
@@ -675,6 +747,20 @@ Every primary JSON and HTML report includes deterministic report intelligence in
 - `top_affected_pages`, `noise_summary`, `raw_findings_count`, and `deduplication_summary`.
 
 This is not AI summarization. It does not send credentials, cookies, local storage, session storage, auth headers, tokens, screenshots, full HTML, request bodies, or response bodies to any model. Optional AI analysis remains a separate user-triggered feature that uses sanitized report metadata only.
+
+## Baselines And Quality Gates
+
+Safe QA reports can be marked as project baselines. A baseline stores normalized grouped finding fingerprints, severity counts, grouped/raw counts, and source report metadata. It does not store secrets, screenshots, browser storage, request bodies, response bodies, or AI prompts.
+
+Comparisons are deterministic:
+
+- New findings: fingerprints present in the current report but absent from the baseline.
+- Fixed findings: fingerprints present in the baseline but absent from the current report.
+- Unchanged findings: fingerprints present in both.
+- Severity changes: same fingerprint with a changed normalized severity.
+- Affected-scope changes: same fingerprint with changed affected URL/path counts.
+
+Quality gates are designed for CI and release checks. Defaults fail on new critical or high findings and on total critical findings, warn when a baseline is missing, and return `ci_exit_code` or compact `exit_code` values without requiring AI.
 
 ## Report Example
 
@@ -780,6 +866,8 @@ The alpha is safe by default:
 - AI-assisted test plans are stored as suggestions and are not executed automatically.
 - Test plan execution is never autonomous: users must explicitly preview/start it, and only the supported safe browser DSL is executed.
 - Test plan execution enforces same-origin frontend targets and project `allowed_hosts`.
+- Baseline comparison and quality gates are deterministic and do not send data to AI.
+- Quality gates should be used as release signals, not as the only approval mechanism.
 
 See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.md).
 
@@ -789,6 +877,10 @@ See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.
 - No user management UI, password reset flow, SSO/OIDC/SAML, multi-user RBAC, teams, or multi-tenancy.
 - Web UI is alpha and intentionally minimal.
 - AI provider management, AI analysis, AI-assisted test planning, and safe test plan execution are alpha and optional.
+- Baseline comparison is alpha and fingerprint-based; it can miss semantic regressions that do not change grouped finding fingerprints.
+- Quality gates are alpha and conservative.
+- CI integration is HTTP/script based, not a full CLI.
+- Comparisons and gates do not replace human review.
 - Only OpenAI-compatible chat completion providers are supported.
 - No native Anthropic, Gemini, or provider-specific SDK integrations yet.
 - Generated test plans are not executed automatically or as free-form instructions.
@@ -831,6 +923,7 @@ Near-term work:
 - Add audit logging, login rate limiting, and local auth hardening.
 - Expand OpenAPI validation.
 - Deepen quality checks with richer accessibility/performance signals once the passive alpha path is stable.
+- Add richer trend views after the baseline/gate alpha path is stable.
 
 See [docs/roadmap.md](docs/roadmap.md).
 

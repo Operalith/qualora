@@ -217,7 +217,7 @@ Delivered:
 
 ## v0.17.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Deterministic report intelligence for generic run, discovery, quality, Safe Explorer, authorization, safe test plan execution, and Safe QA reports.
 - Severity normalization for findings and quality results.
@@ -227,7 +227,21 @@ Current alpha scope:
 - Web UI report intelligence panels and recent report index severity/grouped counts.
 - Smoke validation for report intelligence JSON fields, HTML sections, grouped findings, raw findings/results, no-secret output, and existing flows.
 
-## Phase 18: Run And Worker Hardening
+## v0.18.0-alpha
+
+Current alpha scope:
+
+- Project-scoped report baselines for Safe QA reports.
+- Default baseline management with one default baseline per project/report type.
+- Deterministic fingerprint-based comparison for new, fixed, unchanged, severity-changed, and affected-scope-changed findings.
+- Safe QA report JSON/HTML integration for baseline status and comparison/gate summaries.
+- Quality gate evaluation for CI/release checks without requiring AI.
+- Compact CI quality gate response and HTTP helper script.
+- Web UI actions to set a Safe QA report as baseline, compare with baseline, and evaluate quality gates.
+- Project and reports UI baseline/regression indicators.
+- Smoke validation for unchanged baseline comparison, passing quality gate, compact CI response, UI text, and existing flows.
+
+## Phase 19: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -241,19 +255,19 @@ Current alpha scope:
 - Move AI-assisted test planning to an async analyzer worker.
 - Safe QA Run integration for Safe Explorer summaries if it can remain explicit and non-autonomous.
 
-## Phase 19: Deeper API Checks
+## Phase 20: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 20: Quality Check Deepening
+## Phase 21: Quality Check Deepening
 
 - Optional axe-core integration or richer accessibility summaries.
 - Lighthouse/Core Web Vitals-style performance collection if it can stay safe and lightweight.
 - More passive security metadata, including TLS details where practical.
-- Better trend comparison across quality runs.
+- Better trend comparison across quality and API runs.
 
 ## Later
 

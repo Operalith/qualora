@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -98,6 +99,25 @@ func (s *Store) GetQARunReport(ctx context.Context, id string) (*QARunReport, er
 		WhatWasNotTested:  defaultWhatWasNotTested("safe_qa_run"),
 		SafetyLimitations: report.Limitations,
 	})
+	if baseline, err := s.GetDefaultReportBaseline(ctx, project.ID, ReportTypeSafeQA); err == nil {
+		snapshot := ReportSnapshot{
+			ProjectID:    project.ID,
+			ReportType:   ReportTypeSafeQA,
+			ReportID:     run.ID,
+			SourceRunID:  run.ID,
+			Status:       run.Status,
+			Intelligence: report.ReportIntelligence,
+		}
+		comparison := CompareReportToBaseline(snapshot, *baseline, time.Now().UTC())
+		gate := EvaluateQualityGate(comparison, report.ReportIntelligence.SeverityCounts, run.Status, QualityGateConfig{}, time.Now().UTC())
+		report.Baseline = baseline
+		report.Comparison = &comparison
+		report.QualityGate = &gate
+	} else if errors.Is(err, ErrNotFound) {
+		report.BaselineMessage = "No baseline configured yet. Mark this report as baseline to enable regression tracking."
+	} else {
+		return nil, err
+	}
 	return report, nil
 }
 

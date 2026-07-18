@@ -1,6 +1,6 @@
 # Qualora Web
 
-Minimal React/Vite web UI for Qualora v0.17.0-alpha.
+Minimal React/Vite web UI for Qualora v0.18.0-alpha.
 
 The UI supports:
 
@@ -28,6 +28,9 @@ The UI supports:
 - Viewing quality run reports, category/severity summaries, findings, safety notes, and HTML report links.
 - Generating discovery-aware AI test plans from sanitized application maps.
 - Starting Safe QA Run previews, executing reviewed safe QA runs, and viewing Safe QA Run reports.
+- Setting Safe QA reports as baselines.
+- Comparing Safe QA reports against the default baseline.
+- Evaluating quality gates and viewing failed rules.
 - Starting runs.
 - Listing runs.
 - Reports landing page at `#/reports`.
@@ -77,6 +80,7 @@ QUALORA_API_BASE_URL=http://localhost:8080 docker compose up -d --build qualora-
 - Authorization checks are explicit, read-only, and limited to deterministic browser URL checks.
 - Application discovery is bounded, same-origin by default, and does not submit forms or click mutating controls.
 - Quality checks are passive alpha heuristics and do not perform active scanning, payloads, fuzzing, form submission, arbitrary clicks, or destructive actions.
+- Baseline comparison is deterministic and fingerprint-based; quality gates are alpha release signals and do not replace human review.
 - Guided setup orchestrates existing safe flows only; it does not add autonomous browser control, active scanning, fuzzing, arbitrary form submission, or destructive testing.
 - Evidence preview/download is limited to evidence records known to Qualora.
 - No advanced filtering, pagination, or project editing yet.

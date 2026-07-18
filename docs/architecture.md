@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.17.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, safe deterministic application discovery, Interactive Safe Explorer, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
+Qualora v0.18.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, safe deterministic application discovery, Interactive Safe Explorer, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,12 +10,14 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
         |       +--> Report analysis
         |       +--> Test plan suggestions
+        |
+        +--> Deterministic report intelligence, baselines, comparisons, and quality gates
         |
         +--> qualora-worker-browser
         |       +--> Playwright Chromium smoke test
@@ -43,7 +45,9 @@ qualora-api
 
 The Go control plane exposes the HTTP API, validates project scope, persists metadata, creates per-run jobs, queues worker jobs, renders JSON/HTML reports, and enforces local session authentication for protected API routes.
 
-Report generation now includes a deterministic intelligence layer. It normalizes finding severities, computes stable fingerprints, groups repeated findings, classifies noisy/repeated signals, summarizes affected pages, and produces executive summaries at report read/render time without changing stored finding schemas. The raw findings, evidence metadata, quality result rows, discovery maps, Safe Explorer traces, authorization results, and API result rows remain available.
+Report generation includes a deterministic intelligence layer. It normalizes finding severities, computes stable fingerprints, groups repeated findings, classifies noisy/repeated signals, summarizes affected pages, and produces executive summaries at report read/render time without changing stored finding schemas. The raw findings, evidence metadata, quality result rows, discovery maps, Safe Explorer traces, authorization results, and API result rows remain available.
+
+The v0.18 baseline layer stores grouped finding fingerprints and summary metadata from known reports in `report_baselines`. Comparisons are computed deterministically from baseline fingerprints and the current report intelligence. Quality gate evaluation uses comparison summaries and current severity counts; it does not require AI and does not execute any new testing engine.
 
 Current endpoints:
 
@@ -100,6 +104,13 @@ Current endpoints:
 - `POST /api/v1/qa-runs/{qa_run_id}/execute`
 - `GET /api/v1/qa-runs/{qa_run_id}/report`
 - `GET /api/v1/qa-runs/{qa_run_id}/report.html`
+- `GET /api/v1/projects/{project_id}/report-baselines`
+- `POST /api/v1/projects/{project_id}/report-baselines`
+- `GET /api/v1/report-baselines/{baseline_id}`
+- `PUT /api/v1/report-baselines/{baseline_id}`
+- `DELETE /api/v1/report-baselines/{baseline_id}`
+- `POST /api/v1/projects/{project_id}/report-comparisons`
+- `POST /api/v1/projects/{project_id}/quality-gates/evaluate`
 - `POST /api/v1/projects/{project_id}/ai-test-plans`
 - `GET /api/v1/projects/{project_id}/test-plans`
 - `POST /api/v1/projects/{project_id}/api-specs`
@@ -160,6 +171,8 @@ The React/Vite web UI is intentionally small. It calls the control-plane API fro
 - Quality Checks form, run list, JSON/HTML report links, category/severity summaries, findings, safety notes, and limitations.
 - Discovery-aware AI test plan generation controls and safe executable coverage display.
 - Safe QA Run preview/execution controls and Safe QA Run JSON/HTML report pages, including quality summaries when requested.
+- Safe QA report baseline actions, comparison summaries, quality gate status, and failed rule display.
+- Project-level Baselines & Regression card and reports index baseline indicators.
 
 On a fresh database it shows a first-run local admin setup screen. After setup, project data, credential profiles, AI providers, runs, reports, evidence, API specs, test plans, and authorization reports require the local admin session. The UI is still alpha and should be exposed only in trusted local/self-hosted environments.
 
@@ -168,6 +181,14 @@ On a fresh database it shows a first-run local admin setup screen. After setup, 
 `POST /api/v1/onboarding/project-setup` is a thin orchestration endpoint used by the web wizard and smoke script. It validates the project request, rejects destructive actions, creates the project, optionally creates or reuses an OpenAI-compatible provider, optionally creates an encrypted credential profile, optionally imports an OpenAPI spec, and starts selected safe workflows.
 
 The endpoint returns only resource IDs, safe provider metadata, skipped-action reasons, timeline entries, and report links. It must not return raw passwords, encrypted secret payloads, provider API keys, cookies, browser storage, authorization headers, or tokens. Guided onboarding does not add a new testing engine; it coordinates existing browser smoke, authenticated smoke, discovery, quality check, Safe QA, and imported-spec API smoke paths.
+
+### Baselines, Comparisons, And Quality Gates
+
+`report_baselines` is the only new durable model in v0.18. It stores project/report ownership, baseline metadata, default-baseline status, normalized grouped finding fingerprints, severity counts, grouped finding count, and raw finding count. A partial unique index keeps one default baseline per project and report type.
+
+Report comparison is computed on demand. The control plane loads the baseline snapshot and the current report snapshot, extracts grouped finding fingerprints from existing report intelligence, then classifies findings as new, fixed, unchanged, severity-changed, or affected-scope-changed. No worker job, AI call, browser action, API request, or security scan is started by comparison.
+
+Quality gates are also synchronous control-plane evaluation. Defaults fail on new critical/high findings and total critical findings, warn when no baseline exists, and return `ci_exit_code` for automation. The `format=ci` response shape is intentionally compact for curl-based CI usage. This is an alpha HTTP/script integration, not a full CLI.
 
 ### `qualora-worker-browser`
 
@@ -259,7 +280,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.17.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.18.0-alpha`.
 
 ### PostgreSQL
 

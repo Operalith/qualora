@@ -140,7 +140,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.17.0-alpha" not in status.get("version", ""):
+    if "0.18.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -997,10 +997,14 @@ def assert_quality_ui_bundle():
         "Interactive Safe Explorer",
         "Start Safe Explorer",
         "Safe Explorer Report",
+        "Baselines & Regression",
+        "Set as baseline",
+        "Compare with baseline",
+        "Evaluate quality gate",
     ):
         if expected not in bundle_text:
-            raise RuntimeError(f"web UI bundle did not include expected v0.17 UI text: {expected}")
-    print("web UI bundle includes guided onboarding, report intelligence, Quality Checks, and Safe Explorer screens")
+            raise RuntimeError(f"web UI bundle did not include expected v0.18 UI text: {expected}")
+    print("web UI bundle includes guided onboarding, report intelligence, baselines, quality gates, Quality Checks, and Safe Explorer screens")
 
 
 def wait_for_discovery_report(run_id, label):
@@ -1293,6 +1297,112 @@ def execute_previewed_qa_run(preview_report):
     return report
 
 
+def create_safe_qa_baseline(project, report):
+    qa_run_id = report["run"]["id"]
+    baseline = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/report-baselines",
+        {
+            "name": "Qualora Safe QA Smoke Baseline",
+            "description": "Deterministic smoke baseline for v0.18 regression checks.",
+            "report_type": "safe_qa",
+            "report_id": qa_run_id,
+            "is_default": True,
+        },
+    )
+    print(f"created Safe QA baseline: {json.dumps(baseline, indent=2)}")
+    assert_no_demo_secret(baseline, "Safe QA baseline response")
+    if baseline.get("report_id") != qa_run_id or baseline.get("report_type") != "safe_qa":
+        raise RuntimeError(f"baseline did not reference the Safe QA report: {baseline}")
+    if not baseline.get("is_default"):
+        raise RuntimeError(f"baseline was not marked default: {baseline}")
+    if int(baseline.get("grouped_findings_count") or 0) < 1:
+        raise RuntimeError(f"baseline did not store grouped findings: {baseline}")
+
+    baselines = request("GET", f"/api/v1/projects/{project['id']}/report-baselines?report_type=safe_qa").get("report_baselines", [])
+    if not any(item.get("id") == baseline["id"] and item.get("is_default") for item in baselines):
+        raise RuntimeError(f"baseline list did not include default baseline: {baselines}")
+    fetched = request("GET", f"/api/v1/report-baselines/{baseline['id']}")
+    if fetched.get("id") != baseline["id"]:
+        raise RuntimeError(f"baseline detail did not match created baseline: {fetched}")
+
+    updated_report = request("GET", f"/api/v1/qa-runs/{qa_run_id}/report")
+    assert_no_demo_secret(updated_report, "Safe QA baseline JSON report")
+    if not updated_report.get("baseline") or not updated_report.get("comparison") or not updated_report.get("quality_gate"):
+        raise RuntimeError(f"Safe QA report did not include baseline comparison/gate metadata: {updated_report.keys()}")
+    if updated_report["comparison"].get("status") != "unchanged":
+        raise RuntimeError(f"baseline report did not compare unchanged against itself: {updated_report['comparison']}")
+    html = fetch_text(f"/api/v1/qa-runs/{qa_run_id}/report.html")
+    assert_no_demo_secret(html, "Safe QA baseline HTML report")
+    for expected in ("Baseline & Regression", "Quality gate", "CI exit code"):
+        if expected not in html:
+            raise RuntimeError(f"Safe QA baseline HTML report missed {expected!r}")
+    print(f"Safe QA baseline detail: {API_URL}/api/v1/report-baselines/{baseline['id']}")
+    return baseline
+
+
+def compare_safe_qa_report(project, report, baseline, expected_status="unchanged"):
+    comparison = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/report-comparisons",
+        {
+            "report_type": "safe_qa",
+            "current_report_id": report["run"]["id"],
+            "baseline_id": baseline["id"],
+        },
+    )
+    print(f"Safe QA comparison: {json.dumps(comparison, indent=2)}")
+    assert_no_demo_secret(comparison, "Safe QA comparison response")
+    if comparison.get("baseline_id") != baseline["id"]:
+        raise RuntimeError(f"comparison did not reference baseline: {comparison}")
+    if comparison.get("status") != expected_status:
+        raise RuntimeError(f"comparison status {comparison.get('status')} did not match {expected_status}: {comparison}")
+    summary = comparison.get("summary") or {}
+    if int(summary.get("new_findings_count") or 0) != 0:
+        raise RuntimeError(f"unchanged smoke comparison introduced new findings: {summary}")
+    if int(summary.get("fixed_findings_count") or 0) != 0:
+        raise RuntimeError(f"unchanged smoke comparison unexpectedly fixed findings: {summary}")
+    if int(summary.get("unchanged_findings_count") or 0) < 1:
+        raise RuntimeError(f"comparison did not include unchanged grouped findings: {summary}")
+    return comparison
+
+
+def evaluate_safe_qa_gate(project, report, baseline):
+    gate = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/quality-gates/evaluate",
+        {
+            "report_type": "safe_qa",
+            "current_report_id": report["run"]["id"],
+            "baseline_id": baseline["id"],
+        },
+    )
+    print(f"Safe QA quality gate: {json.dumps(gate, indent=2)}")
+    assert_no_demo_secret(gate, "Safe QA quality gate response")
+    if gate.get("status") != "passed" or int(gate.get("ci_exit_code", 1)) != 0:
+        raise RuntimeError(f"quality gate did not pass unchanged comparison: {gate}")
+    if gate.get("failed_rules"):
+        raise RuntimeError(f"quality gate returned failed rules: {gate}")
+
+    compact = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/quality-gates/evaluate?format=ci",
+        {
+            "report_type": "safe_qa",
+            "current_report_id": report["run"]["id"],
+            "baseline_id": baseline["id"],
+            "format": "ci",
+        },
+    )
+    print(f"Safe QA CI quality gate: {json.dumps(compact, indent=2)}")
+    assert_no_demo_secret(compact, "Safe QA CI gate response")
+    if compact.get("status") != "passed" or int(compact.get("exit_code", 1)) != 0:
+        raise RuntimeError(f"CI compact gate output was not passing: {compact}")
+    if "summary" not in compact or "report_url" not in compact:
+        raise RuntimeError(f"CI compact gate output missed summary/report URL: {compact}")
+    return gate
+
+
 def create_authorization_check(project, profile, name, target_path, expected_outcome, success_text="", denied_text="Access denied"):
     check = request(
         "POST",
@@ -1415,6 +1525,10 @@ def main():
     discovery_plan = generate_discovery_ai_test_plan(browser_project, discovery_report, provider)
     preview_test_plan_execution(discovery_plan)
     qa_preview_report = run_safe_qa_preview(browser_project, discovery_report, provider)
+    safe_qa_baseline = create_safe_qa_baseline(browser_project, qa_preview_report)
+    second_qa_report = run_safe_qa_preview(browser_project, discovery_report, provider)
+    compare_safe_qa_report(browser_project, second_qa_report, safe_qa_baseline)
+    evaluate_safe_qa_gate(browser_project, second_qa_report, safe_qa_baseline)
     execute_previewed_qa_run(qa_preview_report)
 
     role_profiles = {

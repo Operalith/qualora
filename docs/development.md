@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.17.0-alpha.
+This document covers local development for Qualora v0.18.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; exercises guided project setup; starts browser, login check, authenticated browser smoke, application discovery, Interactive Safe Explorer, passive quality, authorization, Safe QA, and safe API smoke runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; prints JSON/HTML report, discovery map, Safe Explorer trace, API spec, credential profile, quality, authorization, test-plan, execution, Safe QA Run, project setup, and report index URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates Safe Explorer executed/skipped action reasons; validates quality finding counts; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; exercises guided project setup; starts browser, login check, authenticated browser smoke, application discovery, Interactive Safe Explorer, passive quality, authorization, Safe QA, and safe API smoke runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; creates a Safe QA baseline; compares a second Safe QA report; evaluates a quality gate and CI compact response; prints JSON/HTML report, discovery map, Safe Explorer trace, API spec, credential profile, quality, authorization, test-plan, execution, Safe QA Run, project setup, and report index URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates Safe Explorer executed/skipped action reasons; validates quality finding counts; validates credential redaction; validates test-plan export; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -118,6 +118,9 @@ The smoke script runs:
 - Safe test plan execution preview and run validation for the browser smoke project.
 - Safe QA Run preview and explicit execution validation.
 - Safe QA Run quality summary validation when quality checks are included.
+- Safe QA baseline creation from the first report.
+- Second Safe QA report comparison against the baseline.
+- Quality gate evaluation with human JSON and compact CI JSON.
 - Guided project setup validation with demo AI provider, demo OpenAPI import, demo credential profile, browser smoke, authenticated smoke, discovery, quality checks, Safe QA, and API smoke.
 - Dashboard, guided wizard, reports, and project readiness UI bundle text validation.
 - OpenAPI import and safe API smoke against the local `demo-api` Compose service.
@@ -162,7 +165,7 @@ When changing guided onboarding:
 
 ## AI Provider Development
 
-The v0.17 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.18 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -242,7 +245,7 @@ Safe QA Runs are an orchestration layer over discovery, AI test planning, and ap
 
 Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
 
-The v0.17 API executor:
+The v0.18 API executor:
 
 - Supports OpenAPI 3.x JSON/YAML.
 - Executes only `GET`, `HEAD`, and `OPTIONS`.
@@ -254,9 +257,33 @@ The v0.17 API executor:
 
 ## Report Intelligence Development
 
-`v0.17.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
+`v0.18.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
 
 When adding new finding sources, provide stable categories, titles, recommendations, evidence IDs, and safe URL metadata where practical. Do not add secrets, cookies, local/session storage, auth headers, request bodies, response bodies, full HTML, or screenshot bytes to report intelligence inputs.
+
+## Baseline And Quality Gate Development
+
+The v0.18 baseline path is control-plane only:
+
+- `POST /api/v1/projects/{project_id}/report-baselines` stores normalized grouped finding fingerprints and summary metadata from a known report.
+- `GET /api/v1/projects/{project_id}/report-baselines?report_type=safe_qa` lists baselines for the project.
+- `POST /api/v1/projects/{project_id}/report-comparisons` computes new, fixed, unchanged, severity-changed, and affected-scope-changed findings on demand.
+- `POST /api/v1/projects/{project_id}/quality-gates/evaluate` evaluates deterministic gates and supports `?format=ci`.
+
+Keep comparisons deterministic and based on report intelligence fingerprints. Do not add AI calls, browser actions, API requests, active scans, payloads, fuzzing, destructive checks, or new workers to this path.
+
+The HTTP CI helper is:
+
+```bash
+QUALORA_API_URL=http://localhost:8080 \
+QUALORA_PROJECT_ID="$PROJECT_ID" \
+QUALORA_REPORT_ID="$QA_RUN_ID" \
+QUALORA_SESSION_COOKIE="qualora_session=..." \
+QUALORA_CSRF_TOKEN="$CSRF" \
+scripts/qualora-ci-gate.sh
+```
+
+The script exits with the API `exit_code` from the compact gate response. It is intentionally small and not a full CLI.
 
 OpenRouter example headers:
 

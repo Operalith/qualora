@@ -963,6 +963,10 @@ export type QARunReport = ReportIntelligenceFields & {
   evidence: Evidence[];
   safety_notes: string[];
   limitations: string[];
+  baseline?: ReportBaseline;
+  comparison?: ReportComparison;
+  quality_gate?: QualityGateResult;
+  baseline_message?: string;
   generated_at: string;
 };
 
@@ -1132,6 +1136,128 @@ export type ReportIntelligenceFields = {
   raw_findings_count?: number;
   deduplication_summary?: DeduplicationSummary;
   safety_limitations?: string[];
+};
+
+export type ReportBaseline = {
+  id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  report_type: string;
+  report_id: string;
+  source_run_id?: string;
+  fingerprint_set: GroupedFinding[];
+  severity_counts: ReportSummary;
+  grouped_findings_count: number;
+  raw_findings_count: number;
+  created_by_user_id?: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReportBaselineInput = {
+  name: string;
+  description?: string;
+  report_type: string;
+  report_id: string;
+  is_default?: boolean;
+};
+
+export type SeverityChange = {
+  fingerprint: string;
+  title: string;
+  previous_severity: string;
+  current_severity: string;
+};
+
+export type AffectedScopeChange = {
+  fingerprint: string;
+  title: string;
+  previous_affected_urls: number;
+  current_affected_urls: number;
+  previous_affected_paths: number;
+  current_affected_paths: number;
+};
+
+export type ReportComparisonSummary = {
+  new_findings_count: number;
+  fixed_findings_count: number;
+  unchanged_findings_count: number;
+  severity_changes: SeverityChange[];
+  new_critical: number;
+  new_high: number;
+  new_medium: number;
+  fixed_critical: number;
+  fixed_high: number;
+  fixed_medium: number;
+};
+
+export type ReportComparison = {
+  comparison_id?: string;
+  project_id: string;
+  report_type: string;
+  baseline_id?: string;
+  current_report_id: string;
+  status: "improved" | "regressed" | "unchanged" | "mixed" | "unknown" | string;
+  summary: ReportComparisonSummary;
+  new_findings: GroupedFinding[];
+  fixed_findings: GroupedFinding[];
+  unchanged_findings: GroupedFinding[];
+  severity_delta: ReportSummary;
+  affected_pages_delta: AffectedScopeChange[];
+  recommendation: string;
+  generated_at: string;
+};
+
+export type ReportComparisonInput = {
+  report_type: string;
+  current_report_id: string;
+  baseline_id?: string;
+  use_default_baseline?: boolean;
+};
+
+export type QualityGateConfig = {
+  fail_on_new_critical?: boolean;
+  fail_on_new_high?: boolean;
+  fail_on_new_medium?: boolean;
+  max_new_high?: number;
+  max_new_medium?: number;
+  max_total_critical?: number;
+  max_total_high?: number;
+  fail_on_run_error?: boolean;
+  fail_on_missing_report?: boolean;
+  ignore_info?: boolean;
+  ignore_noisy?: boolean;
+};
+
+export type QualityGateResult = {
+  status: "passed" | "failed" | "warning" | string;
+  failed_rules: string[];
+  warnings: string[];
+  comparison_summary: ReportComparisonSummary;
+  severity_counts: ReportSummary;
+  recommendation: string;
+  ci_exit_code: number;
+  generated_at: string;
+};
+
+export type QualityGateEvaluationInput = {
+  report_type: string;
+  current_report_id: string;
+  baseline_id?: string;
+  use_default_baseline?: boolean;
+  gate_config?: QualityGateConfig;
+  format?: string;
+};
+
+export type CIQualityGateResult = {
+  status: string;
+  exit_code: number;
+  summary: string;
+  report_url: string;
+  comparison_url?: string;
+  failed_rules: string[];
 };
 
 export type Report = ReportIntelligenceFields & {

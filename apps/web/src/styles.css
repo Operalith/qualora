@@ -573,6 +573,21 @@ button.danger:hover {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.full-row {
+  grid-column: 1 / -1;
+}
+
+.callout {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px;
+}
+
+.callout h3 {
+  margin-top: 0;
+}
+
 .field {
   background: var(--panel-soft);
   border: 1px solid var(--line);

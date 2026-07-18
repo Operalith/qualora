@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.17.0-alpha is the seventeenth public alpha release. It adds deterministic report intelligence, severity normalization, finding grouping/deduplication, noise classification, affected-page summaries, and executive summaries while keeping local auth, browser/API smoke, credential profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, AI analysis, Safe QA Runs, and approved safe plan execution intact.
+Qualora v0.18.0-alpha is the eighteenth public alpha release. It adds Safe QA report baselines, deterministic regression comparison, and CI-friendly quality gates while keeping local auth, browser/API smoke, credential profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, report intelligence, AI analysis, Safe QA Runs, and approved safe plan execution intact.
 
 ## Pre-Release Checklist
 
@@ -24,7 +24,7 @@ Confirm:
 - The web UI is reachable at `http://localhost:3000`.
 - A fresh database requires first-run admin setup before project data is visible.
 - Setup, login, logout, `/auth/me`, CSRF, and protected route checks pass.
-- The dashboard shows the `v0.17.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
+- The dashboard shows the `v0.18.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
 - The guided setup route `#/setup-project` renders the project basics, AI, login, OpenAPI, workflow, and results steps.
 - `POST /api/v1/onboarding/project-setup` can create a project, optionally configure a demo AI provider, optionally create a credential profile, optionally import a demo OpenAPI spec, and start selected safe checks.
 - The guided demo flow starts browser smoke, authenticated browser smoke, discovery, quality checks, Safe QA, and API smoke when all demo dependencies are configured.
@@ -37,6 +37,13 @@ Confirm:
 - The reports landing page lists recent browser, API, discovery, Safe Explorer, quality, and Safe QA reports with status, high/medium counts, grouped counts, raw counts, and report links for recent reports.
 - JSON reports include `executive_summary`, `severity_counts`, `grouped_findings`, `top_findings`, `top_affected_pages`, `noise_summary`, `raw_findings_count`, `deduplication_summary`, and `safety_limitations`.
 - HTML reports include Executive Summary, Grouped Findings, Affected Pages, Noise / Repeated Findings, and the existing raw details.
+- A completed Safe QA report can be marked as the default `safe_qa` baseline.
+- Creating a new default baseline unsets the previous default for the same project and report type.
+- A second Safe QA report can be compared against the default baseline and returns deterministic new/fixed/unchanged grouped findings.
+- Safe QA JSON and HTML reports show baseline/comparison/gate information when a default baseline exists.
+- The quality gate endpoint returns pass/fail/warning JSON and compact `format=ci` JSON with an exit code.
+- `scripts/qualora-ci-gate.sh` exits with the compact quality gate exit code.
+- The web UI renders Baselines & Regression cards, Set as baseline, Compare with baseline, Evaluate quality gate, status badges, and failed rule lists.
 - Existing browser smoke reports still include screenshot and browser observation evidence.
 - Existing login and authenticated smoke reports still include `login_summary` and `login_observations`.
 - Existing authorization checks and reports still work and remain deterministic.
@@ -51,10 +58,10 @@ Confirm:
 ```bash
 git status --short
 git add .
-git commit -m "feat: add report intelligence for v0.17.0-alpha"
-git tag -a v0.17.0-alpha -m "v0.17.0-alpha"
+git commit -m "feat: add baselines and quality gates for v0.18.0-alpha"
+git tag -a v0.18.0-alpha -m "v0.18.0-alpha"
 git push origin main
-git push origin v0.17.0-alpha
+git push origin v0.18.0-alpha
 ```
 
 ## GitHub Release
@@ -62,7 +69,7 @@ git push origin v0.17.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.17.0-alpha
+Qualora v0.18.0-alpha
 ```
 
-Use [release-notes/v0.17.0-alpha.md](release-notes/v0.17.0-alpha.md) as the release body.
+Use [release-notes/v0.18.0-alpha.md](release-notes/v0.18.0-alpha.md) as the release body.

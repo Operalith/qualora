@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.17.0-alpha
-  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, and downloading protected stored evidence objects.
+  version: 0.18.0-alpha
+  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, managing deterministic report baselines, comparing reports, evaluating CI-friendly quality gates, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
 security:
@@ -959,6 +959,156 @@ paths:
                 type: string
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/report-baselines:
+    get:
+      summary: List report baselines for a project
+      description: Lists deterministic report baselines. `report_type=safe_qa` is the primary v0.18 alpha workflow.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - name: report_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [safe_qa, quality_check, discovery, safe_explorer, api_smoke, browser_smoke, authorization]
+      responses:
+        "200":
+          description: Report baselines
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [report_baselines]
+                properties:
+                  report_baselines:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReportBaseline"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create a report baseline
+      description: Stores grouped finding fingerprints and summary metadata for a known Qualora report. Creating a default baseline unsets the previous default for the project and report type.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportBaselineRequest"
+      responses:
+        "201":
+          description: Created report baseline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportBaseline"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/report-baselines/{baseline_id}:
+    get:
+      summary: Get a report baseline
+      parameters:
+        - $ref: "#/components/parameters/ReportBaselineID"
+      responses:
+        "200":
+          description: Report baseline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportBaseline"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      summary: Update a report baseline
+      description: Updates mutable baseline metadata. Setting `is_default=true` unsets the previous default baseline for the same project and report type.
+      parameters:
+        - $ref: "#/components/parameters/ReportBaselineID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportBaselineUpdateRequest"
+      responses:
+        "200":
+          description: Updated report baseline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportBaseline"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete a report baseline
+      parameters:
+        - $ref: "#/components/parameters/ReportBaselineID"
+      responses:
+        "204":
+          description: Report baseline deleted
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/report-comparisons:
+    post:
+      summary: Compare a report with a baseline
+      description: Computes deterministic new, fixed, unchanged, severity-change, and affected-scope deltas from normalized grouped finding fingerprints. The comparison does not require AI.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportComparisonRequest"
+      responses:
+        "200":
+          description: Deterministic report comparison
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportComparison"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/quality-gates/evaluate:
+    post:
+      summary: Evaluate a quality gate
+      description: Evaluates a deterministic quality gate against a report and baseline comparison. Use `format=ci` for compact CI JSON with an exit code field.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ci]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QualityGateEvaluationRequest"
+      responses:
+        "200":
+          description: Quality gate result
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/QualityGateResult"
+                  - $ref: "#/components/schemas/CIQualityGateResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{project_id}/ai-test-plans:
     post:
       summary: Generate an AI-assisted test plan for a project
@@ -1623,6 +1773,13 @@ components:
       schema:
         type: string
         format: uuid
+    ReportBaselineID:
+      name: baseline_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     EvidenceID:
       name: evidence_id
       in: path
@@ -1667,7 +1824,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.17.0-alpha
+          example: 0.18.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -3723,6 +3880,347 @@ components:
           type: array
           items:
             type: string
+    ReportBaseline:
+      type: object
+      required:
+        - id
+        - project_id
+        - name
+        - report_type
+        - report_id
+        - fingerprint_set
+        - severity_counts
+        - grouped_findings_count
+        - raw_findings_count
+        - is_default
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        report_type:
+          type: string
+          enum: [safe_qa, quality_check, discovery, safe_explorer, api_smoke, browser_smoke, authorization]
+        report_id:
+          type: string
+          format: uuid
+        source_run_id:
+          type: string
+          format: uuid
+        fingerprint_set:
+          type: array
+          description: Normalized grouped finding fingerprints and metadata used for deterministic comparison.
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        severity_counts:
+          $ref: "#/components/schemas/ReportSummary"
+        grouped_findings_count:
+          type: integer
+        raw_findings_count:
+          type: integer
+        created_by_user_id:
+          type: string
+          format: uuid
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ReportBaselineRequest:
+      type: object
+      additionalProperties: false
+      required: [name, report_type, report_id]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          maxLength: 2000
+        report_type:
+          type: string
+          enum: [safe_qa, quality_check, discovery, safe_explorer, api_smoke, browser_smoke, authorization]
+        report_id:
+          type: string
+          format: uuid
+        is_default:
+          type: boolean
+          default: false
+    ReportBaselineUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        description:
+          type: string
+          maxLength: 2000
+        is_default:
+          type: boolean
+    ReportComparisonRequest:
+      type: object
+      additionalProperties: false
+      required: [report_type, current_report_id]
+      properties:
+        report_type:
+          type: string
+          enum: [safe_qa, quality_check, discovery, safe_explorer, api_smoke, browser_smoke, authorization]
+        current_report_id:
+          type: string
+          format: uuid
+        baseline_id:
+          type: string
+          format: uuid
+        use_default_baseline:
+          type: boolean
+          default: false
+    SeverityChange:
+      type: object
+      required: [fingerprint, title, previous_severity, current_severity]
+      properties:
+        fingerprint:
+          type: string
+        title:
+          type: string
+        previous_severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        current_severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+    AffectedScopeChange:
+      type: object
+      required: [fingerprint, title, previous_affected_urls, current_affected_urls, previous_affected_paths, current_affected_paths]
+      properties:
+        fingerprint:
+          type: string
+        title:
+          type: string
+        previous_affected_urls:
+          type: integer
+        current_affected_urls:
+          type: integer
+        previous_affected_paths:
+          type: integer
+        current_affected_paths:
+          type: integer
+    ReportComparisonSummary:
+      type: object
+      required:
+        - new_findings_count
+        - fixed_findings_count
+        - unchanged_findings_count
+        - severity_changes
+        - new_critical
+        - new_high
+        - new_medium
+        - fixed_critical
+        - fixed_high
+        - fixed_medium
+      properties:
+        new_findings_count:
+          type: integer
+        fixed_findings_count:
+          type: integer
+        unchanged_findings_count:
+          type: integer
+        severity_changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeverityChange"
+        new_critical:
+          type: integer
+        new_high:
+          type: integer
+        new_medium:
+          type: integer
+        fixed_critical:
+          type: integer
+        fixed_high:
+          type: integer
+        fixed_medium:
+          type: integer
+    ReportComparison:
+      type: object
+      required:
+        - project_id
+        - report_type
+        - current_report_id
+        - status
+        - summary
+        - new_findings
+        - fixed_findings
+        - unchanged_findings
+        - severity_delta
+        - affected_pages_delta
+        - recommendation
+        - generated_at
+      properties:
+        comparison_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        report_type:
+          type: string
+          enum: [safe_qa, quality_check, discovery, safe_explorer, api_smoke, browser_smoke, authorization]
+        baseline_id:
+          type: string
+          format: uuid
+        current_report_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [improved, regressed, unchanged, mixed, unknown]
+        summary:
+          $ref: "#/components/schemas/ReportComparisonSummary"
+        new_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        fixed_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        unchanged_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupedFinding"
+        severity_delta:
+          $ref: "#/components/schemas/ReportSummary"
+        affected_pages_delta:
+          type: array
+          items:
+            $ref: "#/components/schemas/AffectedScopeChange"
+        recommendation:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+    QualityGateConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        fail_on_new_critical:
+          type: boolean
+          default: true
+        fail_on_new_high:
+          type: boolean
+          default: true
+        fail_on_new_medium:
+          type: boolean
+          default: false
+        max_new_high:
+          type: integer
+          nullable: true
+          default: 0
+        max_new_medium:
+          type: integer
+          nullable: true
+        max_total_critical:
+          type: integer
+          nullable: true
+          default: 0
+        max_total_high:
+          type: integer
+          nullable: true
+        fail_on_run_error:
+          type: boolean
+          default: true
+        fail_on_missing_report:
+          type: boolean
+          default: true
+        ignore_info:
+          type: boolean
+          default: true
+        ignore_noisy:
+          type: boolean
+          default: true
+    QualityGateEvaluationRequest:
+      type: object
+      additionalProperties: false
+      required: [report_type, current_report_id]
+      properties:
+        report_type:
+          type: string
+          enum: [safe_qa, quality_check, discovery, safe_explorer, api_smoke, browser_smoke, authorization]
+        current_report_id:
+          type: string
+          format: uuid
+        baseline_id:
+          type: string
+          format: uuid
+        use_default_baseline:
+          type: boolean
+          default: false
+        gate_config:
+          $ref: "#/components/schemas/QualityGateConfig"
+        format:
+          type: string
+          enum: [ci]
+    QualityGateResult:
+      type: object
+      required: [status, failed_rules, warnings, comparison_summary, severity_counts, recommendation, ci_exit_code, generated_at]
+      properties:
+        status:
+          type: string
+          enum: [passed, failed, warning]
+        failed_rules:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        comparison_summary:
+          $ref: "#/components/schemas/ReportComparisonSummary"
+        severity_counts:
+          $ref: "#/components/schemas/ReportSummary"
+        recommendation:
+          type: string
+        ci_exit_code:
+          type: integer
+          enum: [0, 1]
+        generated_at:
+          type: string
+          format: date-time
+    CIQualityGateResult:
+      type: object
+      required: [status, exit_code, summary, report_url, failed_rules]
+      properties:
+        status:
+          type: string
+          enum: [passed, failed, warning]
+        exit_code:
+          type: integer
+          enum: [0, 1]
+        summary:
+          type: string
+        report_url:
+          type: string
+        comparison_url:
+          type: string
+        failed_rules:
+          type: array
+          items:
+            type: string
     Finding:
       type: object
       required:
@@ -4884,6 +5382,21 @@ components:
           type: array
           items:
             type: string
+        baseline:
+          allOf:
+            - $ref: "#/components/schemas/ReportBaseline"
+          nullable: true
+        comparison:
+          allOf:
+            - $ref: "#/components/schemas/ReportComparison"
+          nullable: true
+        quality_gate:
+          allOf:
+            - $ref: "#/components/schemas/QualityGateResult"
+          nullable: true
+        baseline_message:
+          type: string
+          example: No baseline configured yet. Mark this report as baseline to enable regression tracking.
     ErrorResponse:
       type: object
       required: [error]

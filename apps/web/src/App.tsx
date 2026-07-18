@@ -3,10 +3,12 @@ import type { ReactNode } from "react";
 import {
   API_BASE_URL,
   authorizationCheckHTMLReportURL,
+  compareReport,
   createAuthorizationCheck,
   createCredentialProfile,
   createAIProvider,
   createProject,
+  createReportBaseline,
   deleteAIProvider,
   deleteAuthorizationCheck,
   deleteAPISpec,
@@ -14,6 +16,7 @@ import {
   deleteTestPlan,
   discoveryHTMLReportURL,
   evidenceDownloadURL,
+  evaluateQualityGate,
   executeTestPlan,
   executeQARun,
   generateAITestPlan,
@@ -40,6 +43,7 @@ import {
   listProjects,
   listQARuns,
   listQualityCheckRuns,
+  listReportBaselines,
   listSafeExplorerRuns,
   listRuns,
   listTestPlanExecutions,
@@ -102,6 +106,7 @@ import type {
   QARun,
   QARunInput,
   QARunReport,
+  QualityGateResult,
   QualityCheckReport,
   QualityCheckRun,
   QualityCheckRunInput,
@@ -111,6 +116,8 @@ import type {
   SafeExplorerRun,
   SafeExplorerRunInput,
   Report,
+  ReportBaseline,
+  ReportComparison,
   ReportIntelligenceFields,
   ReportSummary,
   RunJob,
@@ -160,7 +167,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.17.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.18.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -576,7 +583,7 @@ function Dashboard({
             <h2>Qualora version badge: {formatVersionBadge(version)}</h2>
             <p>Configure a real project, optional AI, optional login, optional OpenAPI, and start the first safe workflow.</p>
           </div>
-          <span className="pill">v0.17 report intelligence</span>
+          <span className="pill">v0.18 baselines & gates</span>
         </div>
         <div className="quick-grid">
           <a className="quick-card" href="#/setup-project">
@@ -1128,6 +1135,7 @@ type ReportIndexItem = {
   severity_counts?: ReportSummary;
   grouped_findings_count?: number;
   raw_findings_count?: number;
+  is_baseline?: boolean;
 };
 
 function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Project[]>; runs: LoadState<TestRun[]>; projectByID: Map<string, Project> }) {
@@ -1140,12 +1148,14 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
       try {
         const projectItems = await Promise.all(
           projects.data.map(async (project) => {
-            const [discovery, quality, safeExplorer, qaRuns] = await Promise.all([
+            const [discovery, quality, safeExplorer, qaRuns, baselines] = await Promise.all([
               listDiscoveryRuns(project.id),
               listQualityCheckRuns(project.id),
               listSafeExplorerRuns(project.id),
-              listQARuns(project.id)
+              listQARuns(project.id),
+              listReportBaselines(project.id, "safe_qa")
             ]);
+            const safeQABaselineReports = new Set(baselines.map((baseline) => baseline.report_id));
             return [
               ...discovery.map((run): ReportIndexItem => ({
                 id: run.id,
@@ -1185,7 +1195,8 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
                 status: run.status,
                 created_at: run.created_at,
                 web_href: `#/qa-runs/${run.id}`,
-                html_href: qaRunHTMLReportURL(run.id)
+                html_href: qaRunHTMLReportURL(run.id),
+                is_baseline: safeQABaselineReports.has(run.id)
               }))
             ];
           })
@@ -1283,6 +1294,7 @@ function ReportIndexTable({ items }: { items: ReportIndexItem[] }) {
             <th>Project</th>
             <th>Severity</th>
             <th>Grouped</th>
+            <th>Baseline</th>
             <th>Report</th>
             <th>Created</th>
           </tr>
@@ -1295,6 +1307,7 @@ function ReportIndexTable({ items }: { items: ReportIndexItem[] }) {
               <td><a href={`#/projects/${item.project_id}`}>{item.project_name}</a></td>
               <td>{item.severity_counts ? `${item.severity_counts.high} high / ${item.severity_counts.medium} medium` : "Open report"}</td>
               <td>{item.grouped_findings_count === undefined ? "Open report" : `${item.grouped_findings_count} grouped / ${item.raw_findings_count ?? 0} raw`}</td>
+              <td>{item.is_baseline ? <span className="pill">baseline</span> : "No"}</td>
               <td>
                 <a href={item.web_href}>{shortID(item.id)}</a>
                 {item.html_href && <>{" "} <a href={item.html_href} target="_blank" rel="noreferrer">HTML</a></>}
@@ -1751,6 +1764,7 @@ function ProjectPage({
   const [qualityRuns, setQualityRuns] = useState<LoadState<QualityCheckRun[]>>({ data: [], loading: true, error: "" });
   const [safeExplorerRuns, setSafeExplorerRuns] = useState<LoadState<SafeExplorerRun[]>>({ data: [], loading: true, error: "" });
   const [qaRuns, setQARuns] = useState<LoadState<QARun[]>>({ data: [], loading: true, error: "" });
+  const [baselines, setBaselines] = useState<LoadState<ReportBaseline[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
   const [starting, setStarting] = useState("");
 
@@ -1765,6 +1779,7 @@ function ProjectPage({
     setQualityRuns((current) => ({ ...current, loading: true, error: "" }));
     setSafeExplorerRuns((current) => ({ ...current, loading: true, error: "" }));
     setQARuns((current) => ({ ...current, loading: true, error: "" }));
+    setBaselines((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
       const [
@@ -1779,7 +1794,8 @@ function ProjectPage({
         nextDiscoveryRuns,
         nextQualityRuns,
         nextSafeExplorerRuns,
-        nextQARuns
+        nextQARuns,
+        nextBaselines
       ] = await Promise.all([
         cachedProject ? Promise.resolve(cachedProject) : getProject(projectID),
         listRuns(projectID),
@@ -1792,7 +1808,8 @@ function ProjectPage({
         listDiscoveryRuns(projectID),
         listQualityCheckRuns(projectID),
         listSafeExplorerRuns(projectID),
-        listQARuns(projectID)
+        listQARuns(projectID),
+        listReportBaselines(projectID, "safe_qa")
       ]);
       setProject(nextProject);
       setRuns({ data: nextRuns, loading: false, error: "" });
@@ -1806,6 +1823,7 @@ function ProjectPage({
       setQualityRuns({ data: nextQualityRuns, loading: false, error: "" });
       setSafeExplorerRuns({ data: nextSafeExplorerRuns, loading: false, error: "" });
       setQARuns({ data: nextQARuns, loading: false, error: "" });
+      setBaselines({ data: nextBaselines, loading: false, error: "" });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
@@ -1819,6 +1837,7 @@ function ProjectPage({
       setQualityRuns((current) => ({ ...current, loading: false, error: message }));
       setSafeExplorerRuns((current) => ({ ...current, loading: false, error: message }));
       setQARuns((current) => ({ ...current, loading: false, error: message }));
+      setBaselines((current) => ({ ...current, loading: false, error: message }));
     }
   }, [cachedProject, projectID]);
 
@@ -2095,6 +2114,24 @@ function ProjectPage({
         </div>
       </section>
 
+      <section id="baselines-regression">
+        <div className="section-heading">
+          <div>
+            <h2>Baselines & Regression</h2>
+            <p>Track Safe QA reports over time and evaluate alpha CI quality gates.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        {baselines.error && <Notice tone="danger" message={baselines.error} />}
+        {baselines.loading ? (
+          <SkeletonRows />
+        ) : (
+          <ProjectBaselineCard baselines={baselines.data} qaRuns={qaRuns.data} />
+        )}
+      </section>
+
       <section id="quality-checks">
         <div className="section-heading">
           <div>
@@ -2262,6 +2299,34 @@ function ProjectPage({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function ProjectBaselineCard({ baselines, qaRuns }: { baselines: ReportBaseline[]; qaRuns: QARun[] }) {
+  const defaultBaseline = baselines.find((baseline) => baseline.is_default) || baselines[0];
+  const latestQARun = qaRuns[0];
+  if (!defaultBaseline) {
+    return (
+      <div className="callout">
+        <h3>No Safe QA baseline</h3>
+        <p>Open a completed Safe QA report and use Set as baseline to enable regression comparison and CI quality gates.</p>
+        {latestQARun && <a className="button secondary-link" href={`#/qa-runs/${latestQARun.id}`}>Open latest Safe QA report</a>}
+      </div>
+    );
+  }
+  return (
+    <div className="detail-grid">
+      <Field label="Default Safe QA baseline" value={defaultBaseline.name} />
+      <Field label="Baseline report" value={shortID(defaultBaseline.report_id)} />
+      <Field label="Grouped findings" value={String(defaultBaseline.grouped_findings_count)} />
+      <Field label="Raw findings" value={String(defaultBaseline.raw_findings_count)} />
+      <Field label="Created" value={formatDate(defaultBaseline.created_at)} />
+      <Field label="Latest comparison" value={latestQARun ? "Open latest Safe QA report" : "No Safe QA runs yet"} />
+      <div className="form-actions full-row">
+        <a className="button secondary-link" href={`#/qa-runs/${defaultBaseline.report_id}`}>Open baseline report</a>
+        {latestQARun && <a className="button secondary-link" href={`#/qa-runs/${latestQARun.id}`}>Compare latest report</a>}
+      </div>
     </div>
   );
 }
@@ -5067,8 +5132,11 @@ function QualityResultTable({ results }: { results: QualityCheckResult[] }) {
 
 function QARunPage({ runID }: { runID: string }) {
   const [report, setReport] = useState<QARunReport | undefined>();
+  const [comparisonOverride, setComparisonOverride] = useState<ReportComparison | undefined>();
+  const [gateOverride, setGateOverride] = useState<QualityGateResult | undefined>();
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
+  const [baselineAction, setBaselineAction] = useState("");
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
@@ -5108,6 +5176,70 @@ function QARunPage({ runID }: { runID: string }) {
     }
   }
 
+  async function setAsBaseline() {
+    if (!report) {
+      return;
+    }
+    setBaselineAction("baseline");
+    setError("");
+    try {
+      await createReportBaseline(report.project.id, {
+        name: `${report.project.name} Safe QA baseline`,
+        description: "Default Safe QA baseline created from the web UI.",
+        report_type: "safe_qa",
+        report_id: report.run.id,
+        is_default: true
+      });
+      setComparisonOverride(undefined);
+      setGateOverride(undefined);
+      await refresh();
+    } catch (baselineError) {
+      setError(baselineError instanceof Error ? baselineError.message : String(baselineError));
+    } finally {
+      setBaselineAction("");
+    }
+  }
+
+  async function compareWithBaseline() {
+    if (!report) {
+      return;
+    }
+    setBaselineAction("compare");
+    setError("");
+    try {
+      const comparison = await compareReport(report.project.id, {
+        report_type: "safe_qa",
+        current_report_id: report.run.id,
+        use_default_baseline: true
+      });
+      setComparisonOverride(comparison);
+    } catch (compareError) {
+      setError(compareError instanceof Error ? compareError.message : String(compareError));
+    } finally {
+      setBaselineAction("");
+    }
+  }
+
+  async function evaluateGate() {
+    if (!report) {
+      return;
+    }
+    setBaselineAction("gate");
+    setError("");
+    try {
+      const gate = await evaluateQualityGate(report.project.id, {
+        report_type: "safe_qa",
+        current_report_id: report.run.id,
+        use_default_baseline: true
+      });
+      setGateOverride(gate);
+    } catch (gateError) {
+      setError(gateError instanceof Error ? gateError.message : String(gateError));
+    } finally {
+      setBaselineAction("");
+    }
+  }
+
   if (error) {
     return <Notice tone="danger" message={error} />;
   }
@@ -5120,6 +5252,8 @@ function QARunPage({ runID }: { runID: string }) {
 
   const summary = summarizeFindingsForUI(report.findings);
   const canExecutePreview = report.run.status === "completed" && Boolean(report.run.test_plan_id) && !report.run.test_plan_execution_id;
+  const activeComparison = comparisonOverride || report.comparison;
+  const activeGate = gateOverride || report.quality_gate;
 
   return (
     <div className="grid">
@@ -5190,6 +5324,16 @@ function QARunPage({ runID }: { runID: string }) {
       </section>
 
       <ReportIntelligencePanel report={report} />
+
+      <BaselineRegressionPanel
+        report={report}
+        comparison={activeComparison}
+        qualityGate={activeGate}
+        busy={baselineAction}
+        onSetBaseline={() => void setAsBaseline()}
+        onCompare={() => void compareWithBaseline()}
+        onEvaluateGate={() => void evaluateGate()}
+      />
 
       {report.discovery_summary && (
         <section>
@@ -5292,6 +5436,108 @@ function QARunPage({ runID }: { runID: string }) {
       </section>
     </div>
   );
+}
+
+function BaselineRegressionPanel({
+  report,
+  comparison,
+  qualityGate,
+  busy,
+  onSetBaseline,
+  onCompare,
+  onEvaluateGate
+}: {
+  report: QARunReport;
+  comparison?: ReportComparison;
+  qualityGate?: QualityGateResult;
+  busy: string;
+  onSetBaseline: () => void;
+  onCompare: () => void;
+  onEvaluateGate: () => void;
+}) {
+  const baseline = report.baseline;
+  return (
+    <section>
+      <div className="section-heading">
+        <div>
+          <h2>Baselines & Regression</h2>
+          <p>Compare this Safe QA report against the default baseline and evaluate the alpha CI quality gate.</p>
+        </div>
+        <div className="button-row">
+          <button type="button" className="secondary" disabled={busy !== ""} onClick={onSetBaseline}>
+            {busy === "baseline" ? "Saving" : "Set as baseline"}
+          </button>
+          <button type="button" className="secondary" disabled={busy !== "" || !baseline} onClick={onCompare}>
+            {busy === "compare" ? "Comparing" : "Compare with baseline"}
+          </button>
+          <button type="button" disabled={busy !== "" || !baseline} onClick={onEvaluateGate}>
+            {busy === "gate" ? "Evaluating" : "Evaluate quality gate"}
+          </button>
+        </div>
+      </div>
+      {baseline ? (
+        <div className="detail-grid compact">
+          <Field label="Baseline" value={baseline.name} />
+          <Field label="Baseline Report" value={shortID(baseline.report_id)} />
+          <Field label="Grouped Findings" value={String(baseline.grouped_findings_count)} />
+          <Field label="Raw Findings" value={String(baseline.raw_findings_count)} />
+        </div>
+      ) : (
+        <Notice tone="info" message={report.baseline_message || "No baseline configured yet. Mark this report as baseline to enable regression tracking."} />
+      )}
+      {comparison && (
+        <div className="section-split">
+          <h3>Comparison Summary</h3>
+          <div className="summary-grid">
+            <Metric label="Status" value={comparison.status} tone={comparisonTone(comparison.status)} />
+            <Metric label="New" value={comparison.summary.new_findings_count} tone={comparison.summary.new_findings_count ? "high" : "info"} />
+            <Metric label="Fixed" value={comparison.summary.fixed_findings_count} tone="ok" />
+            <Metric label="Unchanged" value={comparison.summary.unchanged_findings_count} tone="info" />
+            <Metric label="New High+" value={comparison.summary.new_critical + comparison.summary.new_high} tone="high" />
+            <Metric label="Fixed High+" value={comparison.summary.fixed_critical + comparison.summary.fixed_high} tone="ok" />
+          </div>
+          <p className="muted">{comparison.recommendation}</p>
+          <GroupedFindingsTable
+            groups={comparison.new_findings.slice(0, 5)}
+            emptyTitle="No new findings"
+            emptyBody="No grouped findings were introduced compared with the baseline."
+          />
+          <GroupedFindingsTable
+            groups={comparison.fixed_findings.slice(0, 5)}
+            emptyTitle="No fixed findings"
+            emptyBody="No grouped baseline findings disappeared in this report."
+          />
+        </div>
+      )}
+      {qualityGate && (
+        <div className="section-split">
+          <h3>Quality Gate</h3>
+          <div className="detail-grid compact">
+            <Field label="Status" value={qualityGate.status} />
+            <Field label="CI Exit Code" value={String(qualityGate.ci_exit_code)} />
+            <Field label="Failed Rules" value={qualityGate.failed_rules.length ? qualityGate.failed_rules.join(", ") : "None"} />
+            <Field label="Warnings" value={qualityGate.warnings.length ? qualityGate.warnings.join(", ") : "None"} />
+          </div>
+          <p className="muted">{qualityGate.recommendation}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function comparisonTone(status: string): "critical" | "high" | "medium" | "low" | "info" | "ok" {
+  switch (status) {
+    case "regressed":
+      return "high";
+    case "mixed":
+      return "medium";
+    case "improved":
+      return "ok";
+    case "unchanged":
+      return "info";
+    default:
+      return "low";
+  }
 }
 
 function SafeExplorerRunPage({ runID }: { runID: string }) {
@@ -6722,7 +6968,7 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: number; tone?: string }) {
+function Metric({ label, value, tone }: { label: string; value: number | string; tone?: string }) {
   return (
     <div className={`metric ${tone || ""}`}>
       <span>{label}</span>

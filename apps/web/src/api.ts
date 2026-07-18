@@ -29,12 +29,18 @@ import type {
   Project,
   ProjectSetupInput,
   ProjectSetupResponse,
+  QualityGateEvaluationInput,
+  QualityGateResult,
   QualityCheckReport,
   QualityCheckRun,
   QualityCheckRunInput,
   QARun,
   QARunInput,
   QARunReport,
+  ReportBaseline,
+  ReportBaselineInput,
+  ReportComparison,
+  ReportComparisonInput,
   SafeExplorerReport,
   SafeExplorerRun,
   SafeExplorerRunInput,
@@ -347,6 +353,43 @@ export async function executeQARun(runID: string): Promise<QARun> {
 
 export async function getQARunReport(runID: string): Promise<QARunReport> {
   return request<QARunReport>(`/api/v1/qa-runs/${runID}/report`);
+}
+
+export async function listReportBaselines(projectID: string, reportType?: string): Promise<ReportBaseline[]> {
+  const suffix = reportType ? `?report_type=${encodeURIComponent(reportType)}` : "";
+  const response = await request<{ report_baselines: ReportBaseline[] }>(`/api/v1/projects/${projectID}/report-baselines${suffix}`);
+  return response.report_baselines;
+}
+
+export async function createReportBaseline(projectID: string, input: ReportBaselineInput): Promise<ReportBaseline> {
+  return request<ReportBaseline>(`/api/v1/projects/${projectID}/report-baselines`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getReportBaseline(baselineID: string): Promise<ReportBaseline> {
+  return request<ReportBaseline>(`/api/v1/report-baselines/${baselineID}`);
+}
+
+export async function deleteReportBaseline(baselineID: string): Promise<void> {
+  await request<{ deleted: boolean }>(`/api/v1/report-baselines/${baselineID}`, {
+    method: "DELETE"
+  });
+}
+
+export async function compareReport(projectID: string, input: ReportComparisonInput): Promise<ReportComparison> {
+  return request<ReportComparison>(`/api/v1/projects/${projectID}/report-comparisons`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function evaluateQualityGate(projectID: string, input: QualityGateEvaluationInput): Promise<QualityGateResult> {
+  return request<QualityGateResult>(`/api/v1/projects/${projectID}/quality-gates/evaluate`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
 }
 
 export async function importAPISpec(projectID: string, input: APISpecImportInput): Promise<APISpecDetail> {
