@@ -56,6 +56,9 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/safe-explorer-runs/", a.handleSafeExplorerRunSubroutes)
 	mux.HandleFunc("/api/v1/qa-runs/", a.handleQARunSubroutes)
 	mux.HandleFunc("/api/v1/report-baselines/", a.handleReportBaselineSubroutes)
+	mux.HandleFunc("/api/v1/ci-runs/", a.handleCIRunSubroutes)
+	mux.HandleFunc("/api/v1/issue-export-configs/", a.handleIssueExportConfigSubroutes)
+	mux.HandleFunc("/api/v1/reports/", a.handleReportIssueExportSubroutes)
 	return withCORS(a.corsOrigins, withJSONContentType(withRequestLog(a.logger, a.withAuth(mux))))
 }
 
@@ -265,12 +268,34 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "ci-runs" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createCIRun(w, r, parts[0])
+		case http.MethodGet:
+			a.listCIRuns(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "report-baselines" {
 		switch r.Method {
 		case http.MethodPost:
 			a.createReportBaseline(w, r, parts[0])
 		case http.MethodGet:
 			a.listReportBaselines(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "issue-export-configs" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createIssueExportConfig(w, r, parts[0])
+		case http.MethodGet:
+			a.listIssueExportConfigs(w, r, parts[0])
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
 		}

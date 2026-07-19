@@ -17,6 +17,9 @@ import type {
   AuthorizationCheckRunInput,
   AuthenticatedBrowserSmokeInput,
   AuthResponse,
+  CIRun,
+  CIRunInput,
+  CIRunResponse,
   CreateProjectInput,
   CredentialProfile,
   CredentialProfileInput,
@@ -24,6 +27,11 @@ import type {
   DiscoveryReport,
   DiscoveryRun,
   DiscoveryRunInput,
+  IssueExportConfig,
+  IssueExportConfigInput,
+  IssueExportConfigTestResult,
+  IssueExportInput,
+  IssueExportResult,
   LoginInput,
   MeResponse,
   Project,
@@ -387,6 +395,60 @@ export async function compareReport(projectID: string, input: ReportComparisonIn
 
 export async function evaluateQualityGate(projectID: string, input: QualityGateEvaluationInput): Promise<QualityGateResult> {
   return request<QualityGateResult>(`/api/v1/projects/${projectID}/quality-gates/evaluate`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function listCIRuns(projectID: string): Promise<CIRun[]> {
+  const response = await request<{ ci_runs: CIRun[] }>(`/api/v1/projects/${projectID}/ci-runs`);
+  return response.ci_runs;
+}
+
+export async function startCIRun(projectID: string, input: CIRunInput): Promise<CIRunResponse> {
+  return request<CIRunResponse>(`/api/v1/projects/${projectID}/ci-runs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getCIRun(ciRunID: string): Promise<CIRun> {
+  return request<CIRun>(`/api/v1/ci-runs/${ciRunID}`);
+}
+
+export async function listIssueExportConfigs(projectID: string): Promise<IssueExportConfig[]> {
+  const response = await request<{ issue_export_configs: IssueExportConfig[] }>(`/api/v1/projects/${projectID}/issue-export-configs`);
+  return response.issue_export_configs;
+}
+
+export async function createIssueExportConfig(projectID: string, input: IssueExportConfigInput): Promise<IssueExportConfig> {
+  return request<IssueExportConfig>(`/api/v1/projects/${projectID}/issue-export-configs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function updateIssueExportConfig(configID: string, input: IssueExportConfigInput): Promise<IssueExportConfig> {
+  return request<IssueExportConfig>(`/api/v1/issue-export-configs/${configID}`, {
+    method: "PUT",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function deleteIssueExportConfig(configID: string): Promise<void> {
+  await request<{ deleted: boolean }>(`/api/v1/issue-export-configs/${configID}`, {
+    method: "DELETE"
+  });
+}
+
+export async function testIssueExportConfig(configID: string): Promise<IssueExportConfigTestResult> {
+  return request<IssueExportConfigTestResult>(`/api/v1/issue-export-configs/${configID}/test`, {
+    method: "POST"
+  });
+}
+
+export async function exportReportIssues(reportType: string, reportID: string, input: IssueExportInput): Promise<IssueExportResult> {
+  return request<IssueExportResult>(`/api/v1/reports/${encodeURIComponent(reportType)}/${encodeURIComponent(reportID)}/export-issues`, {
     method: "POST",
     body: JSON.stringify(input)
   });

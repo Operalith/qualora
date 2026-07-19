@@ -436,6 +436,155 @@ type CIQualityGateResult struct {
 	FailedRules   []string `json:"failed_rules"`
 }
 
+type CIRunRequest struct {
+	Mode                 string            `json:"mode"`
+	UseLatestBaseline    *bool             `json:"use_latest_baseline,omitempty"`
+	BaselineID           string            `json:"baseline_id,omitempty"`
+	RunSafeQA            *bool             `json:"run_safe_qa,omitempty"`
+	UseLatestDiscovery   *bool             `json:"use_latest_discovery,omitempty"`
+	StartURL             string            `json:"start_url,omitempty"`
+	CredentialProfileID  string            `json:"credential_profile_id,omitempty"`
+	ProviderID           string            `json:"provider_id,omitempty"`
+	MaxPages             int               `json:"max_pages,omitempty"`
+	MaxDepth             int               `json:"max_depth,omitempty"`
+	MaxScenarios         int               `json:"max_scenarios,omitempty"`
+	IncludeQualityChecks *bool             `json:"include_quality_checks,omitempty"`
+	IncludeSafeExplorer  bool              `json:"include_safe_explorer,omitempty"`
+	ExecuteSafePlan      *bool             `json:"execute_safe_plan,omitempty"`
+	GateConfig           QualityGateConfig `json:"gate_config,omitempty"`
+	Wait                 *bool             `json:"wait,omitempty"`
+	TimeoutSeconds       int               `json:"timeout_seconds,omitempty"`
+	ExportIssues         bool              `json:"export_issues,omitempty"`
+	IssueExportConfigID  string            `json:"issue_export_config_id,omitempty"`
+	IssueExportDryRun    *bool             `json:"issue_export_dry_run,omitempty"`
+}
+
+type CIRun struct {
+	ID                string         `json:"id"`
+	ProjectID         string         `json:"project_id"`
+	QARunID           string         `json:"qa_run_id,omitempty"`
+	BaselineID        string         `json:"baseline_id,omitempty"`
+	Status            string         `json:"status"`
+	ExitCode          int            `json:"exit_code"`
+	GateStatus        string         `json:"gate_status,omitempty"`
+	ComparisonStatus  string         `json:"comparison_status,omitempty"`
+	ReportURL         string         `json:"report_url,omitempty"`
+	HTMLReportURL     string         `json:"html_report_url,omitempty"`
+	IssueExportStatus string         `json:"issue_export_status,omitempty"`
+	Summary           map[string]any `json:"summary_json,omitempty"`
+	StartedAt         *time.Time     `json:"started_at,omitempty"`
+	CompletedAt       *time.Time     `json:"completed_at,omitempty"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	ErrorMessage      string         `json:"error_message,omitempty"`
+}
+
+type CIRunResponse struct {
+	CIRunID            string                   `json:"ci_run_id"`
+	ProjectID          string                   `json:"project_id"`
+	Status             string                   `json:"status"`
+	QARunID            string                   `json:"qa_run_id,omitempty"`
+	ReportURL          string                   `json:"report_url,omitempty"`
+	HTMLReportURL      string                   `json:"html_report_url,omitempty"`
+	BaselineID         string                   `json:"baseline_id,omitempty"`
+	ComparisonSummary  *ReportComparisonSummary `json:"comparison_summary,omitempty"`
+	QualityGateResult  *QualityGateResult       `json:"quality_gate_result,omitempty"`
+	IssueExportSummary *IssueExportResult       `json:"issue_export_summary,omitempty"`
+	ExitCode           int                      `json:"exit_code"`
+	Summary            string                   `json:"summary"`
+	CreatedAt          time.Time                `json:"created_at"`
+	CompletedAt        *time.Time               `json:"completed_at,omitempty"`
+	ErrorMessage       string                   `json:"error_message,omitempty"`
+}
+
+type IssueExportConfig struct {
+	ID                  string    `json:"id"`
+	ProjectID           string    `json:"project_id"`
+	Provider            string    `json:"provider"`
+	Name                string    `json:"name"`
+	BaseURL             string    `json:"base_url,omitempty"`
+	OwnerOrNamespace    string    `json:"owner_or_namespace"`
+	RepositoryOrProject string    `json:"repository_or_project"`
+	TokenEncrypted      string    `json:"-"`
+	TokenConfigured     bool      `json:"token_configured"`
+	DefaultLabels       []string  `json:"default_labels,omitempty"`
+	Enabled             bool      `json:"enabled"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+type IssueExportConfigRequest struct {
+	Provider            string   `json:"provider"`
+	Name                string   `json:"name"`
+	BaseURL             string   `json:"base_url,omitempty"`
+	OwnerOrNamespace    string   `json:"owner_or_namespace"`
+	RepositoryOrProject string   `json:"repository_or_project"`
+	Token               string   `json:"token,omitempty"`
+	DefaultLabels       []string `json:"default_labels,omitempty"`
+	Enabled             *bool    `json:"enabled,omitempty"`
+}
+
+type IssueExportConfigUpdateRequest struct {
+	Provider            string   `json:"provider,omitempty"`
+	Name                string   `json:"name,omitempty"`
+	BaseURL             string   `json:"base_url,omitempty"`
+	OwnerOrNamespace    string   `json:"owner_or_namespace,omitempty"`
+	RepositoryOrProject string   `json:"repository_or_project,omitempty"`
+	Token               string   `json:"token,omitempty"`
+	DefaultLabels       []string `json:"default_labels,omitempty"`
+	Enabled             *bool    `json:"enabled,omitempty"`
+}
+
+type IssueExportConfigTestResult struct {
+	Success      bool   `json:"success"`
+	Provider     string `json:"provider"`
+	Target       string `json:"target"`
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+type IssueExportRequest struct {
+	IssueExportConfigID      string   `json:"issue_export_config_id,omitempty"`
+	SeverityThreshold        string   `json:"severity_threshold,omitempty"`
+	IncludeMedium            bool     `json:"include_medium,omitempty"`
+	MaxIssues                int      `json:"max_issues,omitempty"`
+	DryRun                   *bool    `json:"dry_run,omitempty"`
+	DeduplicateByFingerprint *bool    `json:"deduplicate_by_fingerprint,omitempty"`
+	Labels                   []string `json:"labels,omitempty"`
+	TitlePrefix              string   `json:"title_prefix,omitempty"`
+}
+
+type IssueExportPreview struct {
+	Title               string   `json:"title"`
+	Body                string   `json:"body"`
+	Severity            string   `json:"severity"`
+	Category            string   `json:"category"`
+	AffectedPagesCount  int      `json:"affected_pages_count"`
+	RepresentativePaths []string `json:"representative_paths,omitempty"`
+	Labels              []string `json:"labels,omitempty"`
+	Fingerprint         string   `json:"fingerprint"`
+}
+
+type IssueExportSkippedFinding struct {
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Title       string `json:"title"`
+	Severity    string `json:"severity"`
+	Reason      string `json:"reason"`
+}
+
+type IssueExportResult struct {
+	Provider        string                      `json:"provider,omitempty"`
+	DryRun          bool                        `json:"dry_run"`
+	Status          string                      `json:"status"`
+	CreatedCount    int                         `json:"created_count"`
+	SkippedCount    int                         `json:"skipped_count"`
+	IssueURLs       []string                    `json:"issue_urls,omitempty"`
+	Errors          []string                    `json:"errors,omitempty"`
+	IssuesToCreate  []IssueExportPreview        `json:"issues_to_create"`
+	SkippedFindings []IssueExportSkippedFinding `json:"skipped_findings"`
+	Reasons         []string                    `json:"reasons,omitempty"`
+	GeneratedAt     time.Time                   `json:"generated_at"`
+}
+
 type DiscoveryRunRequest struct {
 	StartURL            string `json:"start_url,omitempty"`
 	CredentialProfileID string `json:"credential_profile_id,omitempty"`

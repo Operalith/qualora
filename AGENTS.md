@@ -10,7 +10,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.18.0-alpha` Docker Compose MVP working.
+- Keep the `v0.19.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
@@ -31,6 +31,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Dashboard, reports, and project readiness UI that make first-run workflows discoverable without hiding alpha limitations.
 - Deterministic report intelligence with severity normalization, grouped findings, deduplication metadata, affected-page summaries, noise classification, and executive summaries.
 - Deterministic Safe QA report baselines, regression comparisons, and CI quality gates.
+- Native CI run orchestration for Safe QA baseline comparison and quality gates.
+- Optional sanitized GitHub/GitLab issue export with encrypted tracker tokens and dry-run previews by default.
 - Local first-run admin setup and session-protected API/web UI access.
 - Docker Compose as the first deployment target.
 - PostgreSQL for durable metadata.
@@ -77,6 +79,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Guided setup must orchestrate existing safe capabilities; do not add new engines, autonomous browser control, active scanning, destructive behavior, or credential leakage through onboarding.
 - Baseline comparison must stay deterministic and based on existing report intelligence fingerprints/grouped findings.
 - Quality gates must work without AI and must not start workers, execute tests, hide raw findings, or mutate tested systems.
+- CI runs must remain an orchestration layer over existing Safe QA, baseline comparison, and quality gate behavior; do not add new testing engines through CI mode.
+- Issue export must remain optional, grouped-finding based, sanitized, and dry-run by default. Real tracker issue creation requires an explicit enabled config, encrypted token, and `dry_run=false`.
 - API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
 - Imported OpenAPI API smoke runs must stay read-only: skip mutating methods, authenticated operations, required request bodies, unresolved parameters, sensitive paths/parameters, and external redirects.
 - Do not store API request bodies or response bodies in the current alpha API smoke path.
@@ -111,6 +115,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Discovery runs must never send credentials, cookies, local/session storage, auth headers, tokens, full HTML, request bodies, or response bodies to AI or include them in metadata/report fields.
 - Quality checks must never send credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, or response bodies to AI or include them in metadata/report fields.
 - Baselines, comparisons, and quality gates must never include credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, provider secrets, encrypted secret payloads, or raw AI prompts.
+- CI run summaries and scripts must never print or return local admin passwords, session cookies, CSRF tokens, credential profile secrets, provider secrets, tracker tokens, cookies, browser storage, authorization headers, full HTML, screenshots, request bodies, or response bodies.
+- Issue export config APIs must never return raw tracker tokens. Issue previews and created issue bodies must be generated only from sanitized grouped findings and must not include credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, raw logs, provider secrets, encrypted secret payloads, or raw AI prompts.
 
 ## Contribution Style
 

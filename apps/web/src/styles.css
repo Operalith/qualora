@@ -471,6 +471,18 @@ button.danger:hover {
   text-decoration: underline;
 }
 
+.code-block {
+  background: #101828;
+  border-radius: 6px;
+  color: #ffffff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .form-grid {
   display: grid;
   gap: 12px;

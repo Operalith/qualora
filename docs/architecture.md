@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.18.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, safe deterministic application discovery, Interactive Safe Explorer, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
+Qualora v0.19.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, native CI run orchestration, optional sanitized GitHub/GitLab issue export, safe deterministic application discovery, Interactive Safe Explorer, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,14 +10,14 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines, ci_runs, issue_export_configs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
         |       +--> Report analysis
         |       +--> Test plan suggestions
         |
-        +--> Deterministic report intelligence, baselines, comparisons, and quality gates
+        +--> Deterministic report intelligence, baselines, comparisons, quality gates, CI runs, and issue export
         |
         +--> qualora-worker-browser
         |       +--> Playwright Chromium smoke test
@@ -47,7 +47,9 @@ The Go control plane exposes the HTTP API, validates project scope, persists met
 
 Report generation includes a deterministic intelligence layer. It normalizes finding severities, computes stable fingerprints, groups repeated findings, classifies noisy/repeated signals, summarizes affected pages, and produces executive summaries at report read/render time without changing stored finding schemas. The raw findings, evidence metadata, quality result rows, discovery maps, Safe Explorer traces, authorization results, and API result rows remain available.
 
-The v0.18 baseline layer stores grouped finding fingerprints and summary metadata from known reports in `report_baselines`. Comparisons are computed deterministically from baseline fingerprints and the current report intelligence. Quality gate evaluation uses comparison summaries and current severity counts; it does not require AI and does not execute any new testing engine.
+The v0.19 baseline layer stores grouped finding fingerprints and summary metadata from known reports in `report_baselines`. Comparisons are computed deterministically from baseline fingerprints and the current report intelligence. Quality gate evaluation uses comparison summaries and current severity counts; it does not require AI and does not execute any new testing engine.
+
+The v0.19 CI layer stores pipeline-friendly run summaries in `ci_runs`. A CI run can reuse the latest completed Safe QA report or start the existing Safe QA workflow, then compare against a selected/default baseline, evaluate a quality gate, and return a deterministic exit code. Optional issue export configs are stored in `issue_export_configs` with encrypted tracker tokens. Issue export uses grouped sanitized findings only.
 
 Current endpoints:
 
@@ -104,6 +106,9 @@ Current endpoints:
 - `POST /api/v1/qa-runs/{qa_run_id}/execute`
 - `GET /api/v1/qa-runs/{qa_run_id}/report`
 - `GET /api/v1/qa-runs/{qa_run_id}/report.html`
+- `GET /api/v1/projects/{project_id}/ci-runs`
+- `POST /api/v1/projects/{project_id}/ci-runs`
+- `GET /api/v1/ci-runs/{ci_run_id}`
 - `GET /api/v1/projects/{project_id}/report-baselines`
 - `POST /api/v1/projects/{project_id}/report-baselines`
 - `GET /api/v1/report-baselines/{baseline_id}`
@@ -111,6 +116,13 @@ Current endpoints:
 - `DELETE /api/v1/report-baselines/{baseline_id}`
 - `POST /api/v1/projects/{project_id}/report-comparisons`
 - `POST /api/v1/projects/{project_id}/quality-gates/evaluate`
+- `GET /api/v1/projects/{project_id}/issue-export-configs`
+- `POST /api/v1/projects/{project_id}/issue-export-configs`
+- `GET /api/v1/issue-export-configs/{issue_export_config_id}`
+- `PUT /api/v1/issue-export-configs/{issue_export_config_id}`
+- `DELETE /api/v1/issue-export-configs/{issue_export_config_id}`
+- `POST /api/v1/issue-export-configs/{issue_export_config_id}/test`
+- `POST /api/v1/reports/{report_type}/{report_id}/export-issues`
 - `POST /api/v1/projects/{project_id}/ai-test-plans`
 - `GET /api/v1/projects/{project_id}/test-plans`
 - `POST /api/v1/projects/{project_id}/api-specs`
@@ -184,11 +196,17 @@ The endpoint returns only resource IDs, safe provider metadata, skipped-action r
 
 ### Baselines, Comparisons, And Quality Gates
 
-`report_baselines` is the only new durable model in v0.18. It stores project/report ownership, baseline metadata, default-baseline status, normalized grouped finding fingerprints, severity counts, grouped finding count, and raw finding count. A partial unique index keeps one default baseline per project and report type.
+`report_baselines` stores project/report ownership, baseline metadata, default-baseline status, normalized grouped finding fingerprints, severity counts, grouped finding count, and raw finding count. A partial unique index keeps one default baseline per project and report type.
 
 Report comparison is computed on demand. The control plane loads the baseline snapshot and the current report snapshot, extracts grouped finding fingerprints from existing report intelligence, then classifies findings as new, fixed, unchanged, severity-changed, or affected-scope-changed. No worker job, AI call, browser action, API request, or security scan is started by comparison.
 
 Quality gates are also synchronous control-plane evaluation. Defaults fail on new critical/high findings and total critical findings, warn when no baseline exists, and return `ci_exit_code` for automation. The `format=ci` response shape is intentionally compact for curl-based CI usage. This is an alpha HTTP/script integration, not a full CLI.
+
+### CI Runs And Issue Export
+
+`ci_runs` persists CI status, exit code, linked Safe QA run, linked baseline, report URLs, comparison/gate status, optional issue export status, and a sanitized summary JSON. The control plane does not create a new testing engine for CI mode; it orchestrates existing Safe QA, baseline comparison, and quality gate functionality.
+
+`issue_export_configs` persists optional GitHub/GitLab targets with encrypted tokens. API responses expose `token_configured` but never the raw or encrypted token. Export requests use grouped findings from report intelligence and generate sanitized issue titles/bodies. Dry-run is the default. Actual issue creation uses minimal HTTP clients and is optional; tests and smoke avoid real GitHub/GitLab calls.
 
 ### `qualora-worker-browser`
 
@@ -280,7 +298,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.18.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.19.0-alpha`.
 
 ### PostgreSQL
 

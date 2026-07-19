@@ -7,18 +7,21 @@ import {
   createAuthorizationCheck,
   createCredentialProfile,
   createAIProvider,
+  createIssueExportConfig,
   createProject,
   createReportBaseline,
   deleteAIProvider,
   deleteAuthorizationCheck,
   deleteAPISpec,
   deleteCredentialProfile,
+  deleteIssueExportConfig,
   deleteTestPlan,
   discoveryHTMLReportURL,
   evidenceDownloadURL,
   evaluateQualityGate,
   executeTestPlan,
   executeQARun,
+  exportReportIssues,
   generateAITestPlan,
   getAuthorizationCheckReport,
   getAPISpec,
@@ -38,8 +41,10 @@ import {
   listAuthorizationCheckRuns,
   listAuthorizationChecks,
   listAPISpecs,
+  listCIRuns,
   listCredentialProfiles,
   listDiscoveryRuns,
+  listIssueExportConfigs,
   listProjects,
   listQARuns,
   listQualityCheckRuns,
@@ -62,17 +67,20 @@ import {
   startAPISmokeRun,
   startAuthenticatedBrowserSmokeRun,
   startBrowserSmokeRun,
+  startCIRun,
   startDiscoveryRun,
   startQARun,
   startQualityCheckRun,
   startSafeExplorerRun,
   startRun,
   testCredentialProfileLogin,
+  testIssueExportConfig,
   testPlanExportURL,
   testPlanExecutionHTMLReportURL,
   testAIProvider,
   updateAuthorizationCheck,
   updateCredentialProfile,
+  updateIssueExportConfig,
   updateAIProvider
 } from "./api";
 import type {
@@ -91,6 +99,9 @@ import type {
   AuthorizationCheckInput,
   AuthorizationCheckReport,
   AuthorizationCheckRun,
+  CIRun,
+  CIRunInput,
+  CIRunResponse,
   CreateProjectInput,
   CredentialProfile,
   CredentialProfileInput,
@@ -99,6 +110,9 @@ import type {
   DiscoveryRunInput,
   Evidence,
   GroupedFinding,
+  IssueExportConfig,
+  IssueExportConfigInput,
+  IssueExportResult,
   LoginInput,
   Project,
   ProjectSetupInput,
@@ -167,7 +181,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.18.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.19.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -583,7 +597,7 @@ function Dashboard({
             <h2>Qualora version badge: {formatVersionBadge(version)}</h2>
             <p>Configure a real project, optional AI, optional login, optional OpenAPI, and start the first safe workflow.</p>
           </div>
-          <span className="pill">v0.18 baselines & gates</span>
+          <span className="pill">v0.19 CI & issue export</span>
         </div>
         <div className="quick-grid">
           <a className="quick-card" href="#/setup-project">
@@ -1765,6 +1779,8 @@ function ProjectPage({
   const [safeExplorerRuns, setSafeExplorerRuns] = useState<LoadState<SafeExplorerRun[]>>({ data: [], loading: true, error: "" });
   const [qaRuns, setQARuns] = useState<LoadState<QARun[]>>({ data: [], loading: true, error: "" });
   const [baselines, setBaselines] = useState<LoadState<ReportBaseline[]>>({ data: [], loading: true, error: "" });
+  const [ciRuns, setCIRuns] = useState<LoadState<CIRun[]>>({ data: [], loading: true, error: "" });
+  const [issueExportConfigs, setIssueExportConfigs] = useState<LoadState<IssueExportConfig[]>>({ data: [], loading: true, error: "" });
   const [error, setError] = useState("");
   const [starting, setStarting] = useState("");
 
@@ -1780,6 +1796,8 @@ function ProjectPage({
     setSafeExplorerRuns((current) => ({ ...current, loading: true, error: "" }));
     setQARuns((current) => ({ ...current, loading: true, error: "" }));
     setBaselines((current) => ({ ...current, loading: true, error: "" }));
+    setCIRuns((current) => ({ ...current, loading: true, error: "" }));
+    setIssueExportConfigs((current) => ({ ...current, loading: true, error: "" }));
     setError("");
     try {
       const [
@@ -1795,7 +1813,9 @@ function ProjectPage({
         nextQualityRuns,
         nextSafeExplorerRuns,
         nextQARuns,
-        nextBaselines
+        nextBaselines,
+        nextCIRuns,
+        nextIssueExportConfigs
       ] = await Promise.all([
         cachedProject ? Promise.resolve(cachedProject) : getProject(projectID),
         listRuns(projectID),
@@ -1809,7 +1829,9 @@ function ProjectPage({
         listQualityCheckRuns(projectID),
         listSafeExplorerRuns(projectID),
         listQARuns(projectID),
-        listReportBaselines(projectID, "safe_qa")
+        listReportBaselines(projectID, "safe_qa"),
+        listCIRuns(projectID),
+        listIssueExportConfigs(projectID)
       ]);
       setProject(nextProject);
       setRuns({ data: nextRuns, loading: false, error: "" });
@@ -1824,6 +1846,8 @@ function ProjectPage({
       setSafeExplorerRuns({ data: nextSafeExplorerRuns, loading: false, error: "" });
       setQARuns({ data: nextQARuns, loading: false, error: "" });
       setBaselines({ data: nextBaselines, loading: false, error: "" });
+      setCIRuns({ data: nextCIRuns, loading: false, error: "" });
+      setIssueExportConfigs({ data: nextIssueExportConfigs, loading: false, error: "" });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
@@ -1838,6 +1862,8 @@ function ProjectPage({
       setSafeExplorerRuns((current) => ({ ...current, loading: false, error: message }));
       setQARuns((current) => ({ ...current, loading: false, error: message }));
       setBaselines((current) => ({ ...current, loading: false, error: message }));
+      setCIRuns((current) => ({ ...current, loading: false, error: message }));
+      setIssueExportConfigs((current) => ({ ...current, loading: false, error: message }));
     }
   }, [cachedProject, projectID]);
 
@@ -1970,6 +1996,25 @@ function ProjectPage({
       const run = await startQARun(project.id, input);
       await refresh();
       window.location.hash = `#/qa-runs/${run.id}`;
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : String(startError));
+    } finally {
+      setStarting("");
+    }
+  }
+
+  async function startProjectCIRun(input: CIRunInput) {
+    if (!project) {
+      return;
+    }
+    setStarting("ci-run");
+    setError("");
+    try {
+      const result = await startCIRun(project.id, input);
+      await refresh();
+      if (result.qa_run_id) {
+        window.location.hash = `#/qa-runs/${result.qa_run_id}`;
+      }
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : String(startError));
     } finally {
@@ -2130,6 +2175,51 @@ function ProjectPage({
         ) : (
           <ProjectBaselineCard baselines={baselines.data} qaRuns={qaRuns.data} />
         )}
+      </section>
+
+      <section id="ci-run">
+        <div className="section-heading">
+          <div>
+            <h2>CI Run</h2>
+            <p>Start a pipeline-friendly Safe QA comparison and return a deterministic quality-gate exit code.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="CI mode is HTTP/script based in this alpha release. It uses existing Safe QA reports and quality gates, and does not require AI for gate evaluation."
+        />
+        <CIRunPanel
+          project={project}
+          baselines={baselines.data}
+          ciRuns={ciRuns.data}
+          busy={starting === "ci-run"}
+          onStart={(input) => void startProjectCIRun(input)}
+        />
+      </section>
+
+      <section id="issue-export">
+        <div className="section-heading">
+          <div>
+            <h2>Issue Export</h2>
+            <p>Configure optional GitHub/GitLab export for grouped sanitized findings.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice tone="info" message="Tokens are encrypted. Export only grouped sanitized findings." />
+        <IssueExportConfigForm project={project} onSaved={() => void refresh()} />
+        <div className="section-split">
+          {issueExportConfigs.error && <Notice tone="danger" message={issueExportConfigs.error} />}
+          {issueExportConfigs.loading ? (
+            <SkeletonRows />
+          ) : (
+            <IssueExportConfigTable configs={issueExportConfigs.data} onChanged={() => void refresh()} />
+          )}
+        </div>
       </section>
 
       <section id="quality-checks">
@@ -2329,6 +2419,275 @@ function ProjectBaselineCard({ baselines, qaRuns }: { baselines: ReportBaseline[
       </div>
     </div>
   );
+}
+
+function CIRunPanel({
+  project,
+  baselines,
+  ciRuns,
+  busy,
+  onStart
+}: {
+  project: Project;
+  baselines: ReportBaseline[];
+  ciRuns: CIRun[];
+  busy: boolean;
+  onStart: (input: CIRunInput) => void;
+}) {
+  const defaultBaseline = baselines.find((baseline) => baseline.is_default) || baselines[0];
+  const latest = ciRuns[0];
+  const command = `QUALORA_URL=http://localhost:8080 QUALORA_EMAIL=admin@qualora.local QUALORA_PASSWORD=*** QUALORA_PROJECT_ID=${project.id} scripts/qualora-ci-run.sh`;
+  return (
+    <div className="section-split">
+      <div className="detail-grid compact">
+        <Field label="Default baseline" value={defaultBaseline ? defaultBaseline.name : "Not configured"} />
+        <Field label="Latest CI status" value={latest ? `${latest.status} / exit ${latest.exit_code}` : "No CI runs yet"} />
+        <Field label="Latest report" value={latest?.qa_run_id ? shortID(latest.qa_run_id) : "Not available"} />
+      </div>
+      <pre className="code-block">{command}</pre>
+      <div className="form-actions">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            onStart({
+              mode: "safe_qa",
+              run_safe_qa: false,
+              use_latest_baseline: !defaultBaseline,
+              baseline_id: defaultBaseline?.id,
+              include_quality_checks: true,
+              execute_safe_plan: false,
+              timeout_seconds: 120
+            })
+          }
+        >
+          {busy ? "Running CI" : "Run CI against latest report"}
+        </button>
+      </div>
+      <CIRunTable runs={ciRuns} />
+    </div>
+  );
+}
+
+function CIRunTable({ runs }: { runs: CIRun[] }) {
+  if (runs.length === 0) {
+    return <EmptyState title="No CI runs yet" body="Run CI after creating a Safe QA baseline." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Exit</th>
+            <th>Gate</th>
+            <th>Comparison</th>
+            <th>Report</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.slice(0, 8).map((run) => (
+            <tr key={run.id}>
+              <td><StatusBadge status={run.status} /></td>
+              <td>{run.exit_code}</td>
+              <td>{run.gate_status || "Not evaluated"}</td>
+              <td>{run.comparison_status || "No baseline"}</td>
+              <td>{run.qa_run_id ? <a href={`#/qa-runs/${run.qa_run_id}`}>{shortID(run.qa_run_id)}</a> : "Not available"}</td>
+              <td>{formatDate(run.created_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function IssueExportConfigForm({ project, onSaved }: { project: Project; onSaved: () => void }) {
+  const [form, setForm] = useState<IssueExportConfigInput>({
+    provider: "github",
+    name: "",
+    base_url: "",
+    owner_or_namespace: "",
+    repository_or_project: "",
+    token: "",
+    default_labels: ["qualora", "qa"],
+    enabled: true
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await createIssueExportConfig(project.id, {
+        ...form,
+        default_labels: labelsFromText((form.default_labels || []).join(", "))
+      });
+      setForm((current) => ({ ...current, name: "", token: "" }));
+      onSaved();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="stacked-form">
+      {error && <Notice tone="danger" message={error} />}
+      <div className="form-grid">
+        <label>
+          Provider
+          <select value={form.provider} onChange={(event) => setForm((current) => ({ ...current, provider: event.target.value as "github" | "gitlab" }))}>
+            <option value="github">GitHub</option>
+            <option value="gitlab">GitLab</option>
+          </select>
+        </label>
+        <label>
+          Name
+          <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Staging tracker" />
+        </label>
+        <label>
+          Base URL
+          <input value={form.base_url || ""} onChange={(event) => setForm((current) => ({ ...current, base_url: event.target.value }))} placeholder="Default provider URL" />
+        </label>
+        <label>
+          Owner / Namespace
+          <input value={form.owner_or_namespace} onChange={(event) => setForm((current) => ({ ...current, owner_or_namespace: event.target.value }))} placeholder="Operalith" />
+        </label>
+        <label>
+          Repo / Project
+          <input value={form.repository_or_project} onChange={(event) => setForm((current) => ({ ...current, repository_or_project: event.target.value }))} placeholder="qualora" />
+        </label>
+        <label>
+          Token
+          <input type="password" value={form.token || ""} onChange={(event) => setForm((current) => ({ ...current, token: event.target.value }))} placeholder="Stored encrypted" />
+        </label>
+        <label>
+          Labels
+          <input value={(form.default_labels || []).join(", ")} onChange={(event) => setForm((current) => ({ ...current, default_labels: labelsFromText(event.target.value) }))} />
+        </label>
+        <label className="checkbox-label">
+          <input type="checkbox" checked={form.enabled ?? true} onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))} />
+          Enabled
+        </label>
+      </div>
+      <div className="form-actions">
+        <button type="submit" disabled={saving}>{saving ? "Saving" : "Save issue export config"}</button>
+      </div>
+    </form>
+  );
+}
+
+function IssueExportConfigTable({ configs, onChanged }: { configs: IssueExportConfig[]; onChanged: () => void }) {
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function testConfig(configID: string) {
+    setBusy(configID);
+    setError("");
+    setMessage("");
+    try {
+      const result = await testIssueExportConfig(configID);
+      setMessage(result.success ? `Issue Export test passed for ${result.provider} ${result.target}.` : result.error_message || "Issue Export test failed.");
+    } catch (testError) {
+      setError(testError instanceof Error ? testError.message : String(testError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function toggleConfig(config: IssueExportConfig) {
+    setBusy(config.id);
+    setError("");
+    setMessage("");
+    try {
+      await updateIssueExportConfig(config.id, {
+        provider: config.provider as "github" | "gitlab",
+        name: config.name,
+        base_url: config.base_url,
+        owner_or_namespace: config.owner_or_namespace,
+        repository_or_project: config.repository_or_project,
+        default_labels: config.default_labels || [],
+        enabled: !config.enabled
+      });
+      onChanged();
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : String(toggleError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function deleteConfig(configID: string) {
+    setBusy(configID);
+    setError("");
+    setMessage("");
+    try {
+      await deleteIssueExportConfig(configID);
+      onChanged();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  if (configs.length === 0) {
+    return <EmptyState title="No issue export configs" body="Dry-run export still works from a report without a tracker token." />;
+  }
+  return (
+    <div className="section-split">
+      {message && <Notice tone="info" message={message} />}
+      {error && <Notice tone="danger" message={error} />}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Name</th>
+              <th>Target</th>
+              <th>Token</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {configs.map((config) => (
+              <tr key={config.id}>
+                <td>{config.provider}</td>
+                <td>{config.name}</td>
+                <td>{config.owner_or_namespace}/{config.repository_or_project}</td>
+                <td>{config.token_configured ? "Configured" : "Missing"}</td>
+                <td>{config.enabled ? "Enabled" : "Disabled"}</td>
+                <td>
+                  <div className="button-row compact-actions">
+                    <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void testConfig(config.id)}>
+                      {busy === config.id ? "Testing" : "Test config"}
+                    </button>
+                    <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void toggleConfig(config)}>
+                      {config.enabled ? "Disable" : "Enable"}
+                    </button>
+                    <button type="button" className="danger" disabled={busy !== ""} onClick={() => void deleteConfig(config.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function labelsFromText(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
 function DiscoveryRunForm({
@@ -5134,6 +5493,8 @@ function QARunPage({ runID }: { runID: string }) {
   const [report, setReport] = useState<QARunReport | undefined>();
   const [comparisonOverride, setComparisonOverride] = useState<ReportComparison | undefined>();
   const [gateOverride, setGateOverride] = useState<QualityGateResult | undefined>();
+  const [issueConfigs, setIssueConfigs] = useState<IssueExportConfig[]>([]);
+  const [issueExportResult, setIssueExportResult] = useState<IssueExportResult | undefined>();
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
   const [baselineAction, setBaselineAction] = useState("");
@@ -5143,7 +5504,9 @@ function QARunPage({ runID }: { runID: string }) {
     setLoading(true);
     setError("");
     try {
-      setReport(await getQARunReport(runID));
+      const nextReport = await getQARunReport(runID);
+      setReport(nextReport);
+      setIssueConfigs(await listIssueExportConfigs(nextReport.project.id));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
@@ -5235,6 +5598,30 @@ function QARunPage({ runID }: { runID: string }) {
       setGateOverride(gate);
     } catch (gateError) {
       setError(gateError instanceof Error ? gateError.message : String(gateError));
+    } finally {
+      setBaselineAction("");
+    }
+  }
+
+  async function exportIssues(configID: string) {
+    if (!report) {
+      return;
+    }
+    setBaselineAction("issue-export");
+    setError("");
+    try {
+      const dryRun = await exportReportIssues("safe_qa", report.run.id, {
+        issue_export_config_id: configID || undefined,
+        severity_threshold: "high",
+        max_issues: 10,
+        dry_run: true,
+        deduplicate_by_fingerprint: true,
+        labels: ["qualora"],
+        title_prefix: "[Qualora]"
+      });
+      setIssueExportResult(dryRun);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : String(exportError));
     } finally {
       setBaselineAction("");
     }
@@ -5333,6 +5720,13 @@ function QARunPage({ runID }: { runID: string }) {
         onSetBaseline={() => void setAsBaseline()}
         onCompare={() => void compareWithBaseline()}
         onEvaluateGate={() => void evaluateGate()}
+      />
+
+      <IssueExportPanel
+        configs={issueConfigs}
+        result={issueExportResult}
+        busy={baselineAction === "issue-export"}
+        onExport={(configID) => void exportIssues(configID)}
       />
 
       {report.discovery_summary && (
@@ -5522,6 +5916,88 @@ function BaselineRegressionPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function IssueExportPanel({
+  configs,
+  result,
+  busy,
+  onExport
+}: {
+  configs: IssueExportConfig[];
+  result?: IssueExportResult;
+  busy: boolean;
+  onExport: (configID: string) => void;
+}) {
+  const [configID, setConfigID] = useState("");
+  return (
+    <section>
+      <div className="section-heading">
+        <div>
+          <h2>Issue Export</h2>
+          <p>Export issues as a dry-run preview from grouped sanitized findings.</p>
+        </div>
+        <div className="button-row">
+          <select value={configID} onChange={(event) => setConfigID(event.target.value)} aria-label="Issue export config">
+            <option value="">Dry-run without tracker config</option>
+            {configs.map((config) => (
+              <option key={config.id} value={config.id}>
+                {config.name} ({config.provider})
+              </option>
+            ))}
+          </select>
+          <button type="button" disabled={busy} onClick={() => onExport(configID)}>
+            {busy ? "Preparing preview" : "Export issues"}
+          </button>
+        </div>
+      </div>
+      <Notice
+        tone="info"
+        message="Dry-run previews use grouped findings only. Qualora does not export credentials, cookies, tokens, browser storage, auth headers, screenshots, full HTML, request bodies, response bodies, or raw logs."
+      />
+      {result && (
+        <div className="section-split">
+          <div className="summary-grid">
+            <Metric label="Status" value={result.status} />
+            <Metric label="Issues" value={result.issues_to_create.length} tone={result.issues_to_create.length ? "high" : "info"} />
+            <Metric label="Skipped" value={result.skipped_count} tone="medium" />
+            <Metric label="Dry Run" value={result.dry_run ? "Yes" : "No"} tone="info" />
+          </div>
+          <IssuePreviewTable result={result} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function IssuePreviewTable({ result }: { result: IssueExportResult }) {
+  if (result.issues_to_create.length === 0) {
+    return <EmptyState title="No issues to create" body="No grouped findings matched the selected severity threshold." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Issue Title</th>
+            <th>Severity</th>
+            <th>Affected Pages</th>
+            <th>Labels</th>
+          </tr>
+        </thead>
+        <tbody>
+          {result.issues_to_create.map((issue) => (
+            <tr key={issue.fingerprint}>
+              <td>{issue.title}</td>
+              <td><span className={`severity ${issue.severity}`}>{issue.severity}</span></td>
+              <td>{issue.affected_pages_count}</td>
+              <td>{(issue.labels || []).join(", ") || "None"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

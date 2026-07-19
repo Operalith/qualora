@@ -4,6 +4,41 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.19.0-alpha] - 2026-07-19
+
+### Added
+
+- Native CI run API for Safe QA regression workflows at `POST /api/v1/projects/{project_id}/ci-runs`.
+- Persisted `ci_runs` summaries with status, exit code, linked Safe QA run, linked baseline, report URLs, comparison status, quality gate status, and optional issue export status.
+- `scripts/qualora-ci-run.sh` helper for pipeline-friendly run-and-gate workflows.
+- Login support in `scripts/qualora-ci-gate.sh` so pipelines can use local admin credentials instead of prebuilt session cookies.
+- Project-scoped issue export configs for GitHub/GitLab with encrypted tokens and no raw token API responses.
+- Issue export config CRUD/test APIs and `POST /api/v1/reports/{report_type}/{report_id}/export-issues`.
+- Dry-run issue export previews generated from grouped sanitized findings.
+- Web UI CI Run and Issue Export sections on project pages plus Export issues controls on Safe QA report pages.
+- Smoke coverage for native CI runs, both CI scripts, issue export config creation/listing/testing, dry-run issue previews, UI bundle text, and no-secret outputs.
+
+### Changed
+
+- Package metadata has been updated to `0.19.0-alpha`.
+- OpenAPI docs now include CI run and issue export endpoints/schemas.
+- Docker Compose and development docs distinguish existing-report gates from run-and-gate CI workflows.
+
+### Security
+
+- CI output is compact and must not include local admin passwords, session cookies, CSRF tokens, provider secrets, tracker tokens, credential profile secrets, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, or response bodies.
+- Issue export tokens are encrypted with `QUALORA_ENCRYPTION_KEY` and represented only as `token_configured` in API/UI responses.
+- Issue previews and created issue bodies are built from sanitized grouped finding metadata only.
+- Issue export is off by default for CI runs and dry-run by default when enabled.
+
+### Known Limitations
+
+- Native CI mode is alpha and currently centers on Safe QA reports.
+- CI mode uses the existing Safe QA workflow when `run_safe_qa=true`; new Safe QA runs still require an OpenAI-compatible provider.
+- AI-free CI evaluation is available by reusing the latest completed Safe QA report with `run_safe_qa=false`.
+- Issue export supports GitHub/GitLab-compatible issue creation only and does not sync issue lifecycle state.
+- No full CLI, autonomous AI browser control, active security scanning, payload attacks, fuzzing, or destructive testing was added.
+
 ## [v0.18.0-alpha] - 2026-07-18
 
 ### Added

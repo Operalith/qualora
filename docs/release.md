@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.18.0-alpha is the eighteenth public alpha release. It adds Safe QA report baselines, deterministic regression comparison, and CI-friendly quality gates while keeping local auth, browser/API smoke, credential profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, report intelligence, AI analysis, Safe QA Runs, and approved safe plan execution intact.
+Qualora v0.19.0-alpha is the nineteenth public alpha release. It adds native CI run orchestration, pipeline-friendly helper scripts, and optional sanitized GitHub/GitLab issue export while keeping local auth, browser/API smoke, credential profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, report intelligence, baselines, quality gates, AI analysis, Safe QA Runs, and approved safe plan execution intact.
 
 ## Pre-Release Checklist
 
@@ -24,7 +24,7 @@ Confirm:
 - The web UI is reachable at `http://localhost:3000`.
 - A fresh database requires first-run admin setup before project data is visible.
 - Setup, login, logout, `/auth/me`, CSRF, and protected route checks pass.
-- The dashboard shows the `v0.18.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
+- The dashboard shows the `v0.19.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
 - The guided setup route `#/setup-project` renders the project basics, AI, login, OpenAPI, workflow, and results steps.
 - `POST /api/v1/onboarding/project-setup` can create a project, optionally configure a demo AI provider, optionally create a credential profile, optionally import a demo OpenAPI spec, and start selected safe checks.
 - The guided demo flow starts browser smoke, authenticated browser smoke, discovery, quality checks, Safe QA, and API smoke when all demo dependencies are configured.
@@ -43,7 +43,13 @@ Confirm:
 - Safe QA JSON and HTML reports show baseline/comparison/gate information when a default baseline exists.
 - The quality gate endpoint returns pass/fail/warning JSON and compact `format=ci` JSON with an exit code.
 - `scripts/qualora-ci-gate.sh` exits with the compact quality gate exit code.
+- `POST /api/v1/projects/{project_id}/ci-runs` can reuse the latest completed Safe QA report, compare it with a baseline, evaluate the quality gate, persist `ci_runs`, and return exit code `0`.
+- `scripts/qualora-ci-run.sh` logs in, starts or reuses a CI run, prints compact JSON, and exits with the Qualora CI exit code.
+- Issue export configs can be created with encrypted GitHub/GitLab tokens, listed without raw tokens, and tested without creating issues.
+- `POST /api/v1/reports/{report_type}/{report_id}/export-issues` defaults to dry-run issue previews from grouped sanitized findings.
+- CI run output, issue export config responses, issue previews, JSON reports, and HTML reports do not contain the demo password, session cookies, CSRF tokens, provider secrets, tracker tokens, auth headers, browser storage, screenshots, full HTML, request bodies, or response bodies.
 - The web UI renders Baselines & Regression cards, Set as baseline, Compare with baseline, Evaluate quality gate, status badges, and failed rule lists.
+- The web UI renders CI Run and Issue Export sections on project pages and Export issues controls on Safe QA report pages.
 - Existing browser smoke reports still include screenshot and browser observation evidence.
 - Existing login and authenticated smoke reports still include `login_summary` and `login_observations`.
 - Existing authorization checks and reports still work and remain deterministic.
@@ -58,10 +64,10 @@ Confirm:
 ```bash
 git status --short
 git add .
-git commit -m "feat: add baselines and quality gates for v0.18.0-alpha"
-git tag -a v0.18.0-alpha -m "v0.18.0-alpha"
+git commit -m "feat: add CI mode and issue export for v0.19.0-alpha"
+git tag -a v0.19.0-alpha -m "v0.19.0-alpha"
 git push origin main
-git push origin v0.18.0-alpha
+git push origin v0.19.0-alpha
 ```
 
 ## GitHub Release
@@ -69,7 +75,7 @@ git push origin v0.18.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.18.0-alpha
+Qualora v0.19.0-alpha
 ```
 
-Use [release-notes/v0.18.0-alpha.md](release-notes/v0.18.0-alpha.md) as the release body.
+Use [release-notes/v0.19.0-alpha.md](release-notes/v0.19.0-alpha.md) as the release body.

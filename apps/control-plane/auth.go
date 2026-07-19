@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	QualoraVersion     = "0.18.0-alpha"
+	QualoraVersion     = "0.19.0-alpha"
 	sessionCookieName  = "qualora_session"
 	csrfCookieName     = "qualora_csrf"
 	csrfHeaderName     = "X-Qualora-CSRF"

@@ -39,7 +39,7 @@ func NormalizeAPISpecImportRequest(input APISpecImportRequest) (APISpecImportReq
 		return input, fmt.Errorf("source_type must be url, inline, or demo")
 	}
 	if len([]byte(input.RawSpec)) > maxStoredSpecBytes {
-		return input, fmt.Errorf("raw_spec is too large for the v0.18 alpha import limit")
+		return input, fmt.Errorf("raw_spec is too large for the v0.19 alpha import limit")
 	}
 	return input, nil
 }
@@ -59,7 +59,7 @@ func FetchOpenAPISource(ctx context.Context, project Project, sourceURL string) 
 	if err != nil {
 		return "", parsed.String(), fmt.Errorf("build OpenAPI request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Qualora OpenAPI Import v0.18.0-alpha")
+	req.Header.Set("User-Agent", "Qualora OpenAPI Import v0.19.0-alpha")
 	req.Header.Set("Accept", "application/json, application/yaml, text/yaml, application/x-yaml, text/plain, */*")
 
 	resp, err := client.Do(req)
@@ -78,7 +78,7 @@ func FetchOpenAPISource(ctx context.Context, project Project, sourceURL string) 
 		return "", parsed.String(), fmt.Errorf("read OpenAPI document: %w", err)
 	}
 	if len(body) > maxStoredSpecBytes {
-		return "", parsed.String(), fmt.Errorf("OpenAPI document is too large for the v0.18 alpha import limit")
+		return "", parsed.String(), fmt.Errorf("OpenAPI document is too large for the v0.19 alpha import limit")
 	}
 	return string(body), parsed.String(), nil
 }
@@ -260,7 +260,7 @@ func requestSafeAPIOperation(ctx context.Context, method string, targetURL *url.
 	if err != nil {
 		return nil, "", nil, false, err
 	}
-	req.Header.Set("User-Agent", "Qualora API Smoke v0.18.0-alpha")
+	req.Header.Set("User-Agent", "Qualora API Smoke v0.19.0-alpha")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 
 	resp, err := client.Do(req)

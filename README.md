@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.18.0-alpha` adds deterministic report baselines, regression comparison, and CI-friendly quality gates for Safe QA reports. A user can mark a Safe QA report as a baseline, compare later reports against it, and evaluate pass/fail gates without AI. Qualora remains useful without AI: discovery, Safe Explorer, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, report intelligence, baseline comparison, quality gates, HTML reports, and approved safe test plan execution do not depend on an LLM.
+`v0.19.0-alpha` adds native CI mode and optional GitHub/GitLab issue export. A logged-in self-hosted user can run a CI-friendly Safe QA workflow, compare against a baseline, evaluate quality gates, get deterministic exit codes, and dry-run sanitized issue previews from grouped findings. Qualora remains useful without AI for discovery, Safe Explorer, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, report intelligence, baseline comparison, quality gates, issue-export dry-runs, HTML reports, and approved safe test plan execution.
 
 ## Current Alpha Capabilities
 
@@ -61,7 +61,10 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Compare Safe QA reports against the default or selected baseline.
 - Classify new, fixed, unchanged, severity-changed, and affected-scope-changed grouped findings.
 - Evaluate CI-friendly quality gates for new and total critical/high/medium findings.
-- Use `scripts/qualora-ci-gate.sh` for HTTP-based CI gate checks.
+- Start native CI runs that can run or reuse Safe QA, compare against a baseline, evaluate quality gates, and return an exit code.
+- Use `scripts/qualora-ci-gate.sh` for existing-report quality gates and `scripts/qualora-ci-run.sh` for run-and-gate CI workflows.
+- Configure optional GitHub or GitLab issue export targets with encrypted tokens.
+- Dry-run issue export from grouped sanitized findings before creating tracker issues.
 - Download stored evidence objects at `GET /api/v1/evidence/{evidence_id}`.
 - Configure optional OpenAI-compatible AI providers from the web UI or API.
 - Test AI provider connectivity with a safe prompt.
@@ -87,11 +90,12 @@ API client / smoke script / web UI
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines, ci_runs, issue_export_configs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
         +--> Deterministic report baseline comparison and quality gate evaluation
+        +--> CI run orchestration and optional sanitized issue export
         |
         +--> qualora-worker-browser
         |       +--> Playwright browser smoke test
@@ -162,7 +166,7 @@ The smoke target includes:
 - AI provider smoke against a local fake OpenAI-compatible provider.
 - Discovery-aware AI test plan generation from the application map.
 - Safe QA Run preview and explicit execution against the approved safe browser DSL.
-- Safe QA baseline creation, second Safe QA report comparison, quality gate evaluation, and compact CI gate response validation.
+- Safe QA baseline creation, second Safe QA report comparison, quality gate evaluation, native CI run validation, compact CI gate response validation, both CI scripts, issue export config testing, and issue export dry-run preview validation.
 - Guided project setup through the onboarding API, including demo AI provider setup, demo OpenAPI import, credential profile creation, browser smoke, authenticated smoke, discovery, quality checks, Safe QA, and API smoke.
 - Safe test plan execution smoke against the local `demo-web` service.
 
@@ -694,11 +698,74 @@ curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/quality-gates/evalu
   }' | python3 -m json.tool
 
 QUALORA_API_URL=http://localhost:8080 \
-QUALORA_SESSION_COOKIE="qualora_session=..." \
-QUALORA_CSRF_TOKEN="${CSRF}" \
+QUALORA_EMAIL=admin@qualora.local \
+QUALORA_PASSWORD=change-me-to-a-long-local-password \
 QUALORA_PROJECT_ID="${PROJECT_ID}" \
 QUALORA_REPORT_ID="${NEXT_QA_RUN_ID}" \
 scripts/qualora-ci-gate.sh
+```
+
+Run a full CI workflow that starts a Safe QA run, compares it to the baseline, evaluates the quality gate, prints compact report links, and exits with the CI status:
+
+```bash
+QUALORA_URL=http://localhost:8080 \
+QUALORA_EMAIL=admin@qualora.local \
+QUALORA_PASSWORD=change-me-to-a-long-local-password \
+QUALORA_PROJECT_ID="${PROJECT_ID}" \
+QUALORA_BASELINE_ID="${BASELINE_ID}" \
+QUALORA_ISSUE_EXPORT_DRY_RUN=true \
+scripts/qualora-ci-run.sh
+```
+
+The matching API endpoint is:
+
+```bash
+curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/ci-runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "mode": "safe_qa",
+    "baseline_id": "'"${BASELINE_ID}"'",
+    "run_safe_qa": true,
+    "include_quality_checks": true,
+    "execute_safe_plan": true,
+    "issue_export_dry_run": true,
+    "timeout_seconds": 900
+  }' | python3 -m json.tool
+```
+
+Create an optional issue export config. The token is encrypted at rest and is never returned raw:
+
+```bash
+ISSUE_CONFIG_ID=$(curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/issue-export-configs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "provider": "github",
+    "name": "GitHub Issues",
+    "owner_or_namespace": "Operalith",
+    "repository_or_project": "qualora",
+    "token": "tracker-token",
+    "default_labels": ["qualora", "qa"],
+    "enabled": true
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+```
+
+Dry-run issue export from grouped high/critical Safe QA findings:
+
+```bash
+curl -s "http://localhost:8080/api/v1/reports/safe_qa/${NEXT_QA_RUN_ID}/export-issues" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "issue_export_config_id": "'"${ISSUE_CONFIG_ID}"'",
+    "severity_threshold": "high",
+    "dry_run": true,
+    "max_issues": 10
+  }' | python3 -m json.tool
 ```
 
 Execute a previewed Safe QA Run only after reviewing the generated plan and safe execution preview:
@@ -715,7 +782,7 @@ curl -s -X POST "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/execute" \
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.18.0-alpha`:
+Supported provider type in `v0.19.0-alpha`:
 
 - `openai-compatible`
 
@@ -735,11 +802,11 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.18.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, guided onboarding, report intelligence, baseline comparison, and quality gates are deterministic paths and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.19.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, guided onboarding, report intelligence, baseline comparison, quality gates, CI runs, and issue export previews are deterministic paths and are not AI-controlled.
 
 ## Report Intelligence
 
-Every primary JSON and HTML report includes deterministic report intelligence in `v0.18.0-alpha`:
+Every primary JSON and HTML report includes deterministic report intelligence in `v0.19.0-alpha`:
 
 - `executive_summary` with pass/warning/fail/unknown status, what was tested, what was not tested, recommended next actions, and safety limitations.
 - `severity_counts` normalized to `critical`, `high`, `medium`, `low`, and `info`.
@@ -761,6 +828,14 @@ Comparisons are deterministic:
 - Affected-scope changes: same fingerprint with changed affected URL/path counts.
 
 Quality gates are designed for CI and release checks. Defaults fail on new critical or high findings and on total critical findings, warn when a baseline is missing, and return `ci_exit_code` or compact `exit_code` values without requiring AI.
+
+## CI Mode And Issue Export
+
+`v0.19.0-alpha` includes a native CI run endpoint at `POST /api/v1/projects/{project_id}/ci-runs`. It can start a Safe QA run, wait for completion, compare with a selected/default Safe QA baseline, evaluate a quality gate, persist a `ci_runs` record, and return `exit_code` `0` for passed/warning or `1` for failed/error. CI gate evaluation and issue export do not require AI.
+
+`scripts/qualora-ci-gate.sh` evaluates an existing report. `scripts/qualora-ci-run.sh` starts the workflow and evaluates the gate. Both scripts log in with `QUALORA_EMAIL` and `QUALORA_PASSWORD`, avoid printing secrets, and exit with the Qualora CI exit code.
+
+Issue export is optional. Configured GitHub/GitLab tokens are encrypted with `QUALORA_ENCRYPTION_KEY` and are never returned raw. Exports use grouped findings only and send sanitized titles/bodies with severity, category, affected page counts, representative paths, recommendations, report links, safety notes, fingerprints, and Qualora version. Dry-run is the default for `POST /api/v1/reports/{report_type}/{report_id}/export-issues`.
 
 ## Report Example
 
@@ -880,6 +955,9 @@ See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.
 - Baseline comparison is alpha and fingerprint-based; it can miss semantic regressions that do not change grouped finding fingerprints.
 - Quality gates are alpha and conservative.
 - CI integration is HTTP/script based, not a full CLI.
+- Native CI mode is alpha and depends on the existing Safe QA workflow when `run_safe_qa=true`.
+- Issue export is optional and uses grouped sanitized findings only.
+- Issue export dry-run is safe by default; actual GitHub/GitLab issue creation requires an enabled config and token.
 - Comparisons and gates do not replace human review.
 - Only OpenAI-compatible chat completion providers are supported.
 - No native Anthropic, Gemini, or provider-specific SDK integrations yet.

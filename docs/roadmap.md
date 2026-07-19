@@ -229,7 +229,7 @@ Delivered:
 
 ## v0.18.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Project-scoped report baselines for Safe QA reports.
 - Default baseline management with one default baseline per project/report type.
@@ -241,7 +241,20 @@ Current alpha scope:
 - Project and reports UI baseline/regression indicators.
 - Smoke validation for unchanged baseline comparison, passing quality gate, compact CI response, UI text, and existing flows.
 
-## Phase 19: Run And Worker Hardening
+## v0.19.0-alpha
+
+Current alpha scope:
+
+- Native CI run endpoint for Safe QA regression workflows.
+- Persisted `ci_runs` summaries with status, exit code, linked Safe QA run, baseline, report URLs, comparison status, gate status, and optional issue export status.
+- CI mode that can start the existing Safe QA workflow or reuse the latest completed Safe QA report for AI-free gate evaluation.
+- `scripts/qualora-ci-run.sh` for run-and-gate pipelines and `scripts/qualora-ci-gate.sh` for existing-report gates.
+- Optional GitHub/GitLab issue export configs with encrypted tokens and no raw token API responses.
+- Dry-run issue export previews from grouped sanitized findings, with real tracker issue creation only when explicitly requested.
+- Web UI project sections for CI Run and Issue Export plus Safe QA report issue export controls.
+- Smoke validation for CI runs, both scripts, issue export config/test, dry-run issue previews, UI text, and no-secret output.
+
+## Phase 20: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -255,14 +268,14 @@ Current alpha scope:
 - Move AI-assisted test planning to an async analyzer worker.
 - Safe QA Run integration for Safe Explorer summaries if it can remain explicit and non-autonomous.
 
-## Phase 20: Deeper API Checks
+## Phase 21: Deeper API Checks
 
 - More OpenAPI validation.
 - Response body/schema checks for safe methods.
 - Configurable endpoint limits and path filters.
 - Conservative authenticated API testing design.
 
-## Phase 21: Quality Check Deepening
+## Phase 22: Quality Check Deepening
 
 - Optional axe-core integration or richer accessibility summaries.
 - Lighthouse/Core Web Vitals-style performance collection if it can stay safe and lightweight.

@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.18.0-alpha
-  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, managing deterministic report baselines, comparing reports, evaluating CI-friendly quality gates, and downloading protected stored evidence objects.
+  version: 0.19.0-alpha
+  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, managing deterministic report baselines, comparing reports, evaluating CI-friendly quality gates, orchestrating native CI runs, managing optional sanitized GitHub/GitLab issue export, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
 security:
@@ -962,7 +962,7 @@ paths:
   /api/v1/projects/{project_id}/report-baselines:
     get:
       summary: List report baselines for a project
-      description: Lists deterministic report baselines. `report_type=safe_qa` is the primary v0.18 alpha workflow.
+      description: Lists deterministic report baselines. `report_type=safe_qa` is the primary v0.19 alpha workflow.
       parameters:
         - $ref: "#/components/parameters/ProjectID"
         - name: report_type
@@ -1105,6 +1105,190 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/QualityGateResult"
                   - $ref: "#/components/schemas/CIQualityGateResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/ci-runs:
+    get:
+      summary: List CI runs for a project
+      description: Lists pipeline-friendly CI run summaries for Safe QA regression checks.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: CI runs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ci_runs]
+                properties:
+                  ci_runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CIRun"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Start a CI run
+      description: Starts or reuses a Safe QA report, compares it against a selected/default baseline, evaluates a quality gate, optionally dry-runs sanitized issue export, persists a CI run summary, and returns a deterministic exit code. When `run_safe_qa=false`, the latest completed Safe QA report is reused and AI is not required.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CIRunRequest"
+      responses:
+        "200":
+          description: Completed or running CI run response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CIRunResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/ci-runs/{ci_run_id}:
+    get:
+      summary: Get a CI run
+      parameters:
+        - $ref: "#/components/parameters/CIRunID"
+      responses:
+        "200":
+          description: CI run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CIRun"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/issue-export-configs:
+    get:
+      summary: List issue export configs for a project
+      description: Lists optional GitHub/GitLab issue export configurations. Raw tokens are never returned.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Issue export configs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [issue_export_configs]
+                properties:
+                  issue_export_configs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/IssueExportConfig"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create an issue export config
+      description: Stores an encrypted GitHub/GitLab token for optional sanitized issue export. Responses expose only `token_configured`.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueExportConfigRequest"
+      responses:
+        "201":
+          description: Created issue export config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueExportConfig"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/issue-export-configs/{issue_export_config_id}:
+    get:
+      summary: Get an issue export config
+      parameters:
+        - $ref: "#/components/parameters/IssueExportConfigID"
+      responses:
+        "200":
+          description: Issue export config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueExportConfig"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      summary: Update an issue export config
+      description: Updates tracker metadata and optionally replaces the encrypted token. Raw tokens are never returned.
+      parameters:
+        - $ref: "#/components/parameters/IssueExportConfigID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueExportConfigUpdateRequest"
+      responses:
+        "200":
+          description: Updated issue export config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueExportConfig"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete an issue export config
+      parameters:
+        - $ref: "#/components/parameters/IssueExportConfigID"
+      responses:
+        "204":
+          description: Issue export config deleted
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/issue-export-configs/{issue_export_config_id}/test:
+    post:
+      summary: Test issue export config metadata
+      description: Validates provider metadata and token presence without creating an issue or returning the token.
+      parameters:
+        - $ref: "#/components/parameters/IssueExportConfigID"
+      responses:
+        "200":
+          description: Issue export config test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueExportConfigTestResult"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/reports/{report_type}/{report_id}/export-issues:
+    post:
+      summary: Export grouped findings as tracker issues
+      description: Builds sanitized issue previews from grouped findings. Dry-run is the default; actual GitHub/GitLab issue creation requires `dry_run=false`, an enabled config, and a configured encrypted token.
+      parameters:
+        - $ref: "#/components/parameters/ReportType"
+        - $ref: "#/components/parameters/ReportID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueExportRequest"
+      responses:
+        "200":
+          description: Issue export result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueExportResult"
         "400":
           $ref: "#/components/responses/Error"
         "404":
@@ -1773,8 +1957,36 @@ components:
       schema:
         type: string
         format: uuid
+    CIRunID:
+      name: ci_run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     ReportBaselineID:
       name: baseline_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IssueExportConfigID:
+      name: issue_export_config_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ReportType:
+      name: report_type
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [safe_qa, quality_check, discovery, safe_explorer, api_smoke, browser_smoke, authorization]
+    ReportID:
+      name: report_id
       in: path
       required: true
       schema:
@@ -1824,7 +2036,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.18.0-alpha
+          example: 0.19.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -4221,6 +4433,415 @@ components:
           type: array
           items:
             type: string
+    CIRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum: [safe_qa]
+          default: safe_qa
+        use_latest_baseline:
+          type: boolean
+          default: true
+        baseline_id:
+          type: string
+          format: uuid
+          description: Optional explicit baseline. When omitted and `use_latest_baseline=true`, the default Safe QA baseline is used.
+        run_safe_qa:
+          type: boolean
+          default: true
+          description: When false, reuse the latest completed Safe QA report and evaluate comparison/gates without requiring AI.
+        use_latest_discovery:
+          type: boolean
+          default: true
+        start_url:
+          type: string
+          description: Optional Safe QA start URL override when `run_safe_qa=true`.
+        credential_profile_id:
+          type: string
+          format: uuid
+        provider_id:
+          type: string
+          format: uuid
+        max_pages:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+        max_depth:
+          type: integer
+          minimum: 0
+          maximum: 3
+          default: 1
+        max_scenarios:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 10
+        include_quality_checks:
+          type: boolean
+          default: true
+        include_safe_explorer:
+          type: boolean
+          default: false
+          description: Reserved for future CI orchestration; no autonomous browser exploration is enabled by this flag in v0.19.
+        execute_safe_plan:
+          type: boolean
+          default: true
+        gate_config:
+          $ref: "#/components/schemas/QualityGateConfig"
+        wait:
+          type: boolean
+          default: true
+        timeout_seconds:
+          type: integer
+          minimum: 30
+          maximum: 3600
+          default: 900
+        export_issues:
+          type: boolean
+          default: false
+        issue_export_config_id:
+          type: string
+          format: uuid
+        issue_export_dry_run:
+          type: boolean
+          default: true
+          description: Issue export remains preview-only unless explicitly set to false with an enabled config.
+    CIRun:
+      type: object
+      required: [id, project_id, status, exit_code, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        qa_run_id:
+          type: string
+          format: uuid
+        baseline_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [passed, failed, warning, running, error]
+        exit_code:
+          type: integer
+          enum: [0, 1]
+        gate_status:
+          type: string
+          enum: [passed, failed, warning]
+        comparison_status:
+          type: string
+          enum: [improved, regressed, unchanged, mixed, unknown]
+        report_url:
+          type: string
+        html_report_url:
+          type: string
+        issue_export_status:
+          type: string
+          enum: [dry_run, created, partial, failed]
+        summary_json:
+          type: object
+          additionalProperties: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        error_message:
+          type: string
+    CIRunResponse:
+      type: object
+      required: [ci_run_id, project_id, status, exit_code, summary, created_at]
+      properties:
+        ci_run_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [passed, failed, warning, running, error]
+        qa_run_id:
+          type: string
+          format: uuid
+        report_url:
+          type: string
+        html_report_url:
+          type: string
+        baseline_id:
+          type: string
+          format: uuid
+        comparison_summary:
+          $ref: "#/components/schemas/ReportComparisonSummary"
+        quality_gate_result:
+          $ref: "#/components/schemas/QualityGateResult"
+        issue_export_summary:
+          $ref: "#/components/schemas/IssueExportResult"
+        exit_code:
+          type: integer
+          enum: [0, 1]
+        summary:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+    IssueExportConfig:
+      type: object
+      required:
+        - id
+        - project_id
+        - provider
+        - name
+        - owner_or_namespace
+        - repository_or_project
+        - token_configured
+        - enabled
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [github, gitlab]
+        name:
+          type: string
+        base_url:
+          type: string
+          description: Optional provider API base URL for self-managed GitHub/GitLab-compatible installs.
+        owner_or_namespace:
+          type: string
+        repository_or_project:
+          type: string
+        token_configured:
+          type: boolean
+          description: Indicates that an encrypted token is stored. The raw token is never returned.
+        default_labels:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    IssueExportConfigRequest:
+      type: object
+      additionalProperties: false
+      required: [provider, name, owner_or_namespace, repository_or_project, token]
+      properties:
+        provider:
+          type: string
+          enum: [github, gitlab]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        base_url:
+          type: string
+        owner_or_namespace:
+          type: string
+          maxLength: 200
+        repository_or_project:
+          type: string
+          maxLength: 200
+        token:
+          type: string
+          format: password
+          writeOnly: true
+        default_labels:
+          type: array
+          items:
+            type: string
+            maxLength: 80
+        enabled:
+          type: boolean
+          default: true
+    IssueExportConfigUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        provider:
+          type: string
+          enum: [github, gitlab]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        base_url:
+          type: string
+        owner_or_namespace:
+          type: string
+          maxLength: 200
+        repository_or_project:
+          type: string
+          maxLength: 200
+        token:
+          type: string
+          format: password
+          writeOnly: true
+          description: Optional replacement token.
+        default_labels:
+          type: array
+          items:
+            type: string
+            maxLength: 80
+        enabled:
+          type: boolean
+    IssueExportConfigTestResult:
+      type: object
+      required: [success, provider, target]
+      properties:
+        success:
+          type: boolean
+        provider:
+          type: string
+          enum: [github, gitlab]
+        target:
+          type: string
+        error_message:
+          type: string
+    IssueExportRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        issue_export_config_id:
+          type: string
+          format: uuid
+        severity_threshold:
+          type: string
+          enum: [critical, high, medium]
+          default: high
+        include_medium:
+          type: boolean
+          default: false
+          description: Convenience flag that lowers `severity_threshold` from high to medium.
+        max_issues:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+        dry_run:
+          type: boolean
+          default: true
+        deduplicate_by_fingerprint:
+          type: boolean
+          default: true
+        labels:
+          type: array
+          items:
+            type: string
+            maxLength: 80
+        title_prefix:
+          type: string
+          default: "[Qualora]"
+    IssueExportPreview:
+      type: object
+      required: [title, body, severity, category, affected_pages_count, fingerprint]
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+          description: Sanitized issue body generated from grouped finding metadata only.
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        category:
+          type: string
+        affected_pages_count:
+          type: integer
+        representative_paths:
+          type: array
+          items:
+            type: string
+        labels:
+          type: array
+          items:
+            type: string
+        fingerprint:
+          type: string
+    IssueExportSkippedFinding:
+      type: object
+      required: [title, severity, reason]
+      properties:
+        fingerprint:
+          type: string
+        title:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        reason:
+          type: string
+          enum: [duplicate_fingerprint, below_severity_threshold, max_issues_reached]
+    IssueExportResult:
+      type: object
+      required: [dry_run, status, created_count, skipped_count, issues_to_create, skipped_findings, generated_at]
+      properties:
+        provider:
+          type: string
+          enum: [github, gitlab]
+        dry_run:
+          type: boolean
+        status:
+          type: string
+          enum: [dry_run, created, partial, failed]
+        created_count:
+          type: integer
+        skipped_count:
+          type: integer
+        issue_urls:
+          type: array
+          items:
+            type: string
+        errors:
+          type: array
+          items:
+            type: string
+        issues_to_create:
+          type: array
+          items:
+            $ref: "#/components/schemas/IssueExportPreview"
+        skipped_findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/IssueExportSkippedFinding"
+        reasons:
+          type: array
+          items:
+            type: string
+        generated_at:
+          type: string
+          format: date-time
     Finding:
       type: object
       required:

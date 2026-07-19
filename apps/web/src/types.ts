@@ -1260,6 +1260,142 @@ export type CIQualityGateResult = {
   failed_rules: string[];
 };
 
+export type CIRunInput = {
+  mode?: "safe_qa";
+  use_latest_baseline?: boolean;
+  baseline_id?: string;
+  run_safe_qa?: boolean;
+  use_latest_discovery?: boolean;
+  start_url?: string;
+  credential_profile_id?: string;
+  provider_id?: string;
+  max_pages?: number;
+  max_depth?: number;
+  max_scenarios?: number;
+  include_quality_checks?: boolean;
+  include_safe_explorer?: boolean;
+  execute_safe_plan?: boolean;
+  gate_config?: QualityGateConfig;
+  wait?: boolean;
+  timeout_seconds?: number;
+  export_issues?: boolean;
+  issue_export_config_id?: string;
+};
+
+export type CIRun = {
+  id: string;
+  project_id: string;
+  qa_run_id?: string;
+  baseline_id?: string;
+  status: "passed" | "failed" | "warning" | "running" | "error" | string;
+  exit_code: number;
+  gate_status?: string;
+  comparison_status?: string;
+  report_url?: string;
+  html_report_url?: string;
+  issue_export_status?: string;
+  summary_json?: Record<string, unknown>;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+  error_message?: string;
+};
+
+export type CIRunResponse = {
+  ci_run_id: string;
+  project_id: string;
+  status: string;
+  qa_run_id?: string;
+  report_url?: string;
+  html_report_url?: string;
+  baseline_id?: string;
+  comparison_summary?: ReportComparisonSummary;
+  quality_gate_result?: QualityGateResult;
+  issue_export_summary?: IssueExportResult;
+  exit_code: number;
+  summary: string;
+  created_at: string;
+  completed_at?: string;
+  error_message?: string;
+};
+
+export type IssueExportConfig = {
+  id: string;
+  project_id: string;
+  provider: "github" | "gitlab" | string;
+  name: string;
+  base_url?: string;
+  owner_or_namespace: string;
+  repository_or_project: string;
+  token_configured: boolean;
+  default_labels?: string[];
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IssueExportConfigInput = {
+  provider: "github" | "gitlab";
+  name: string;
+  base_url?: string;
+  owner_or_namespace: string;
+  repository_or_project: string;
+  token?: string;
+  default_labels?: string[];
+  enabled?: boolean;
+};
+
+export type IssueExportConfigTestResult = {
+  success: boolean;
+  provider: string;
+  target: string;
+  error_message?: string;
+};
+
+export type IssueExportInput = {
+  issue_export_config_id?: string;
+  severity_threshold?: "critical" | "high" | "medium";
+  include_medium?: boolean;
+  max_issues?: number;
+  dry_run?: boolean;
+  deduplicate_by_fingerprint?: boolean;
+  labels?: string[];
+  title_prefix?: string;
+};
+
+export type IssueExportPreview = {
+  title: string;
+  body: string;
+  severity: string;
+  category: string;
+  affected_pages_count: number;
+  representative_paths?: string[];
+  labels?: string[];
+  fingerprint: string;
+};
+
+export type IssueExportSkippedFinding = {
+  fingerprint?: string;
+  title: string;
+  severity: string;
+  reason: string;
+};
+
+export type IssueExportResult = {
+  provider?: string;
+  dry_run: boolean;
+  status: string;
+  created_count: number;
+  skipped_count: number;
+  issue_urls?: string[];
+  errors?: string[];
+  issues_to_create: IssueExportPreview[];
+  skipped_findings: IssueExportSkippedFinding[];
+  reasons?: string[];
+  generated_at: string;
+};
+
 export type Report = ReportIntelligenceFields & {
   run_id: string;
   project_id: string;

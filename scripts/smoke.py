@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import subprocess
 import sys
 import time
 import http.cookiejar
@@ -140,7 +141,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.18.0-alpha" not in status.get("version", ""):
+    if "0.19.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -1001,10 +1002,13 @@ def assert_quality_ui_bundle():
         "Set as baseline",
         "Compare with baseline",
         "Evaluate quality gate",
+        "CI Run",
+        "Issue Export",
+        "Export issues",
     ):
         if expected not in bundle_text:
-            raise RuntimeError(f"web UI bundle did not include expected v0.18 UI text: {expected}")
-    print("web UI bundle includes guided onboarding, report intelligence, baselines, quality gates, Quality Checks, and Safe Explorer screens")
+            raise RuntimeError(f"web UI bundle did not include expected v0.19 UI text: {expected}")
+    print("web UI bundle includes guided onboarding, report intelligence, baselines, CI runs, issue export, quality gates, Quality Checks, and Safe Explorer screens")
 
 
 def wait_for_discovery_report(run_id, label):
@@ -1403,6 +1407,168 @@ def evaluate_safe_qa_gate(project, report, baseline):
     return gate
 
 
+def run_ci_run(project, baseline):
+    ci_run = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/ci-runs",
+        {
+            "mode": "safe_qa",
+            "run_safe_qa": False,
+            "use_latest_baseline": False,
+            "baseline_id": baseline["id"],
+            "include_quality_checks": True,
+            "execute_safe_plan": False,
+            "timeout_seconds": 120,
+        },
+    )
+    print(f"CI run response: {json.dumps(ci_run, indent=2)}")
+    assert_no_demo_secret(ci_run, "CI run response")
+    if ci_run.get("status") != "passed" or int(ci_run.get("exit_code", 1)) != 0:
+        raise RuntimeError(f"CI run did not pass unchanged Safe QA comparison: {ci_run}")
+    if not ci_run.get("qa_run_id") or not ci_run.get("report_url") or not ci_run.get("html_report_url"):
+        raise RuntimeError(f"CI run missed report links: {ci_run}")
+    gate = ci_run.get("quality_gate_result") or {}
+    if gate.get("status") != "passed" or gate.get("failed_rules"):
+        raise RuntimeError(f"CI run gate was not passing: {gate}")
+    print(f"CI run detail: {API_URL}/api/v1/ci-runs/{ci_run['ci_run_id']}")
+    return ci_run
+
+
+def run_ci_gate_script(project, report, baseline):
+    env = os.environ.copy()
+    env.update(
+        {
+            "QUALORA_API_URL": API_URL,
+            "QUALORA_EMAIL": QUALORA_ADMIN_EMAIL,
+            "QUALORA_PASSWORD": QUALORA_ADMIN_PASSWORD,
+            "QUALORA_PROJECT_ID": project["id"],
+            "QUALORA_REPORT_ID": report["run"]["id"],
+            "QUALORA_BASELINE_ID": baseline["id"],
+        }
+    )
+    completed = subprocess.run(
+        ["scripts/qualora-ci-gate.sh"],
+        cwd=os.getcwd(),
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
+    print(f"qualora-ci-gate.sh stdout: {completed.stdout.strip()}")
+    if completed.stderr.strip():
+        print(f"qualora-ci-gate.sh stderr: {completed.stderr.strip()}")
+    assert_no_demo_secret(completed.stdout + completed.stderr, "qualora-ci-gate.sh output")
+    if completed.returncode != 0:
+        raise RuntimeError(f"qualora-ci-gate.sh exited {completed.returncode}")
+    parsed = json.loads(completed.stdout)
+    if parsed.get("status") != "passed" or int(parsed.get("exit_code", 1)) != 0:
+        raise RuntimeError(f"qualora-ci-gate.sh output did not pass: {parsed}")
+    return parsed
+
+
+def run_ci_run_script(project, baseline):
+    env = os.environ.copy()
+    env.update(
+        {
+            "QUALORA_URL": API_URL,
+            "QUALORA_EMAIL": QUALORA_ADMIN_EMAIL,
+            "QUALORA_PASSWORD": QUALORA_ADMIN_PASSWORD,
+            "QUALORA_PROJECT_ID": project["id"],
+            "QUALORA_BASELINE_ID": baseline["id"],
+            "QUALORA_RUN_SAFE_QA": "false",
+            "QUALORA_TIMEOUT_SECONDS": str(TIMEOUT_SECONDS),
+            "QUALORA_EXPORT_ISSUES": "false",
+        }
+    )
+    completed = subprocess.run(
+        ["scripts/qualora-ci-run.sh"],
+        cwd=os.getcwd(),
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=TIMEOUT_SECONDS + 30,
+    )
+    print(f"qualora-ci-run.sh stdout: {completed.stdout.strip()}")
+    if completed.stderr.strip():
+        print(f"qualora-ci-run.sh stderr: {completed.stderr.strip()}")
+    assert_no_demo_secret(completed.stdout + completed.stderr, "qualora-ci-run.sh output")
+    if completed.returncode != 0:
+        raise RuntimeError(f"qualora-ci-run.sh exited {completed.returncode}")
+    parsed = json.loads(completed.stdout)
+    if parsed.get("status") not in ("passed", "warning") or int(parsed.get("exit_code", 1)) != 0:
+        raise RuntimeError(f"qualora-ci-run.sh output did not pass: {parsed}")
+    if not parsed.get("report_url") or not parsed.get("html_report_url"):
+        raise RuntimeError(f"qualora-ci-run.sh output missed report links: {parsed}")
+    return parsed
+
+
+def create_issue_export_config(project):
+    config = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/issue-export-configs",
+        {
+            "provider": "github",
+            "name": "Qualora Smoke Issue Export",
+            "base_url": "https://api.github.com",
+            "owner_or_namespace": "Operalith",
+            "repository_or_project": "qualora",
+            "token": "fake-issue-token",
+            "default_labels": ["qualora", "qa"],
+            "enabled": True,
+        },
+    )
+    print(f"issue export config: {json.dumps(config, indent=2)}")
+    rendered = json.dumps(config, sort_keys=True)
+    if "fake-issue-token" in rendered or config.get("token") or config.get("token_encrypted"):
+        raise RuntimeError(f"issue export config exposed token material: {config}")
+    if not config.get("token_configured"):
+        raise RuntimeError(f"issue export config did not report token_configured: {config}")
+    configs = request("GET", f"/api/v1/projects/{project['id']}/issue-export-configs").get("issue_export_configs", [])
+    assert_no_demo_secret(configs, "issue export config list")
+    if not any(item.get("id") == config["id"] for item in configs):
+        raise RuntimeError("issue export config list missed created config")
+    test = request("POST", f"/api/v1/issue-export-configs/{config['id']}/test", {})
+    print(f"issue export config test: {json.dumps(test, indent=2)}")
+    if not test.get("success"):
+        raise RuntimeError(f"issue export config test did not pass: {test}")
+    return config
+
+
+def dry_run_issue_export(report, config):
+    result = request(
+        "POST",
+        f"/api/v1/reports/safe_qa/{report['run']['id']}/export-issues",
+        {
+            "issue_export_config_id": config["id"],
+            "severity_threshold": "high",
+            "max_issues": 5,
+            "dry_run": True,
+            "deduplicate_by_fingerprint": True,
+            "labels": ["smoke"],
+            "title_prefix": "[Qualora]",
+        },
+    )
+    print(f"issue export dry-run: {json.dumps(result, indent=2)}")
+    rendered = json.dumps(result, sort_keys=True)
+    assert_no_demo_secret(result, "issue export dry-run")
+    for forbidden in ("fake-issue-token", "qualora-admin-password", "demo-password", "Bearer fake"):
+        if forbidden in rendered:
+            raise RuntimeError(f"issue export dry-run leaked forbidden value {forbidden}")
+    if not result.get("dry_run") or result.get("status") != "dry_run":
+        raise RuntimeError(f"issue export did not stay in dry-run mode: {result}")
+    if not result.get("issues_to_create"):
+        raise RuntimeError(f"issue export dry-run did not preview high-signal grouped findings: {result}")
+    preview = result["issues_to_create"][0]
+    for key in ("title", "severity", "affected_pages_count", "fingerprint", "body"):
+        if key not in preview:
+            raise RuntimeError(f"issue preview missed {key}: {preview}")
+    if "Safety Note" not in preview.get("body", ""):
+        raise RuntimeError(f"issue preview missed safety note: {preview}")
+    return result
+
+
 def create_authorization_check(project, profile, name, target_path, expected_outcome, success_text="", denied_text="Access denied"):
     check = request(
         "POST",
@@ -1529,6 +1695,11 @@ def main():
     second_qa_report = run_safe_qa_preview(browser_project, discovery_report, provider)
     compare_safe_qa_report(browser_project, second_qa_report, safe_qa_baseline)
     evaluate_safe_qa_gate(browser_project, second_qa_report, safe_qa_baseline)
+    run_ci_run(browser_project, safe_qa_baseline)
+    run_ci_gate_script(browser_project, second_qa_report, safe_qa_baseline)
+    run_ci_run_script(browser_project, safe_qa_baseline)
+    issue_config = create_issue_export_config(browser_project)
+    dry_run_issue_export(second_qa_report, issue_config)
     execute_previewed_qa_run(qa_preview_report)
 
     role_profiles = {

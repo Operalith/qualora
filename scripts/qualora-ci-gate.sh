@@ -8,11 +8,34 @@ REPORT_TYPE="${QUALORA_REPORT_TYPE:-safe_qa}"
 BASELINE_ID="${QUALORA_BASELINE_ID:-}"
 SESSION_COOKIE="${QUALORA_SESSION_COOKIE:-}"
 CSRF_TOKEN="${QUALORA_CSRF_TOKEN:-}"
+EMAIL="${QUALORA_EMAIL:-}"
+PASSWORD="${QUALORA_PASSWORD:-}"
+COOKIE_JAR=""
+
+cleanup() {
+  if [[ -n "${COOKIE_JAR}" ]]; then
+    rm -f "${COOKIE_JAR}"
+  fi
+}
+trap cleanup EXIT
 
 if [[ -z "${PROJECT_ID}" || -z "${REPORT_ID}" ]]; then
   echo "usage: QUALORA_SESSION_COOKIE=... QUALORA_CSRF_TOKEN=... $0 <project_id> <report_id>" >&2
   echo "env: QUALORA_API_URL, QUALORA_REPORT_TYPE, QUALORA_BASELINE_ID" >&2
   exit 2
+fi
+
+if [[ -z "${SESSION_COOKIE}" && -n "${EMAIL}" && -n "${PASSWORD}" ]]; then
+  COOKIE_JAR="$(mktemp)"
+  login_payload="$(QUALORA_EMAIL_VALUE="${EMAIL}" QUALORA_PASSWORD_VALUE="${PASSWORD}" python3 - <<'PY'
+import json
+import os
+
+print(json.dumps({"email": os.environ["QUALORA_EMAIL_VALUE"], "password": os.environ["QUALORA_PASSWORD_VALUE"]}))
+PY
+)"
+  curl -fsS -c "${COOKIE_JAR}" -H "Accept: application/json" -H "Content-Type: application/json" -X POST --data "${login_payload}" "${API_URL%/}/api/v1/auth/login" >/dev/null
+  CSRF_TOKEN="$(awk '$6 == "qualora_csrf" { value=$7 } END { print value }' "${COOKIE_JAR}")"
 fi
 
 payload="$(python3 - <<PY
@@ -37,7 +60,9 @@ if [[ -n "${CSRF_TOKEN}" ]]; then
 fi
 
 cookie_args=()
-if [[ -n "${SESSION_COOKIE}" || -n "${CSRF_TOKEN}" ]]; then
+if [[ -n "${COOKIE_JAR}" ]]; then
+  cookie_args=(-b "${COOKIE_JAR}" -c "${COOKIE_JAR}")
+elif [[ -n "${SESSION_COOKIE}" || -n "${CSRF_TOKEN}" ]]; then
   cookie_args=(-b "qualora_session=${SESSION_COOKIE}; qualora_csrf=${CSRF_TOKEN}")
 fi
 
