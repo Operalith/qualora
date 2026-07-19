@@ -1,6 +1,6 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.19.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.20.0-alpha safety model is intentionally conservative.
 
 ## Scope Rule
 
@@ -33,7 +33,7 @@ The browser worker routes Playwright requests through the host policy:
 
 ## Application Discovery
 
-Application discovery in v0.19 is deterministic and safe by default. It is intended to build a lightweight application map, not to perform uncontrolled browser autonomy.
+Application discovery in v0.20 is deterministic and safe by default. It is intended to build a lightweight application map, not to perform uncontrolled browser autonomy.
 
 Discovery execution rules:
 
@@ -59,7 +59,7 @@ Discovery does not:
 
 ## Interactive Safe Explorer
 
-Interactive Safe Explorer in v0.19 is deterministic and safe by default. It is intended to demonstrate bounded, human-understandable page exploration, not autonomous browser control.
+Interactive Safe Explorer in v0.20 is deterministic and safe by default. It is intended to demonstrate bounded, human-understandable page exploration, not autonomous browser control.
 
 Safe Explorer execution rules:
 
@@ -88,7 +88,7 @@ Safe Explorer does not:
 
 ## Passive Quality Checks
 
-Quality checks in v0.19 are deterministic browser-worker observations. They are intended to surface obvious front-end quality issues, not to perform penetration testing, WCAG certification, Lighthouse audits, or exhaustive performance analysis.
+Quality checks in v0.20 are deterministic browser-worker observations. They are intended to surface obvious front-end quality issues, not to perform penetration testing, WCAG certification, Lighthouse audits, or exhaustive performance analysis.
 
 Quality execution rules:
 
@@ -113,7 +113,9 @@ Quality checks do not:
 
 ## API Request Enforcement
 
-The API worker and v0.19 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
+The API worker and v0.20 control-plane API smoke executor validate `api_base_url`, `openapi_url`, imported OpenAPI URLs, OpenAPI server URLs, and every executed OpenAPI operation URL against the same host policy.
+
+API auth profile secrets are encrypted at rest with `QUALORA_ENCRYPTION_KEY`. API responses expose configured flags and safe display hints only, never raw bearer tokens, API keys, usernames, passwords, Authorization headers, or encrypted payloads. Authenticated API smoke may inject a selected API auth profile only into safe read-only requests for the configured project API target.
 
 Default API behavior:
 
@@ -122,11 +124,13 @@ Default API behavior:
 - Safe OpenAPI methods only: `GET`, `HEAD`, and `OPTIONS`.
 - Unsafe methods such as `POST`, `PUT`, `PATCH`, and `DELETE` are skipped.
 - Imported OpenAPI specs are parsed and classified before any API requests are executed.
-- Auth-required operations are skipped in the current alpha.
+- Auth-required operations are skipped unless a user explicitly starts an authenticated API smoke run with an enabled project API auth profile.
 - Operations with required request bodies are skipped.
 - Path parameters are skipped unless a safe `example`, `default`, or `enum` value exists.
 - Required query parameters are sent only when a safe sample exists and the parameter name is not secret-like.
-- API smoke execution does not store request bodies or response bodies.
+- API smoke execution does not store request bodies, response bodies, raw Authorization headers, bearer tokens, API keys, basic auth values, cookies, or secret query values.
+- API auth material is not sent to AI providers, issue trackers, CI output, reports, or logs.
+- Contract validation is lightweight and bounded to status codes, obvious content types, JSON parseability, and simple schema checks. It is not fuzzing and does not generate payloads.
 - `destructive_actions=true` is not supported by the safe API smoke executor.
 
 ## Safe Test Plan Execution
@@ -220,7 +224,7 @@ Guided onboarding must keep these boundaries:
 
 ## Web UI Exposure
 
-The v0.19.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, discovery reports, Safe Explorer reports, authorization reports, CI runs, and issue export configs require a valid local session.
+The v0.20.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, API auth profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, discovery reports, Safe Explorer reports, authorization reports, CI runs, and issue export configs require a valid local session.
 
 Sessions use an HTTP-only `qualora_session` cookie. Mutating protected API requests must include a CSRF token from the `qualora_csrf` cookie in the `X-Qualora-CSRF` header. Health, setup status, first-run admin setup, login, logout, and session introspection endpoints are intentionally public.
 
@@ -244,13 +248,13 @@ Current safeguards:
 - AI provider responses never include raw API keys or raw extra headers.
 - Screenshot and report artifacts should be treated as sensitive.
 
-The Docker Compose default `QUALORA_ENCRYPTION_KEY` is an insecure development fallback. Set a strong value before storing real provider credentials or credential profiles. Future credential support should keep the current abstraction and add Vault, Kubernetes Secrets, or another secret manager.
+The Docker Compose default `QUALORA_ENCRYPTION_KEY` is an insecure development fallback. Set a strong value before storing real provider credentials, credential profiles, API auth profiles, or issue export tokens. Future credential support should keep the current abstraction and add Vault, Kubernetes Secrets, or another secret manager.
 
 ## AI Safety
 
 AI is disabled until a provider is configured. Qualora works without AI.
 
-The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API/login/authorization metadata, quality check summaries and safe quality result metadata, API smoke result summaries, and job metadata. Discovery reports can be sent to AI test planning only through sanitized discovery-aware inputs in v0.19; those inputs are limited to discovery summaries, page paths/titles/statuses, form/link metadata, finding summaries, and evidence metadata. Safe Explorer does not send action execution context to AI and does not allow AI action choice.
+The AI input builder sends sanitized structured report data only. By default it may include run status, summary counts, finding titles/categories/severities/summaries, safe evidence metadata, browser/API/login/authorization metadata, safe API auth summary metadata, quality check summaries and safe quality result metadata, API smoke result summaries, and job metadata. Discovery reports can be sent to AI test planning only through sanitized discovery-aware inputs in v0.20; those inputs are limited to discovery summaries, page paths/titles/statuses, form/link metadata, finding summaries, and evidence metadata. Safe Explorer does not send action execution context to AI and does not allow AI action choice.
 
 The AI input builder does not send by default:
 
@@ -272,27 +276,27 @@ Redaction is enabled by default and masks common bearer/basic auth values, API k
 
 ## Report Intelligence Safety
 
-Report intelligence in `v0.19.0-alpha` is deterministic and computed inside the control plane from already persisted finding, result, and safe evidence metadata. It normalizes severity, groups repeated findings, classifies noisy repeated signals, summarizes affected pages, and creates executive summaries without sending data to an AI provider.
+Report intelligence in `v0.20.0-alpha` is deterministic and computed inside the control plane from already persisted finding, result, and safe evidence metadata. It normalizes severity, groups repeated findings, classifies noisy repeated signals, summarizes affected pages, and creates executive summaries without sending data to an AI provider.
 
 Report intelligence must not include credentials, cookies, local storage, session storage, authorization headers, tokens, full HTML, screenshots, request bodies, response bodies, provider secrets, or encrypted secret payloads. URLs used for grouping are redacted for sensitive query names before fingerprints or report fields are produced. Raw findings remain available, so grouping must never be treated as deletion or suppression of evidence.
 
 ## Baselines, Comparisons, And Quality Gates
 
-Baselines in `v0.19.0-alpha` are deterministic report snapshots. A baseline stores grouped finding fingerprints, severity counts, grouped finding counts, raw finding counts, and source report metadata for a known project report. It must not store credentials, cookies, local/session storage, authorization headers, tokens, screenshots, full HTML, request bodies, response bodies, provider secrets, encrypted secret payloads, or raw AI prompts.
+Baselines in `v0.20.0-alpha` are deterministic report snapshots. A baseline stores grouped finding fingerprints, severity counts, grouped finding counts, raw finding counts, and source report metadata for a known project report. It must not store credentials, cookies, local/session storage, authorization headers, tokens, screenshots, full HTML, request bodies, response bodies, provider secrets, encrypted secret payloads, or raw AI prompts.
 
 Comparison is a read-only control-plane operation. It compares fingerprints from the baseline with fingerprints from the current report and classifies new, fixed, unchanged, severity-changed, and affected-scope-changed findings. It does not start a browser worker, API worker, security scan, AI call, payload, crawl, fuzzing run, or destructive action.
 
 Quality gates evaluate comparison summaries and current severity counts. They are intended as alpha CI/release signals and do not replace human review. Gate evaluation must not hide raw findings, mutate project data, send data to AI, or execute new tests.
 
-CI runs in `v0.19.0-alpha` orchestrate existing Safe QA, baseline comparison, and quality gate behavior. CI output must stay compact and sanitized. Scripts must not print `QUALORA_PASSWORD`, local admin session cookies, CSRF tokens, tracker tokens, provider secrets, credential profile secrets, cookies, browser storage, authorization headers, or raw target application credentials.
+CI runs in `v0.20.0-alpha` orchestrate existing Safe QA, baseline comparison, and quality gate behavior. CI output must stay compact and sanitized. Scripts must not print `QUALORA_PASSWORD`, local admin session cookies, CSRF tokens, tracker tokens, provider secrets, credential profile secrets, cookies, browser storage, authorization headers, or raw target application credentials.
 
-Issue export in `v0.19.0-alpha` is optional and uses grouped sanitized findings. Issue export configs store GitHub/GitLab tokens encrypted with `QUALORA_ENCRYPTION_KEY`; API/UI responses expose only `token_configured`. Issue titles and bodies must not contain credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, raw logs, provider secrets, encrypted secret payloads, or raw AI prompts. Dry-run is the default and should be used before actual tracker issue creation.
+Issue export in `v0.20.0-alpha` is optional and uses grouped sanitized findings. Issue export configs store GitHub/GitLab tokens encrypted with `QUALORA_ENCRYPTION_KEY`; API/UI responses expose only `token_configured`. Issue titles and bodies must not contain credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, raw logs, provider secrets, encrypted secret payloads, or raw AI prompts. Dry-run is the default and should be used before actual tracker issue creation.
 
-AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.19 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution, application discovery, Interactive Safe Explorer, guided login setup, report intelligence, baselines, CI runs, and issue export previews are deterministic and user-configured, not AI-generated.
+AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.20 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution, application discovery, Interactive Safe Explorer, guided login setup, report intelligence, baselines, CI runs, and issue export previews are deterministic and user-configured, not AI-generated.
 
 ## Safe QA Runs
 
-Safe QA Runs in v0.19 orchestrate discovery, AI test planning, and safe test plan execution without changing the safety boundary.
+Safe QA Runs in v0.20 orchestrate discovery, AI test planning, and safe test plan execution without changing the safety boundary.
 
 Allowed behavior:
 
@@ -320,7 +324,7 @@ Safe QA Runs must not:
 - Brute force testing.
 - Destructive payloads.
 - Broad crawling.
-- Authenticated API testing.
+- Broad, mutating, fuzzed, or autonomous authenticated API testing.
 - Schema fuzzing.
 - Autonomous AI browser control.
 - Automatic execution of generated AI test plans.

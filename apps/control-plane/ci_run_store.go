@@ -159,8 +159,8 @@ ORDER BY created_at DESC
 
 func (s *Store) GetLatestCompletedQARun(ctx context.Context, projectID string) (*QARun, error) {
 	run, err := scanQARun(s.db.QueryRow(ctx, `
-SELECT id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
-	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
+SELECT id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, api_smoke_run_id::text, test_plan_id::text,
+	test_plan_execution_id::text, credential_profile_id::text, api_auth_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 FROM qa_runs
 WHERE project_id = $1 AND status = $2

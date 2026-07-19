@@ -10,10 +10,12 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.19.0-alpha` Docker Compose MVP working.
+- Keep the `v0.20.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
+- Project-scoped encrypted API auth profiles and authenticated read-only API smoke checks.
+- Lightweight OpenAPI status, content-type, JSON, and response schema contract validation.
 - Minimal web UI support for local project/run/report workflows.
 - Browser-only smoke run support and screenshot evidence preview/download.
 - Optional OpenAI-compatible AI provider management and AI report analysis.
@@ -82,8 +84,11 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - CI runs must remain an orchestration layer over existing Safe QA, baseline comparison, and quality gate behavior; do not add new testing engines through CI mode.
 - Issue export must remain optional, grouped-finding based, sanitized, and dry-run by default. Real tracker issue creation requires an explicit enabled config, encrypted token, and `dry_run=false`.
 - API worker checks must stay safe by default: `GET`, `HEAD`, and `OPTIONS` only unless a later explicit policy supports more.
-- Imported OpenAPI API smoke runs must stay read-only: skip mutating methods, authenticated operations, required request bodies, unresolved parameters, sensitive paths/parameters, and external redirects.
+- Imported OpenAPI API smoke runs must stay read-only: skip mutating methods, required request bodies, unresolved parameters, sensitive paths/parameters, and external redirects.
+- Auth-required OpenAPI operations may run only when an enabled project API auth profile is explicitly selected for an authenticated API smoke run.
+- API auth profiles must use the existing encrypted secret abstraction and must never return raw bearer tokens, API keys, usernames, passwords, Authorization headers, encrypted payloads, or secret query values.
 - Do not store API request bodies or response bodies in the current alpha API smoke path.
+- Do not store API auth headers, raw token values, API keys, basic auth values, cookies, request bodies, or response bodies in API result rows, reports, AI inputs, CI output, or issue export previews.
 - Keep worker contracts narrow and serializable.
 - Prefer OpenAPI-first internal API design where practical.
 - Keep report schemas structured enough for future UI/API consumers.
@@ -110,7 +115,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - AI test planning must use sanitized project/run/report metadata only. Do not send screenshots, full HTML, cookies, credentials, authorization headers, raw traces, or full network bodies to AI by default.
 - Discovery-aware AI test planning must use sanitized discovery summaries only. Do not send screenshots, full HTML, cookies, credentials, authorization headers, local/session storage, tokens, request bodies, or response bodies to AI by default.
 - Safe test plan execution must skip authenticated, destructive, mutating, submit/upload/admin, exploit, SQLi, XSS, SSRF, brute-force, out-of-scope, and unsupported actions with clear reasons.
-- Safe API smoke must skip unsafe OpenAPI operations with clear reasons and must not send auth headers, cookies, tokens, request bodies, or secrets.
+- Safe API smoke must skip unsafe OpenAPI operations with clear reasons and must not send cookies, request bodies, response bodies, or secrets outside the configured allowed-host API target.
+- Authenticated API smoke may inject API auth only from a selected API auth profile into safe read-only requests and must redact auth headers/tokens everywhere else.
 - Authorization runs must never send credentials, cookies, local/session storage, auth headers, or tokens to AI or include them in evidence/reports.
 - Discovery runs must never send credentials, cookies, local/session storage, auth headers, tokens, full HTML, request bodies, or response bodies to AI or include them in metadata/report fields.
 - Quality checks must never send credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, or response bodies to AI or include them in metadata/report fields.

@@ -39,15 +39,17 @@ The smoke profile also includes:
 
 The control plane receives the same MinIO/S3 configuration as the browser worker so authenticated `GET /api/v1/evidence/{evidence_id}` requests can stream screenshot evidence without exposing MinIO credentials to the web UI.
 
-Set `QUALORA_ENCRYPTION_KEY` before storing real credential profiles or AI provider credentials. The default Compose value is intentionally insecure and only suitable for local demos.
+Set `QUALORA_ENCRYPTION_KEY` before storing real credential profiles, API auth profiles, issue export tokens, or AI provider credentials. The default Compose value is intentionally insecure and only suitable for local demos.
 
-Report intelligence in `v0.19.0-alpha` is computed inside `qualora-api` when reports are read. It adds executive summaries, severity counts, grouped findings, top findings, affected pages, noise summaries, and deduplication metadata to JSON/HTML reports without calling an AI provider.
+Authenticated API smoke in `v0.20.0-alpha` is handled by `qualora-api` for imported OpenAPI specs. It injects configured API auth only into safe read-only requests, validates hosts through the project allowlist, records sanitized auth mode and contract metadata, and never stores auth headers, tokens, API keys, request bodies, or response bodies. The smoke profile's `demo-api` service exposes bearer-token protected endpoints with the deterministic token `demo-api-token` for local verification only.
 
-Baselines, quality gates, and native CI runs in `v0.19.0-alpha` are also handled by `qualora-api`. Baselines persist grouped finding fingerprints and summary metadata in PostgreSQL; comparisons and gates are computed synchronously without starting workers or requiring AI. `scripts/qualora-ci-gate.sh` evaluates an existing report, while `scripts/qualora-ci-run.sh` starts or reuses a Safe QA workflow and returns a deterministic exit code. Both scripts can log in with `QUALORA_EMAIL` and `QUALORA_PASSWORD`.
+Report intelligence in `v0.20.0-alpha` is computed inside `qualora-api` when reports are read. It adds executive summaries, severity counts, grouped findings, top findings, affected pages, noise summaries, and deduplication metadata to JSON/HTML reports without calling an AI provider.
 
-Issue export in `v0.19.0-alpha` is optional. GitHub/GitLab tokens are encrypted with `QUALORA_ENCRYPTION_KEY`, responses expose only `token_configured`, and `POST /api/v1/reports/{report_type}/{report_id}/export-issues` defaults to dry-run previews from grouped sanitized findings.
+Baselines, quality gates, and native CI runs in `v0.20.0-alpha` are also handled by `qualora-api`. Baselines persist grouped finding fingerprints and summary metadata in PostgreSQL; comparisons and gates are computed synchronously without starting workers or requiring AI. `scripts/qualora-ci-gate.sh` evaluates an existing report, while `scripts/qualora-ci-run.sh` starts or reuses a Safe QA workflow and returns a deterministic exit code. Both scripts can log in with `QUALORA_EMAIL` and `QUALORA_PASSWORD`.
 
-Interactive Safe Explorer remains policy-gated in `v0.19.0-alpha`: it executes only safe classified same-origin navigation actions by default, records skipped unsafe/unsupported actions with reasons, and does not use AI to control the browser. It does not submit POST forms, click arbitrary buttons, run payloads, fuzz inputs, perform active scans, or perform destructive actions.
+Issue export in `v0.20.0-alpha` is optional. GitHub/GitLab tokens are encrypted with `QUALORA_ENCRYPTION_KEY`, responses expose only `token_configured`, and `POST /api/v1/reports/{report_type}/{report_id}/export-issues` defaults to dry-run previews from grouped sanitized findings.
+
+Interactive Safe Explorer remains policy-gated in `v0.20.0-alpha`: it executes only safe classified same-origin navigation actions by default, records skipped unsafe/unsupported actions with reasons, and does not use AI to control the browser. It does not submit POST forms, click arbitrary buttons, run payloads, fuzz inputs, perform active scans, or perform destructive actions.
 
 Auth-related local defaults:
 

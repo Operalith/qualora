@@ -20,6 +20,7 @@ func NormalizeQARunRequest(project Project, input QARunRequest) (QARunRequest, e
 	}
 	input.StartURL = strings.TrimSpace(input.StartURL)
 	input.CredentialProfileID = strings.TrimSpace(input.CredentialProfileID)
+	input.APIAuthProfileID = strings.TrimSpace(input.APIAuthProfileID)
 	input.UseExistingDiscoveryRunID = strings.TrimSpace(input.UseExistingDiscoveryRunID)
 	input.ProviderID = strings.TrimSpace(input.ProviderID)
 	input.ProductContext = strings.TrimSpace(sanitizeText(RedactSecrets(limitString(input.ProductContext, 4000))))
@@ -65,6 +66,22 @@ func NormalizeQARunRequest(project Project, input QARunRequest) (QARunRequest, e
 	}
 	if !*input.QualityIncludeSecurity && !*input.QualityIncludeAccessibility && !*input.QualityIncludePerformance {
 		return input, fmt.Errorf("at least one quality category must be enabled")
+	}
+	if input.IncludeAPIChecks == nil {
+		value := input.APIAuthProfileID != ""
+		input.IncludeAPIChecks = &value
+	}
+	if input.APIValidateContract == nil {
+		value := true
+		input.APIValidateContract = &value
+	}
+	if input.APIValidateSchema == nil {
+		value := true
+		input.APIValidateSchema = &value
+	}
+	if input.APIIncludeUnauthComparison == nil {
+		value := false
+		input.APIIncludeUnauthComparison = &value
 	}
 	planInput, err := NormalizeAITestPlanRequest(AITestPlanRequest{
 		FocusAreas:   input.FocusAreas,
@@ -118,6 +135,14 @@ func (a *App) executeSafeQARun(ctx context.Context, qaRunID string, project Proj
 		}
 	}
 
+	var apiSmokeRun *TestRun
+	if input.IncludeAPIChecks != nil && *input.IncludeAPIChecks {
+		apiSmokeRun, err = a.createAndWaitForQAAPISmokeRun(ctx, qaRunID, project, input)
+		if err != nil {
+			return err
+		}
+	}
+
 	if _, err := a.store.UpdateQARunStatus(ctx, qaRunID, QARunStatusGeneratingPlan); err != nil {
 		return err
 	}
@@ -149,7 +174,7 @@ func (a *App) executeSafeQARun(ctx context.Context, qaRunID string, project Proj
 	if err != nil {
 		return err
 	}
-	summary := qaRunSummary(discoveryRun, qualityRun, plan, nil, preview, input.Execute, input.MaxScenarios)
+	summary := qaRunSummary(discoveryRun, qualityRun, apiSmokeRun, plan, nil, preview, input.Execute, input.MaxScenarios)
 	if !input.Execute {
 		_, err := a.store.CompleteQARun(ctx, qaRunID, summary)
 		return err
@@ -175,7 +200,7 @@ func (a *App) executeSafeQARun(ctx context.Context, qaRunID string, project Proj
 			return err
 		}
 	}
-	summary = qaRunSummary(discoveryRun, qualityRun, plan, execution, preview, input.Execute, input.MaxScenarios)
+	summary = qaRunSummary(discoveryRun, qualityRun, apiSmokeRun, plan, execution, preview, input.Execute, input.MaxScenarios)
 	if execution.Execution.Status != StatusCompleted {
 		_, err := a.store.FailQARun(ctx, qaRunID, execution.Execution.ErrorMessage, summary)
 		return err
@@ -238,7 +263,11 @@ func (a *App) executeExistingQARun(ctx context.Context, qaRunID string) error {
 	if run.QualityCheckRunID != "" {
 		qualityRun, _ = a.store.GetQualityCheckRun(ctx, run.QualityCheckRunID)
 	}
-	summary := qaRunSummary(discoveryRun, qualityRun, plan, execution, preview, true, summaryInt(run.Summary, "max_scenarios", defaultMaxTestPlanScenarios))
+	var apiSmokeRun *TestRun
+	if run.APISmokeRunID != "" {
+		apiSmokeRun, _ = a.store.GetRun(ctx, run.APISmokeRunID)
+	}
+	summary := qaRunSummary(discoveryRun, qualityRun, apiSmokeRun, plan, execution, preview, true, summaryInt(run.Summary, "max_scenarios", defaultMaxTestPlanScenarios))
 	if execution.Execution.Status != StatusCompleted {
 		_, err := a.store.FailQARun(ctx, qaRunID, execution.Execution.ErrorMessage, summary)
 		return err
@@ -335,6 +364,53 @@ func (a *App) createAndWaitForQAQualityCheckRun(ctx context.Context, qaRunID str
 	return a.waitForQualityCheckRun(ctx, run.ID)
 }
 
+func (a *App) createAndWaitForQAAPISmokeRun(ctx context.Context, qaRunID string, project Project, input QARunRequest) (*TestRun, error) {
+	specs, err := a.store.ListAPISpecs(ctx, project.ID)
+	if err != nil {
+		return nil, err
+	}
+	var spec *APISpec
+	for index := range specs {
+		if specs[index].Status == "parsed" {
+			spec = &specs[index]
+			break
+		}
+	}
+	if spec == nil {
+		return nil, fmt.Errorf("include_api_checks requires an imported parsed OpenAPI spec")
+	}
+	request := APISmokeRunRequest{
+		APIAuthProfileID:                 input.APIAuthProfileID,
+		ValidateContract:                 input.APIValidateContract,
+		ValidateSchema:                   input.APIValidateSchema,
+		IncludeUnauthenticatedComparison: input.APIIncludeUnauthComparison,
+	}
+	if input.APIAuthProfileID != "" {
+		authenticated := true
+		request.Authenticated = &authenticated
+	}
+	request, err = NormalizeAPISmokeRunRequest(request)
+	if err != nil {
+		return nil, err
+	}
+	options, err := a.apiSmokeExecutionOptionsFromRequest(ctx, project, request)
+	if err != nil {
+		return nil, err
+	}
+	operations, err := a.store.ListAPIOperations(ctx, spec.ID)
+	if err != nil {
+		return nil, err
+	}
+	run, err := a.ExecuteAPISmokeRun(ctx, project, *spec, operations, options)
+	if err != nil {
+		return run, err
+	}
+	if _, err := a.store.AttachQARunAPISmoke(ctx, qaRunID, run.ID); err != nil {
+		return run, err
+	}
+	return run, nil
+}
+
 func (a *App) waitForDiscoveryRun(ctx context.Context, runID string) (*DiscoveryRun, error) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -399,7 +475,7 @@ func (a *App) waitForTestPlanExecution(ctx context.Context, executionID string) 
 	}
 }
 
-func qaRunSummary(discoveryRun *DiscoveryRun, qualityRun *QualityCheckRun, plan *TestPlan, execution *TestPlanExecutionDetail, preview *TestPlanExecutionPreview, execute bool, maxScenarios int) map[string]any {
+func qaRunSummary(discoveryRun *DiscoveryRun, qualityRun *QualityCheckRun, apiSmokeRun *TestRun, plan *TestPlan, execution *TestPlanExecutionDetail, preview *TestPlanExecutionPreview, execute bool, maxScenarios int) map[string]any {
 	summary := map[string]any{
 		"execute_requested":             execute,
 		"max_scenarios":                 maxScenarios,
@@ -426,6 +502,12 @@ func qaRunSummary(discoveryRun *DiscoveryRun, qualityRun *QualityCheckRun, plan 
 		summary["quality_security_enabled"] = qualityRun.IncludeSecurity
 		summary["quality_accessibility_enabled"] = qualityRun.IncludeAccessibility
 		summary["quality_performance_enabled"] = qualityRun.IncludePerformance
+	}
+	if apiSmokeRun != nil {
+		summary["api_smoke_run_id"] = apiSmokeRun.ID
+		summary["api_smoke_status"] = apiSmokeRun.Status
+		summary["api_spec_id"] = apiSmokeRun.APISpecID
+		summary["api_auth_profile_id"] = apiSmokeRun.APIAuthProfileID
 	}
 	if plan != nil {
 		summary["test_plan_id"] = plan.ID

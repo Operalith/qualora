@@ -46,6 +46,22 @@ func (a *App) createQARun(w http.ResponseWriter, r *http.Request, projectID stri
 			return
 		}
 	}
+	if normalized.APIAuthProfileID != "" {
+		profile, err := a.store.GetAPIAuthProfile(r.Context(), normalized.APIAuthProfileID)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusBadRequest, "api_auth_profile_not_found", "API auth profile was not found")
+				return
+			}
+			a.logger.Error("get API auth profile for QA run failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "get_api_auth_profile_failed", "API auth profile could not be loaded")
+			return
+		}
+		if profile.ProjectID != project.ID {
+			writeError(w, http.StatusBadRequest, "api_auth_profile_project_mismatch", "API auth profile does not belong to the project")
+			return
+		}
+	}
 	if _, err := a.providerForAnalysis(r.Context(), normalized.ProviderID); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			writeError(w, http.StatusBadRequest, "ai_provider_required", "configure an AI provider before starting a safe QA run")

@@ -1,6 +1,6 @@
 {
   "name": "@operalith/qualora-worker-api",
-  "version": "0.19.0-alpha",
+  "version": "0.20.0-alpha",
   "private": true,
   "description": "Qualora API worker for safe API and OpenAPI checks",
   "type": "commonjs",

@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.19.0-alpha
-  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, running safe read-only API smoke tests, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, managing deterministic report baselines, comparing reports, evaluating CI-friendly quality gates, orchestrating native CI runs, managing optional sanitized GitHub/GitLab issue export, and downloading protected stored evidence objects.
+  version: 0.20.0-alpha
+  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, managing encrypted API auth profiles, running safe authenticated read-only API smoke and lightweight OpenAPI contract checks, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, managing deterministic report baselines, comparing reports, evaluating CI-friendly quality gates, orchestrating native CI runs, managing optional sanitized GitHub/GitLab issue export, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
 security:
@@ -400,6 +400,118 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
         "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/api-auth-profiles:
+    get:
+      summary: List API authentication profiles for a project
+      description: Returns safe API auth profile metadata only. Raw tokens, API keys, usernames, and passwords are never returned.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: API auth profile list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [api_auth_profiles]
+                properties:
+                  api_auth_profiles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/APIAuthProfile"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create an API authentication profile
+      description: Stores project-scoped API auth material encrypted at rest. API auth secrets are not returned, logged, sent to AI, stored in reports, or exported to issue trackers.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/APIAuthProfileRequest"
+      responses:
+        "201":
+          description: Created API auth profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIAuthProfile"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/api-auth-profiles/{api_auth_profile_id}:
+    get:
+      summary: Get an API authentication profile
+      description: Returns safe metadata only. Secret values and encrypted payloads are never returned.
+      parameters:
+        - $ref: "#/components/parameters/APIAuthProfileID"
+      responses:
+        "200":
+          description: API auth profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIAuthProfile"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      summary: Update an API authentication profile
+      description: Omit secret fields to keep existing encrypted values.
+      parameters:
+        - $ref: "#/components/parameters/APIAuthProfileID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/APIAuthProfileRequest"
+      responses:
+        "200":
+          description: Updated API auth profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIAuthProfile"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete an API authentication profile
+      parameters:
+        - $ref: "#/components/parameters/APIAuthProfileID"
+      responses:
+        "204":
+          description: API auth profile deleted
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/api-auth-profiles/{api_auth_profile_id}/test:
+    post:
+      summary: Test an API authentication profile
+      description: Performs one safe GET or HEAD against the project API base URL plus an optional safe path. Auth headers are redacted in the result.
+      parameters:
+        - $ref: "#/components/parameters/APIAuthProfileID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/APIAuthProfileTestRequest"
+      responses:
+        "200":
+          description: API auth test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIAuthProfileTestResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
           $ref: "#/components/responses/Error"
   /api/v1/projects/{project_id}/authorization-checks:
     get:
@@ -962,7 +1074,7 @@ paths:
   /api/v1/projects/{project_id}/report-baselines:
     get:
       summary: List report baselines for a project
-      description: Lists deterministic report baselines. `report_type=safe_qa` is the primary v0.19 alpha workflow.
+      description: Lists deterministic report baselines. `report_type=safe_qa` is the primary deterministic regression workflow.
       parameters:
         - $ref: "#/components/parameters/ProjectID"
         - name: report_type
@@ -1431,10 +1543,16 @@ paths:
           $ref: "#/components/responses/Error"
   /api/v1/api-specs/{api_spec_id}/api-smoke-runs:
     post:
-      summary: Run safe API smoke checks
-      description: Executes only imported operations classified as safe read-only operations. Mutating, authenticated, ambiguous, and unsupported operations are skipped.
+      summary: Run safe API smoke and lightweight contract checks
+      description: Executes only imported operations classified as safe read-only operations. Authenticated runs can execute authenticated safe operations with a selected API auth profile. Mutating, ambiguous, request-body, destructive, and unsupported operations are skipped. Request/response bodies and auth headers are not stored.
       parameters:
         - $ref: "#/components/parameters/APISpecID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/APISmokeRunRequest"
       responses:
         "201":
           description: Completed API smoke run
@@ -1915,6 +2033,13 @@ components:
       schema:
         type: string
         format: uuid
+    APIAuthProfileID:
+      name: api_auth_profile_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     AuthorizationCheckID:
       name: authorization_check_id
       in: path
@@ -2036,7 +2161,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.19.0-alpha
+          example: 0.20.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -2378,6 +2503,10 @@ components:
           type: string
           format: uuid
           nullable: true
+        api_auth_profile_id:
+          type: string
+          format: uuid
+          nullable: true
         target_path:
           type: string
           example: /dashboard
@@ -2540,6 +2669,172 @@ components:
         updated_at:
           type: string
           format: date-time
+    APIAuthProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [name, type]
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        type:
+          type: string
+          enum: [bearer_token, api_key_header, api_key_query, basic_auth, none]
+        header_name:
+          type: string
+          description: Required for api_key_header. Bearer/basic auth use Authorization internally.
+        query_param_name:
+          type: string
+          description: Required for api_key_query.
+        username:
+          type: string
+          description: Required for basic_auth on create. Never returned.
+        password:
+          type: string
+          format: password
+          description: Required for basic_auth on create. Never returned.
+        token:
+          type: string
+          format: password
+          description: Required for bearer_token on create. Never returned.
+        api_key:
+          type: string
+          format: password
+          description: Required for api_key_header/api_key_query on create. Never returned.
+        enabled:
+          type: boolean
+          default: true
+    APIAuthProfile:
+      type: object
+      required:
+        - id
+        - project_id
+        - name
+        - type
+        - username_configured
+        - password_configured
+        - token_configured
+        - api_key_configured
+        - enabled
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum: [bearer_token, api_key_header, api_key_query, basic_auth, none]
+        header_name:
+          type: string
+        query_param_name:
+          type: string
+        username_display_hint:
+          type: string
+        token_display_hint:
+          type: string
+        api_key_display_hint:
+          type: string
+        username_configured:
+          type: boolean
+        password_configured:
+          type: boolean
+        token_configured:
+          type: boolean
+        api_key_configured:
+          type: boolean
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    APIAuthProfileTestRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        test_path:
+          type: string
+          description: Optional safe relative path or same-origin URL.
+          example: /public/health
+        method:
+          type: string
+          enum: [GET, HEAD]
+          default: GET
+    APIAuthProfileTestResult:
+      type: object
+      required: [success, profile_id, profile_name, auth_mode, method, url, duration_ms]
+      properties:
+        success:
+          type: boolean
+        profile_id:
+          type: string
+          format: uuid
+        profile_name:
+          type: string
+        auth_mode:
+          type: string
+        method:
+          type: string
+        url:
+          type: string
+          description: Sanitized URL only; sensitive query values are redacted.
+        http_status:
+          type: integer
+        response_content_type:
+          type: string
+        duration_ms:
+          type: integer
+        redacted_headers:
+          type: object
+          additionalProperties:
+            type: string
+        error_message:
+          type: string
+    APIAuthSummary:
+      type: object
+      required:
+        - auth_mode
+        - authenticated
+        - secrets_stored
+        - secrets_returned
+        - secrets_sent_to_ai
+        - auth_headers_stored
+      properties:
+        profile_id:
+          type: string
+          format: uuid
+        profile_name:
+          type: string
+        type:
+          type: string
+          enum: [bearer_token, api_key_header, api_key_query, basic_auth, none]
+        auth_mode:
+          type: string
+        display_hint:
+          type: string
+          description: Safe display hint only, such as a redacted token suffix.
+        authenticated:
+          type: boolean
+        secrets_stored:
+          type: string
+          example: encrypted
+        secrets_returned:
+          type: boolean
+          default: false
+        secrets_sent_to_ai:
+          type: boolean
+          default: false
+        auth_headers_stored:
+          type: boolean
+          default: false
     AuthenticatedBrowserSmokeRequest:
       type: object
       additionalProperties: false
@@ -3631,6 +3926,35 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/APIOperation"
+    APISmokeRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        api_auth_profile_id:
+          type: string
+          format: uuid
+          description: Optional project-scoped API auth profile. Secrets are injected only into safe API requests and are never returned in reports.
+        authenticated:
+          type: boolean
+          default: false
+          description: When true, execute authenticated safe operations with the selected API auth profile.
+        validate_contract:
+          type: boolean
+          default: true
+          description: Validate documented response status and content type where practical.
+        validate_schema:
+          type: boolean
+          default: true
+          description: Run bounded lightweight JSON schema checks for supported OpenAPI 3.x schemas.
+        max_operations:
+          type: integer
+          minimum: 1
+          maximum: 200
+          description: Optional cap for executed safe operations.
+        include_unauthenticated_comparison:
+          type: boolean
+          default: false
+          description: For authenticated runs, also issue an unauthenticated read-only comparison request and record sanitized status-only observations.
     APIOperation:
       type: object
       required:
@@ -3684,6 +4008,10 @@ components:
           type: array
           items:
             type: string
+        response_schemas:
+          type: object
+          additionalProperties: true
+          description: Lightweight resolved response schema metadata keyed by status and media type when extracted from OpenAPI.
         requires_authentication:
           type: boolean
           nullable: true
@@ -3719,6 +4047,20 @@ components:
           type: integer
         errored_operations:
           type: integer
+        authenticated_operations:
+          type: integer
+        unauthenticated_comparisons:
+          type: integer
+        contract_passed:
+          type: integer
+        contract_failed:
+          type: integer
+        contract_skipped:
+          type: integer
+        contract_unknown:
+          type: integer
+        schema_validation_error_count:
+          type: integer
     APICheckResult:
       type: object
       required:
@@ -3743,6 +4085,13 @@ components:
           type: string
           format: uuid
           nullable: true
+        api_auth_profile_id:
+          type: string
+          format: uuid
+          nullable: true
+        auth_mode:
+          type: string
+          enum: [none, bearer_token, api_key_header, api_key_query, basic_auth]
         method:
           type: string
         path:
@@ -3755,12 +4104,39 @@ components:
         http_status:
           type: integer
           nullable: true
+        actual_status:
+          type: integer
+          nullable: true
         duration_ms:
+          type: integer
+          nullable: true
+        response_time_ms:
           type: integer
           nullable: true
         response_content_type:
           type: string
+        actual_content_type:
+          type: string
         response_size_bytes:
+          type: integer
+          nullable: true
+        expected_statuses:
+          type: array
+          items:
+            type: string
+        expected_content_types:
+          type: array
+          items:
+            type: string
+        contract_validation_status:
+          type: string
+          enum: [passed, failed, skipped, unknown]
+        schema_validation_errors:
+          type: array
+          items:
+            type: string
+          description: Sanitized schema validation messages only. Response bodies are not stored.
+        unauthenticated_status:
           type: integer
           nullable: true
         error_message:
@@ -3837,6 +4213,10 @@ components:
         api_summary:
           allOf:
             - $ref: "#/components/schemas/APISmokeSummary"
+          nullable: true
+        api_auth:
+          allOf:
+            - $ref: "#/components/schemas/APIAuthSummary"
           nullable: true
         api_results:
           type: array
@@ -4485,7 +4865,7 @@ components:
         include_safe_explorer:
           type: boolean
           default: false
-          description: Reserved for future CI orchestration; no autonomous browser exploration is enabled by this flag in v0.19.
+          description: Reserved for future CI orchestration; no autonomous browser exploration is enabled by this flag.
         execute_safe_plan:
           type: boolean
           default: true
@@ -5799,6 +6179,10 @@ components:
           type: string
           format: uuid
           description: Optional credential profile for deterministic authenticated discovery. Credentials are never sent to AI.
+        api_auth_profile_id:
+          type: string
+          format: uuid
+          description: Optional API auth profile for Safe QA's read-only API smoke and contract validation step. API auth secrets are never sent to AI.
         max_pages:
           type: integer
           minimum: 1
@@ -5856,6 +6240,20 @@ components:
         quality_include_performance:
           type: boolean
           default: true
+        include_api_checks:
+          type: boolean
+          default: false
+          description: When true, run safe OpenAPI/API smoke and lightweight contract validation as part of the Safe QA report when a parsed API spec is available.
+        api_validate_contract:
+          type: boolean
+          default: true
+        api_validate_schema:
+          type: boolean
+          default: true
+        api_include_unauthenticated_comparison:
+          type: boolean
+          default: false
+          description: For authenticated Safe QA API checks, include sanitized status-only unauthenticated comparison observations.
     QARun:
       type: object
       required:
@@ -5887,6 +6285,10 @@ components:
           type: string
           format: uuid
           nullable: true
+        api_smoke_run_id:
+          type: string
+          format: uuid
+          nullable: true
         test_plan_id:
           type: string
           format: uuid
@@ -5896,6 +6298,10 @@ components:
           format: uuid
           nullable: true
         credential_profile_id:
+          type: string
+          format: uuid
+          nullable: true
+        api_auth_profile_id:
           type: string
           format: uuid
           nullable: true
@@ -5946,6 +6352,26 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/QualityCheckResult"
+        api_smoke_run:
+          allOf:
+            - $ref: "#/components/schemas/TestRun"
+          nullable: true
+        api_spec:
+          allOf:
+            - $ref: "#/components/schemas/APISpec"
+          nullable: true
+        api_auth:
+          allOf:
+            - $ref: "#/components/schemas/APIAuthSummary"
+          nullable: true
+        api_summary:
+          allOf:
+            - $ref: "#/components/schemas/APISmokeSummary"
+          nullable: true
+        api_results:
+          type: array
+          items:
+            $ref: "#/components/schemas/APICheckResult"
         test_plan:
           allOf:
             - $ref: "#/components/schemas/TestPlan"

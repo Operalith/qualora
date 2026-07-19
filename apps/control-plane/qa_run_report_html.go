@@ -14,6 +14,7 @@ var qaRunHTMLReportTemplate = template.Must(template.New("qa-run-report").Funcs(
 	"json":               prettyJSON,
 	"formatTime":         formatReportTime,
 	"add":                func(left int, right int) int { return left + right },
+	"intValue":           optionalIntValue,
 	"reportIntelligence": reportIntelligenceHTML,
 }).Parse(`<!doctype html>
 <html lang="en">
@@ -242,6 +243,46 @@ var qaRunHTMLReportTemplate = template.Must(template.New("qa-run-report").Funcs(
       <div class="metric"><span>Safe Steps</span><strong>{{ .ExecutableSteps }}</strong></div>
       <div class="metric"><span>Skipped Steps</span><strong>{{ .SkippedSteps }}</strong></div>
     </div>
+  </section>
+  {{ end }}
+
+  {{ if .Report.APISmokeRun }}
+  <section style="margin-bottom: 16px;">
+    <h2>Authenticated API Smoke & Contract Validation</h2>
+    {{ with .Report.APISpec }}
+    <p><strong>Spec:</strong> {{ .Name }} {{ if .ParsedVersion }}<span class="subtle">({{ .ParsedVersion }})</span>{{ end }}</p>
+    {{ end }}
+    {{ with .Report.APIAuth }}
+    <p><strong>Auth mode:</strong> <span class="status">{{ .AuthMode }}</span> {{ if .ProfileName }}<strong>Profile:</strong> {{ .ProfileName }}{{ end }}</p>
+    {{ end }}
+    {{ with .Report.APISummary }}
+    <div class="grid six">
+      <div class="metric"><span>Executed</span><strong>{{ .ExecutedOperations }}</strong></div>
+      <div class="metric"><span>Authenticated</span><strong>{{ .AuthenticatedOperations }}</strong></div>
+      <div class="metric"><span>Contract Passed</span><strong>{{ .ContractPassed }}</strong></div>
+      <div class="metric"><span>Contract Failed</span><strong>{{ .ContractFailed }}</strong></div>
+      <div class="metric"><span>Schema Errors</span><strong>{{ .SchemaValidationErrorCount }}</strong></div>
+      <div class="metric"><span>Skipped</span><strong>{{ .SkippedOperations }}</strong></div>
+    </div>
+    {{ end }}
+    <p class="subtle">API auth secrets, auth headers, request bodies, and response bodies are not stored or included in this report.</p>
+    {{ if .Report.APIResults }}
+    <table>
+      <thead><tr><th>Status</th><th>Method</th><th>Path</th><th>HTTP</th><th>Contract</th><th>Reason/Error</th></tr></thead>
+      <tbody>
+      {{ range .Report.APIResults }}
+        <tr>
+          <td><span class="status">{{ .Status }}</span></td>
+          <td><code>{{ .Method }}</code></td>
+          <td><code>{{ .Path }}</code></td>
+          <td>{{ if .HTTPStatus }}{{ intValue .HTTPStatus }}{{ else }}<span class="subtle">n/a</span>{{ end }}</td>
+          <td>{{ .ContractValidationStatus }}</td>
+          <td>{{ if .SkippedReason }}{{ .SkippedReason }}{{ else }}{{ .ErrorMessage }}{{ end }}</td>
+        </tr>
+      {{ end }}
+      </tbody>
+    </table>
+    {{ end }}
   </section>
   {{ end }}
 

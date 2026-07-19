@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.19.0-alpha.
+This document covers local development for Qualora v0.20.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, and role-aware authorization checks; imports the demo OpenAPI spec; exercises guided project setup; starts browser, login check, authenticated browser smoke, application discovery, Interactive Safe Explorer, passive quality, authorization, Safe QA, and safe API smoke runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; creates a Safe QA baseline; compares a second Safe QA report; evaluates a quality gate and CI compact response; runs the native CI run endpoint; runs `scripts/qualora-ci-gate.sh` and `scripts/qualora-ci-run.sh`; configures fake issue export metadata; dry-runs grouped finding issue export; prints JSON/HTML report, discovery map, Safe Explorer trace, API spec, credential profile, quality, authorization, test-plan, execution, Safe QA Run, CI run, project setup, and report index URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates Safe Explorer executed/skipped action reasons; validates quality finding counts; validates credential redaction; validates test-plan export; validates issue preview redaction; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, API auth profiles, and role-aware authorization checks; imports the demo OpenAPI spec; exercises guided project setup; starts browser, login check, authenticated browser smoke, application discovery, Interactive Safe Explorer, passive quality, authorization, Safe QA, unauthenticated API smoke, and authenticated API smoke plus contract validation runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; creates a Safe QA baseline; compares a second Safe QA report; evaluates a quality gate and CI compact response; runs the native CI run endpoint; runs `scripts/qualora-ci-gate.sh` and `scripts/qualora-ci-run.sh`; configures fake issue export metadata; dry-runs grouped finding issue export; prints JSON/HTML report, discovery map, Safe Explorer trace, API spec, credential profile, API auth profile, quality, authorization, test-plan, execution, Safe QA Run, CI run, project setup, and report index URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates Safe Explorer executed/skipped action reasons; validates quality finding counts; validates credential and API token redaction; validates test-plan export; validates issue preview redaction; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -165,7 +165,7 @@ When changing guided onboarding:
 
 ## AI Provider Development
 
-The v0.19 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.20 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -245,25 +245,41 @@ Safe QA Runs are an orchestration layer over discovery, AI test planning, and ap
 
 Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
 
-The v0.19 API executor:
+The v0.20 API executor:
 
 - Supports OpenAPI 3.x JSON/YAML.
 - Executes only `GET`, `HEAD`, and `OPTIONS`.
-- Skips mutating methods, auth-required operations, required request bodies, unresolved path parameters, sensitive paths, and sensitive required query parameters.
-- Sends no auth headers, cookies, request bodies, or secrets.
+- Skips mutating methods, required request bodies, unresolved path parameters, sensitive paths, and sensitive required query parameters.
+- Skips auth-required operations unless the caller explicitly selects an enabled project API auth profile.
+- Supports bearer token, API key header, API key query, basic auth, and explicit no-auth profiles.
+- Stores API auth secrets encrypted at rest using `QUALORA_ENCRYPTION_KEY`.
+- Sends auth material only to the configured allowed-host API target during safe read-only checks.
+- Sends no cookies, request bodies, or unauthenticated secrets.
 - Does not store response bodies.
+- Does not store request bodies, response bodies, raw Authorization headers, token values, API keys, or basic auth values.
 - Blocks redirects to external origins.
-- Persists `api_check_results` plus metadata-only API evidence.
+- Persists `api_check_results` plus metadata-only API evidence, including auth mode, expected/actual status, expected/actual content type, contract validation status, sanitized schema validation messages, and unauthenticated comparison status.
+- Performs lightweight contract validation for status codes, obvious content types, JSON parseability, simple required fields, scalar/object/array types, enum, nullable, and simple array item types.
+
+Relevant files:
+
+- `apps/control-plane/api_auth_profile.go`
+- `apps/control-plane/api_auth_profile_http.go`
+- `apps/control-plane/api_contract.go`
+- `apps/control-plane/api_smoke.go`
+- `apps/control-plane/migrations/017_api_auth_contract.sql`
+- `scripts/demo-api/openapi.yaml`
+- `scripts/smoke.py`
 
 ## Report Intelligence Development
 
-`v0.19.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
+`v0.20.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
 
 When adding new finding sources, provide stable categories, titles, recommendations, evidence IDs, and safe URL metadata where practical. Do not add secrets, cookies, local/session storage, auth headers, request bodies, response bodies, full HTML, or screenshot bytes to report intelligence inputs.
 
 ## Baseline And Quality Gate Development
 
-The v0.19 baseline, CI, and quality gate paths are control-plane only:
+The v0.20 baseline, CI, and quality gate paths are control-plane only:
 
 - `POST /api/v1/projects/{project_id}/report-baselines` stores normalized grouped finding fingerprints and summary metadata from a known report.
 - `GET /api/v1/projects/{project_id}/report-baselines?report_type=safe_qa` lists baselines for the project.

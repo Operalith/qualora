@@ -4,6 +4,43 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.20.0-alpha] - 2026-07-19
+
+### Added
+
+- Project-scoped API auth profiles with encrypted bearer token, API key, basic auth, and no-auth modes.
+- API auth profile CRUD and safe profile test endpoints.
+- Authenticated imported-spec API smoke runs with explicit `api_auth_profile_id`, `authenticated`, contract/schema validation, operation limit, and unauthenticated comparison options.
+- Lightweight OpenAPI response contract validation for documented status codes, obvious content types, JSON parsing, required fields, simple types, enum, nullable, and simple arrays.
+- API smoke result metadata for auth mode, expected/actual status, expected/actual content type, contract validation status, sanitized schema validation errors, response time, and unauthenticated comparison status.
+- Demo API bearer-token protected endpoints and deterministic schema mismatch fixture.
+- Web UI API Authentication card, profile create/list/test/delete actions, authenticated API smoke controls, Safe QA API-check toggles, and API report contract metadata.
+- Smoke coverage for API auth profile creation/test, authenticated API smoke, deterministic contract mismatch findings, no API token leakage, and existing browser/API/AI/CI/issue-export flows.
+- Release notes for `v0.20.0-alpha`.
+
+### Changed
+
+- Package metadata has been updated to `0.20.0-alpha`.
+- Imported OpenAPI operation parsing now retains lightweight response schema metadata.
+- Safe QA Runs can optionally include safe API smoke and contract validation when a parsed API spec is available.
+- JSON and HTML API smoke reports include sanitized API auth and contract validation summaries.
+- AI analysis input includes only safe API auth summary metadata and contract result summaries, never secrets.
+- OpenAPI documentation includes API auth profile and authenticated API smoke request/response fields.
+
+### Security
+
+- API auth secrets are encrypted with `QUALORA_ENCRYPTION_KEY` and are never returned raw by API/UI responses.
+- Auth headers, bearer tokens, API keys, basic auth values, cookies, request bodies, and response bodies are not stored in API results, reports, AI input, CI output, or issue export previews.
+- Authenticated API smoke remains read-only and can execute only safe `GET`, `HEAD`, and `OPTIONS` operations from imported OpenAPI specs.
+- Mutating, request-body, unresolved-parameter, sensitive, ambiguous, and destructive API operations remain skipped.
+
+### Known Limitations
+
+- Authenticated API testing is alpha and limited to configured API auth profiles plus safe read-only OpenAPI operations.
+- Contract validation is lightweight and not a full OpenAPI validator.
+- No request-body validation, request generation, response-body storage, fuzzing, active scanning, payload attacks, or destructive testing was added.
+- No autonomous AI browser control or AI-driven API execution was added.
+
 ## [v0.19.0-alpha] - 2026-07-19
 
 ### Added

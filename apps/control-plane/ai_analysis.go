@@ -209,6 +209,9 @@ func safeMetadata(metadata map[string]any) map[string]any {
 	if apiSummary, ok := metadata["api_summary"]; ok {
 		output["api_summary"] = sanitizeValue(apiSummary)
 	}
+	if apiAuth, ok := metadata["api_auth"]; ok {
+		output["api_auth"] = sanitizeValue(apiAuth)
+	}
 	if login, ok := metadata["login"]; ok {
 		output["login"] = sanitizeValue(login)
 	}
@@ -239,15 +242,19 @@ func safeAPIResults(results []APICheckResult) []map[string]any {
 			break
 		}
 		output = append(output, map[string]any{
-			"method":                result.Method,
-			"path":                  result.Path,
-			"status":                result.Status,
-			"http_status":           result.HTTPStatus,
-			"duration_ms":           result.DurationMS,
-			"response_content_type": result.ResponseContentType,
-			"response_size_bytes":   result.ResponseSizeBytes,
-			"error":                 firstLine(result.ErrorMessage),
-			"skipped_reason":        result.SkippedReason,
+			"method":                 result.Method,
+			"path":                   result.Path,
+			"status":                 result.Status,
+			"http_status":            result.HTTPStatus,
+			"duration_ms":            result.DurationMS,
+			"response_content_type":  result.ResponseContentType,
+			"response_size_bytes":    result.ResponseSizeBytes,
+			"auth_mode":              result.AuthMode,
+			"contract_status":        result.ContractValidationStatus,
+			"schema_errors":          len(result.SchemaValidationErrors),
+			"unauthenticated_status": result.UnauthenticatedStatus,
+			"error":                  firstLine(result.ErrorMessage),
+			"skipped_reason":         result.SkippedReason,
 		})
 	}
 	return output

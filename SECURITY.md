@@ -8,7 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
-| v0.19.0-alpha | Best-effort alpha support |
+| v0.20.0-alpha | Best-effort alpha support |
 | v0.18.0-alpha | Best-effort alpha support |
 | v0.17.0-alpha | Best-effort alpha support |
 | v0.15.0-alpha | Best-effort alpha support |
@@ -44,7 +44,7 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.19.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
+The v0.20.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
 
 Report intelligence, baseline comparison, quality gates, CI run summaries, and issue export previews are deterministic and computed from already stored findings, safe result rows, grouped finding fingerprints, and metadata. They must not include credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, provider secrets, encrypted secret payloads, or raw AI prompts. Sensitive query values are redacted before URLs are used for grouping, fingerprints, or issue content.
 
@@ -64,6 +64,8 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - AI-assisted test planning must use sanitized project/run/report metadata, with redaction enabled by default.
 - AI-generated test plans must remain reviewable suggestions and must not be executed automatically.
 - Credential profile username/password values must be encrypted at rest and never returned raw by API responses.
+- API auth profile bearer tokens, API keys, usernames, and passwords must be encrypted at rest and never returned raw by API responses.
+- Authenticated API smoke must not expose Authorization headers, API keys, basic auth values, cookies, request bodies, response bodies, or raw token material in results, reports, AI input, CI output, or issue export.
 - Local admin passwords must be hashed strongly and never returned by API responses.
 - Session tokens must be stored hashed, delivered only as HTTP-only cookies, and never logged or returned in JSON.
 - Mutating protected API requests must require CSRF validation.

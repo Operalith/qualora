@@ -83,7 +83,7 @@ func ParseOpenAPISpec(raw string, sourceURL string, apiBaseURL string) (*parsedO
 			if operation == nil {
 				continue
 			}
-			operations = append(operations, classifyOperation(pathName, method, pathItem, operation, rootSecurity, hasRootSecurity))
+			operations = append(operations, classifyOperation(pathName, method, pathItem, operation, rootSecurity, hasRootSecurity, doc))
 		}
 	}
 
@@ -116,7 +116,7 @@ func decodeOpenAPIDocument(raw string) (map[string]any, error) {
 	return normalizeMap(doc), nil
 }
 
-func classifyOperation(pathName string, method string, pathItem map[string]any, operation map[string]any, rootSecurity any, hasRootSecurity bool) APIOperation {
+func classifyOperation(pathName string, method string, pathItem map[string]any, operation map[string]any, rootSecurity any, hasRootSecurity bool, doc map[string]any) APIOperation {
 	apiOperation := APIOperation{
 		Method:               method,
 		Path:                 pathName,
@@ -126,6 +126,7 @@ func classifyOperation(pathName string, method string, pathItem map[string]any, 
 		Tags:                 stringSlice(sliceField(operation, "tags")),
 		ExpectedStatuses:     expectedStatuses(operation),
 		ExpectedContentTypes: expectedContentTypes(operation),
+		ResponseSchemas:      expectedResponseSchemas(operation, doc),
 	}
 
 	requiresAuth := operationRequiresAuthentication(operation, rootSecurity, hasRootSecurity)
@@ -137,10 +138,6 @@ func classifyOperation(pathName string, method string, pathItem map[string]any, 
 	}
 	if openAPISensitivePathPattern.MatchString(pathName) {
 		apiOperation.SkipReason = "path appears sensitive or mutation-oriented"
-		return apiOperation
-	}
-	if requiresAuth {
-		apiOperation.SkipReason = "operation declares authentication requirements"
 		return apiOperation
 	}
 	if requestBodyRequired(operation) {
@@ -155,6 +152,10 @@ func classifyOperation(pathName string, method string, pathItem map[string]any, 
 	}
 	apiOperation.ResolvedPath = resolvedPath
 	apiOperation.QueryString = queryString
+	if requiresAuth {
+		apiOperation.SkipReason = "operation declares authentication requirements"
+		return apiOperation
+	}
 	apiOperation.SafeToExecute = true
 	return apiOperation
 }
@@ -350,6 +351,81 @@ func expectedContentTypes(operation map[string]any) []string {
 	}
 	sort.Strings(contentTypes)
 	return contentTypes
+}
+
+func expectedResponseSchemas(operation map[string]any, doc map[string]any) map[string]any {
+	responses := mapField(operation, "responses")
+	out := make(map[string]any)
+	for status, rawResponse := range responses {
+		response := asMap(rawResponse)
+		if response == nil {
+			continue
+		}
+		content := mapField(response, "content")
+		if len(content) == 0 {
+			continue
+		}
+		statusSchemas := make(map[string]any)
+		for contentType, rawMedia := range content {
+			media := asMap(rawMedia)
+			schema := mapField(media, "schema")
+			if len(schema) == 0 {
+				continue
+			}
+			statusSchemas[contentType] = resolveLocalSchemaRefs(schema, doc, 0)
+		}
+		if len(statusSchemas) > 0 {
+			out[status] = statusSchemas
+		}
+	}
+	return out
+}
+
+func resolveLocalSchemaRefs(schema map[string]any, doc map[string]any, depth int) map[string]any {
+	if schema == nil || depth > 6 {
+		return map[string]any{}
+	}
+	if ref := stringField(schema, "$ref"); strings.HasPrefix(ref, "#/") {
+		if resolved := resolveJSONPointer(doc, strings.TrimPrefix(ref, "#/")); resolved != nil {
+			return resolveLocalSchemaRefs(resolved, doc, depth+1)
+		}
+	}
+	out := make(map[string]any, len(schema))
+	for key, value := range schema {
+		if key == "example" || key == "examples" || key == "description" {
+			continue
+		}
+		switch typed := value.(type) {
+		case map[string]any:
+			out[key] = resolveLocalSchemaRefs(typed, doc, depth+1)
+		case []any:
+			items := make([]any, 0, len(typed))
+			for _, item := range typed {
+				if itemMap := asMap(item); itemMap != nil {
+					items = append(items, resolveLocalSchemaRefs(itemMap, doc, depth+1))
+				} else {
+					items = append(items, normalizeValue(item))
+				}
+			}
+			out[key] = items
+		default:
+			out[key] = normalizeValue(value)
+		}
+	}
+	return out
+}
+
+func resolveJSONPointer(doc map[string]any, pointer string) map[string]any {
+	var current any = doc
+	for _, part := range strings.Split(pointer, "/") {
+		part = strings.ReplaceAll(strings.ReplaceAll(part, "~1", "/"), "~0", "~")
+		currentMap := asMap(current)
+		if currentMap == nil {
+			return nil
+		}
+		current = currentMap[part]
+	}
+	return asMap(current)
 }
 
 func resolveServerURL(server string, sourceURL string, apiBaseURL string) string {

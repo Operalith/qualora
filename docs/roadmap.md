@@ -243,7 +243,7 @@ Delivered:
 
 ## v0.19.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Native CI run endpoint for Safe QA regression workflows.
 - Persisted `ci_runs` summaries with status, exit code, linked Safe QA run, baseline, report URLs, comparison status, gate status, and optional issue export status.
@@ -253,6 +253,22 @@ Current alpha scope:
 - Dry-run issue export previews from grouped sanitized findings, with real tracker issue creation only when explicitly requested.
 - Web UI project sections for CI Run and Issue Export plus Safe QA report issue export controls.
 - Smoke validation for CI runs, both scripts, issue export config/test, dry-run issue previews, UI text, and no-secret output.
+
+## v0.20.0-alpha
+
+Current alpha scope:
+
+- Project-scoped API auth profiles for bearer tokens, API keys, basic auth, and explicit no-auth API checks.
+- Encrypted API auth secret storage using `QUALORA_ENCRYPTION_KEY`.
+- API auth profile CRUD and safe profile test endpoint with redacted headers.
+- Authenticated safe API smoke runs for imported OpenAPI specs.
+- Lightweight OpenAPI response contract validation for documented statuses, obvious content types, JSON parsing, required fields, simple types, enum, nullable, and simple arrays.
+- Optional unauthenticated status-only comparison for authenticated safe operations.
+- API smoke JSON/HTML report updates with safe auth and contract metadata.
+- Safe QA optional API smoke/contract integration when a parsed API spec is available.
+- Web UI API Authentication card, profile CRUD/test actions, and authenticated API smoke controls.
+- Demo API protected bearer-token endpoints and deterministic contract mismatch fixture.
+- Smoke validation for API auth profile creation/test, authenticated API smoke, contract mismatch findings, no token leakage, old API smoke, AI, CI, and issue export flows.
 
 ## Phase 20: Run And Worker Hardening
 
@@ -270,10 +286,10 @@ Current alpha scope:
 
 ## Phase 21: Deeper API Checks
 
-- More OpenAPI validation.
-- Response body/schema checks for safe methods.
+- More complete OpenAPI validation beyond the lightweight v0.20 checks.
+- Richer response schema coverage for safe methods without storing response bodies.
 - Configurable endpoint limits and path filters.
-- Conservative authenticated API testing design.
+- Authenticated API testing beyond simple configured profile injection, if it can remain explicit and read-only.
 
 ## Phase 22: Quality Check Deepening
 

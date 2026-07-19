@@ -19,6 +19,7 @@ BROWSER_ALLOWED_HOST = os.environ.get(
 )
 DEMO_USERNAME = os.environ.get("QUALORA_DEMO_USERNAME", "demo@example.com")
 DEMO_PASSWORD = os.environ.get("QUALORA_DEMO_PASSWORD", "demo-password")
+DEMO_API_TOKEN = os.environ.get("QUALORA_DEMO_API_TOKEN", "demo-api-token")
 ROLE_CREDENTIALS = [
     ("Qualora Demo Admin", "admin@example.com", "admin-password", "admin", "Demo Admin"),
     ("Qualora Demo Readonly", "readonly@example.com", "readonly-password", "readonly", "Demo Readonly"),
@@ -141,7 +142,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.19.0-alpha" not in status.get("version", ""):
+    if "0.20.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -203,7 +204,7 @@ def create_project(payload):
 
 def assert_no_demo_secret(value, label):
     text = value if isinstance(value, str) else json.dumps(value, sort_keys=True)
-    secrets = [DEMO_USERNAME, DEMO_PASSWORD]
+    secrets = [DEMO_USERNAME, DEMO_PASSWORD, DEMO_API_TOKEN]
     for _, username, password, _, _ in ROLE_CREDENTIALS:
         secrets.extend([username, password])
     for secret in secrets:
@@ -560,24 +561,73 @@ def import_demo_api_spec(project):
     return spec
 
 
-def run_api_smoke(spec):
-    run = request("POST", f"/api/v1/api-specs/{spec['id']}/api-smoke-runs")
+def create_api_auth_profile(project):
+    profile = request(
+        "POST",
+        f"/api/v1/projects/{project['id']}/api-auth-profiles",
+        {
+            "name": "Qualora Demo API Bearer",
+            "type": "bearer_token",
+            "token": DEMO_API_TOKEN,
+            "enabled": True,
+        },
+    )
+    print(f"API auth profile: {json.dumps(profile, indent=2)}")
+    assert_no_demo_secret(profile, "API auth profile response")
+    if profile.get("type") != "bearer_token" or not profile.get("token_configured"):
+        raise RuntimeError(f"API auth profile did not store bearer token metadata safely: {profile}")
+    if profile.get("token") or profile.get("token_encrypted"):
+        raise RuntimeError(f"API auth profile response exposed token material: {profile}")
+
+    profiles = request("GET", f"/api/v1/projects/{project['id']}/api-auth-profiles").get("api_auth_profiles", [])
+    assert_no_demo_secret(profiles, "API auth profile list")
+    if not any(item.get("id") == profile["id"] for item in profiles):
+        raise RuntimeError(f"API auth profile list missed created profile: {profiles}")
+
+    fetched = request("GET", f"/api/v1/api-auth-profiles/{profile['id']}")
+    assert_no_demo_secret(fetched, "API auth profile detail")
+    if fetched.get("id") != profile["id"] or fetched.get("project_id") != project["id"]:
+        raise RuntimeError(f"API auth profile detail did not match created profile: {fetched}")
+    return profile
+
+
+def test_api_auth_profile(profile):
+    result = request(
+        "POST",
+        f"/api/v1/api-auth-profiles/{profile['id']}/test",
+        {"method": "GET", "test_path": "/private/profile"},
+    )
+    print(f"API auth profile test: {json.dumps(result, indent=2)}")
+    assert_no_demo_secret(result, "API auth profile test")
+    if not result.get("success") or result.get("http_status") != 200:
+        raise RuntimeError(f"API auth profile test did not succeed against protected demo endpoint: {result}")
+    headers = result.get("redacted_headers") or {}
+    if headers.get("Authorization") != "[REDACTED]":
+        raise RuntimeError(f"API auth profile test did not redact Authorization header: {result}")
+    if result.get("auth_mode") != "bearer_token":
+        raise RuntimeError(f"API auth profile test had unexpected auth mode: {result}")
+    return result
+
+
+def run_api_smoke(spec, payload=None, label="API smoke", expect_authenticated=False, profile=None):
+    run = request("POST", f"/api/v1/api-specs/{spec['id']}/api-smoke-runs", payload)
     run_id = run["id"]
-    print(f"started API smoke run: {run_id}")
+    print(f"started {label} run: {run_id}")
 
     deadline = time.time() + TIMEOUT_SECONDS
     while time.time() < deadline:
         current = request("GET", f"/api/v1/runs/{run_id}")
         status = current["status"]
-        print(f"API smoke status: {status}")
+        print(f"{label} status: {status}")
         if status in ("completed", "passed", "failed", "canceled", "error"):
             break
         time.sleep(2)
     else:
-        raise RuntimeError(f"API smoke run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+        raise RuntimeError(f"{label} run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
 
     report = request("GET", f"/api/v1/runs/{run_id}/report")
-    print(f"API smoke report: {json.dumps(report, indent=2)}")
+    print(f"{label} report: {json.dumps(report, indent=2)}")
+    assert_no_demo_secret(report, f"{label} JSON report")
     if report.get("run_type") != "api_smoke":
         raise RuntimeError(f"API smoke report had unexpected run type: {report.get('run_type')}")
     if report.get("status") != "completed":
@@ -590,26 +640,63 @@ def run_api_smoke(spec):
     broken = [item for item in api_results if item.get("path") == "/broken"]
     if not broken or broken[0].get("http_status") != 500 or broken[0].get("status") != "failed":
         raise RuntimeError(f"API smoke did not record deterministic /broken failure: {broken}")
-    if not any("5xx" in item.get("title", "") for item in report.get("findings", [])):
-        raise RuntimeError("API smoke report did not include deterministic 5xx finding")
+    finding_categories = {item.get("category") for item in report.get("findings", [])}
+    if not (
+        "api_contract_unexpected_error" in finding_categories
+        or any("5xx" in item.get("title", "") for item in report.get("findings", []))
+    ):
+        raise RuntimeError(f"API smoke report did not include deterministic server error finding: {finding_categories}")
     if "deterministic_failure" in json.dumps(report):
         raise RuntimeError("API smoke report exposed response body content")
     assert_report_intelligence(report, "API smoke JSON report")
 
+    summary = report.get("api_summary") or {}
+    if expect_authenticated:
+        api_auth = report.get("api_auth") or report.get("metadata", {}).get("api_auth") or {}
+        if not api_auth.get("authenticated") or api_auth.get("auth_mode") != "bearer_token":
+            raise RuntimeError(f"authenticated API smoke report missed safe auth metadata: {api_auth}")
+        if profile and api_auth.get("profile_id") != profile["id"]:
+            raise RuntimeError(f"authenticated API smoke report referenced the wrong API auth profile: {api_auth}")
+        if int(summary.get("authenticated_operations") or 0) < 1:
+            raise RuntimeError(f"authenticated API smoke summary missed authenticated operations: {summary}")
+        if int(summary.get("unauthenticated_comparisons") or 0) < 1:
+            raise RuntimeError(f"authenticated API smoke summary missed unauthenticated comparisons: {summary}")
+        if int(summary.get("contract_failed") or 0) < 1:
+            raise RuntimeError(f"authenticated API smoke did not record contract failures: {summary}")
+        if int(summary.get("schema_validation_error_count") or 0) < 1:
+            raise RuntimeError(f"authenticated API smoke did not record schema validation errors: {summary}")
+        protected = [item for item in api_results if item.get("path") == "/private/profile"]
+        if not protected or protected[0].get("status") != "passed" or protected[0].get("auth_mode") != "bearer_token":
+            raise RuntimeError(f"authenticated API smoke did not pass protected profile endpoint: {protected}")
+        if protected[0].get("unauthenticated_status") not in (401, 403):
+            raise RuntimeError(f"authenticated API smoke did not record protected unauthenticated comparison: {protected}")
+        broken_contract = [item for item in api_results if item.get("path") == "/private/broken-contract"]
+        if not broken_contract or broken_contract[0].get("contract_validation_status") != "failed":
+            raise RuntimeError(f"authenticated API smoke did not fail the deterministic contract mismatch: {broken_contract}")
+        if not broken_contract[0].get("schema_validation_errors"):
+            raise RuntimeError(f"authenticated API smoke did not expose sanitized schema errors: {broken_contract}")
+        categories = {finding.get("category") for finding in report.get("findings", [])}
+        if "api_contract_required_field_missing" not in categories:
+            raise RuntimeError(f"authenticated API smoke missed required-field contract finding: {categories}")
+
     api_results_endpoint = request("GET", f"/api/v1/runs/{run_id}/api-results").get("api_results", [])
     if len(api_results_endpoint) != len(api_results):
         raise RuntimeError("API results endpoint did not match report results")
+    assert_no_demo_secret(api_results_endpoint, f"{label} API results endpoint")
 
     html = fetch_text(f"/api/v1/runs/{run_id}/report.html")
+    assert_no_demo_secret(html, f"{label} HTML report")
     assert_report_intelligence_html(html, "API smoke")
     if "API Smoke Results" not in html or "/broken" not in html:
         raise RuntimeError("API smoke HTML report did not include expected API result content")
     if "deterministic_failure" in html:
         raise RuntimeError("API smoke HTML report exposed response body content")
+    if expect_authenticated and ("API auth mode" not in html or "Contract" not in html):
+        raise RuntimeError("authenticated API smoke HTML report missed auth/contract metadata")
 
-    print(f"API smoke JSON report: {API_URL}/api/v1/runs/{run_id}/report")
-    print(f"API smoke HTML report: {API_URL}/api/v1/runs/{run_id}/report.html")
-    print(f"Web API smoke report: {WEB_URL}/#/runs/{run_id}")
+    print(f"{label} JSON report: {API_URL}/api/v1/runs/{run_id}/report")
+    print(f"{label} HTML report: {API_URL}/api/v1/runs/{run_id}/report.html")
+    print(f"Web {label} report: {WEB_URL}/#/runs/{run_id}")
     return report
 
 
@@ -1005,10 +1092,14 @@ def assert_quality_ui_bundle():
         "CI Run",
         "Issue Export",
         "Export issues",
+        "API Authentication",
+        "Run authenticated API smoke",
+        "Authenticated API Smoke",
+        "Contract validation",
     ):
         if expected not in bundle_text:
-            raise RuntimeError(f"web UI bundle did not include expected v0.19 UI text: {expected}")
-    print("web UI bundle includes guided onboarding, report intelligence, baselines, CI runs, issue export, quality gates, Quality Checks, and Safe Explorer screens")
+            raise RuntimeError(f"web UI bundle did not include expected v0.20 UI text: {expected}")
+    print("web UI bundle includes guided onboarding, report intelligence, baselines, CI runs, issue export, quality gates, API authentication, authenticated API smoke, Quality Checks, and Safe Explorer screens")
 
 
 def wait_for_discovery_report(run_id, label):
@@ -1553,7 +1644,7 @@ def dry_run_issue_export(report, config):
     print(f"issue export dry-run: {json.dumps(result, indent=2)}")
     rendered = json.dumps(result, sort_keys=True)
     assert_no_demo_secret(result, "issue export dry-run")
-    for forbidden in ("fake-issue-token", "qualora-admin-password", "demo-password", "Bearer fake"):
+    for forbidden in ("fake-issue-token", "qualora-admin-password", "demo-password", DEMO_API_TOKEN, "Bearer fake"):
         if forbidden in rendered:
             raise RuntimeError(f"issue export dry-run leaked forbidden value {forbidden}")
     if not result.get("dry_run") or result.get("status") != "dry_run":
@@ -1764,9 +1855,26 @@ def main():
         }
     )
     api_spec = import_demo_api_spec(api_project)
+    api_auth_profile = create_api_auth_profile(api_project)
+    test_api_auth_profile(api_auth_profile)
     api_report = run_api_smoke(api_spec)
     api_report = run_ai_analysis(api_report, provider)
-    generate_ai_test_plan(api_project, api_report, provider)
+    authenticated_api_report = run_api_smoke(
+        api_spec,
+        {
+            "api_auth_profile_id": api_auth_profile["id"],
+            "authenticated": True,
+            "validate_contract": True,
+            "validate_schema": True,
+            "max_operations": 20,
+            "include_unauthenticated_comparison": True,
+        },
+        label="authenticated API smoke",
+        expect_authenticated=True,
+        profile=api_auth_profile,
+    )
+    authenticated_api_report = run_ai_analysis(authenticated_api_report, provider)
+    generate_ai_test_plan(api_project, authenticated_api_report, provider)
 
     return 0
 

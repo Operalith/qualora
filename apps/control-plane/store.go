@@ -132,6 +132,7 @@ type RunOptions struct {
 	RunType             string
 	APISpecID           string
 	CredentialProfileID string
+	APIAuthProfileID    string
 	TargetPath          string
 	CaptureScreenshot   bool
 	MaxDurationSeconds  int
@@ -171,20 +172,22 @@ func (s *Store) CreateRunForKindsWithOptions(ctx context.Context, project Projec
 	run := &TestRun{}
 	var runAPISpecID sql.NullString
 	var credentialProfileID sql.NullString
+	var apiAuthProfileID sql.NullString
 	err = tx.QueryRow(ctx, `
 INSERT INTO test_runs (
-	id, project_id, run_type, api_spec_id, credential_profile_id, target_path,
+	id, project_id, run_type, api_spec_id, credential_profile_id, api_auth_profile_id, target_path,
 	capture_screenshot, max_duration_seconds, status
-) VALUES ($1, $2, $3, NULLIF($4, '')::uuid, NULLIF($5, '')::uuid, $6, $7, $8, $9)
-RETURNING id, project_id, run_type, api_spec_id::text, credential_profile_id::text,
+) VALUES ($1, $2, $3, NULLIF($4, '')::uuid, NULLIF($5, '')::uuid, NULLIF($6, '')::uuid, $7, $8, $9, $10)
+RETURNING id, project_id, run_type, api_spec_id::text, credential_profile_id::text, api_auth_profile_id::text,
 	target_path, capture_screenshot, max_duration_seconds, status, error_message,
 	page_title, started_at, completed_at, created_at, updated_at
-`, uuid.NewString(), project.ID, options.RunType, options.APISpecID, options.CredentialProfileID, options.TargetPath, options.CaptureScreenshot, options.MaxDurationSeconds, StatusQueued).Scan(
+`, uuid.NewString(), project.ID, options.RunType, options.APISpecID, options.CredentialProfileID, options.APIAuthProfileID, options.TargetPath, options.CaptureScreenshot, options.MaxDurationSeconds, StatusQueued).Scan(
 		&run.ID,
 		&run.ProjectID,
 		&run.RunType,
 		&runAPISpecID,
 		&credentialProfileID,
+		&apiAuthProfileID,
 		&run.TargetPath,
 		&run.CaptureScreenshot,
 		&run.MaxDurationSeconds,
@@ -204,6 +207,9 @@ RETURNING id, project_id, run_type, api_spec_id::text, credential_profile_id::te
 	}
 	if credentialProfileID.Valid {
 		run.CredentialProfileID = credentialProfileID.String
+	}
+	if apiAuthProfileID.Valid {
+		run.APIAuthProfileID = apiAuthProfileID.String
 	}
 
 	jobs := make([]RunJob, 0, len(kinds))
@@ -266,7 +272,7 @@ WHERE id = $1
 
 func (s *Store) GetRun(ctx context.Context, id string) (*TestRun, error) {
 	run, err := scanRun(s.db.QueryRow(ctx, `
-SELECT id, project_id, run_type, api_spec_id::text, credential_profile_id::text,
+SELECT id, project_id, run_type, api_spec_id::text, credential_profile_id::text, api_auth_profile_id::text,
 	target_path, capture_screenshot, max_duration_seconds, status, error_message,
 	page_title, started_at, completed_at, created_at, updated_at
 FROM test_runs
@@ -288,7 +294,7 @@ func (s *Store) ListRuns(ctx context.Context, projectID string) ([]TestRun, erro
 	)
 	if projectID == "" {
 		rows, err = s.db.Query(ctx, `
-SELECT id, project_id, run_type, api_spec_id::text, credential_profile_id::text,
+SELECT id, project_id, run_type, api_spec_id::text, credential_profile_id::text, api_auth_profile_id::text,
 	target_path, capture_screenshot, max_duration_seconds, status, error_message,
 	page_title, started_at, completed_at, created_at, updated_at
 FROM test_runs
@@ -296,7 +302,7 @@ ORDER BY created_at DESC
 `)
 	} else {
 		rows, err = s.db.Query(ctx, `
-SELECT id, project_id, run_type, api_spec_id::text, credential_profile_id::text,
+SELECT id, project_id, run_type, api_spec_id::text, credential_profile_id::text, api_auth_profile_id::text,
 	target_path, capture_screenshot, max_duration_seconds, status, error_message,
 	page_title, started_at, completed_at, created_at, updated_at
 FROM test_runs
@@ -388,6 +394,28 @@ func (s *Store) GetReport(ctx context.Context, runID string) (*Report, error) {
 		apiSummary := summarizeAPICheckResults(apiResults)
 		report.APISummary = &apiSummary
 		report.Metadata["api_summary"] = apiSummary
+	}
+	if run.APIAuthProfileID != "" {
+		profile, err := s.GetAPIAuthProfile(ctx, run.APIAuthProfileID)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		if profile != nil {
+			apiAuth := &APIAuthSummary{
+				ProfileID:         profile.ID,
+				ProfileName:       profile.Name,
+				Type:              profile.Type,
+				AuthMode:          profile.Type,
+				DisplayHint:       firstNonEmpty(profile.TokenDisplayHint, profile.APIKeyDisplayHint, profile.UsernameDisplayHint, "configured"),
+				Authenticated:     profile.Type != APIAuthProfileTypeNone,
+				SecretsStored:     "encrypted",
+				SecretsReturned:   false,
+				SecretsSentToAI:   false,
+				AuthHeadersStored: false,
+			}
+			report.APIAuth = apiAuth
+			report.Metadata["api_auth"] = apiAuth
+		}
 	}
 	if run.CredentialProfileID != "" {
 		profile, err := s.GetCredentialProfile(ctx, run.CredentialProfileID)
@@ -546,12 +574,14 @@ func scanRun(row scanRow) (TestRun, error) {
 	var run TestRun
 	var apiSpecID sql.NullString
 	var credentialProfileID sql.NullString
+	var apiAuthProfileID sql.NullString
 	if err := row.Scan(
 		&run.ID,
 		&run.ProjectID,
 		&run.RunType,
 		&apiSpecID,
 		&credentialProfileID,
+		&apiAuthProfileID,
 		&run.TargetPath,
 		&run.CaptureScreenshot,
 		&run.MaxDurationSeconds,
@@ -573,6 +603,9 @@ func scanRun(row scanRow) (TestRun, error) {
 	}
 	if credentialProfileID.Valid {
 		run.CredentialProfileID = credentialProfileID.String
+	}
+	if apiAuthProfileID.Valid {
+		run.APIAuthProfileID = apiAuthProfileID.String
 	}
 	if run.MaxDurationSeconds <= 0 {
 		run.MaxDurationSeconds = 30

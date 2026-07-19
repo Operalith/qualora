@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.19.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, native CI run orchestration, optional sanitized GitHub/GitLab issue export, safe deterministic application discovery, Interactive Safe Explorer, passive front-end quality checks, project-scoped credential profiles, deterministic selector-based login checks, authenticated browser smoke runs, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
+Qualora v0.20.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, native CI run orchestration, optional sanitized GitHub/GitLab issue export, safe deterministic application discovery, Interactive Safe Explorer, passive front-end quality checks, project-scoped credential profiles, project-scoped API auth profiles, deterministic selector-based login checks, authenticated browser smoke runs, authenticated read-only API smoke runs, lightweight OpenAPI contract validation, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,7 +10,7 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines, ci_runs, issue_export_configs
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, api_auth_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines, ci_runs, issue_export_configs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
@@ -36,6 +36,8 @@ qualora-api
         +--> Control-plane API smoke executor
                 +--> Imported OpenAPI 3.x operation discovery
                 +--> Safe GET/HEAD/OPTIONS checks only
+                +--> Encrypted API auth profile injection for configured read-only checks
+                +--> Lightweight status, content-type, JSON, and schema validation
                 +--> API check results, evidence, findings, and reports
 ```
 
@@ -47,9 +49,9 @@ The Go control plane exposes the HTTP API, validates project scope, persists met
 
 Report generation includes a deterministic intelligence layer. It normalizes finding severities, computes stable fingerprints, groups repeated findings, classifies noisy/repeated signals, summarizes affected pages, and produces executive summaries at report read/render time without changing stored finding schemas. The raw findings, evidence metadata, quality result rows, discovery maps, Safe Explorer traces, authorization results, and API result rows remain available.
 
-The v0.19 baseline layer stores grouped finding fingerprints and summary metadata from known reports in `report_baselines`. Comparisons are computed deterministically from baseline fingerprints and the current report intelligence. Quality gate evaluation uses comparison summaries and current severity counts; it does not require AI and does not execute any new testing engine.
+The v0.20 baseline layer stores grouped finding fingerprints and summary metadata from known reports in `report_baselines`. Comparisons are computed deterministically from baseline fingerprints and the current report intelligence. Quality gate evaluation uses comparison summaries and current severity counts; it does not require AI and does not execute any new testing engine.
 
-The v0.19 CI layer stores pipeline-friendly run summaries in `ci_runs`. A CI run can reuse the latest completed Safe QA report or start the existing Safe QA workflow, then compare against a selected/default baseline, evaluate a quality gate, and return a deterministic exit code. Optional issue export configs are stored in `issue_export_configs` with encrypted tracker tokens. Issue export uses grouped sanitized findings only.
+The v0.20 CI layer stores pipeline-friendly run summaries in `ci_runs`. A CI run can reuse the latest completed Safe QA report or start the existing Safe QA workflow, then compare against a selected/default baseline, evaluate a quality gate, and return a deterministic exit code. Optional issue export configs are stored in `issue_export_configs` with encrypted tracker tokens. Issue export uses grouped sanitized findings only.
 
 Current endpoints:
 
@@ -73,6 +75,12 @@ Current endpoints:
 - `PUT /api/v1/credential-profiles/{credential_profile_id}`
 - `DELETE /api/v1/credential-profiles/{credential_profile_id}`
 - `POST /api/v1/credential-profiles/{credential_profile_id}/test-login`
+- `GET /api/v1/projects/{project_id}/api-auth-profiles`
+- `POST /api/v1/projects/{project_id}/api-auth-profiles`
+- `GET /api/v1/api-auth-profiles/{api_auth_profile_id}`
+- `PUT /api/v1/api-auth-profiles/{api_auth_profile_id}`
+- `DELETE /api/v1/api-auth-profiles/{api_auth_profile_id}`
+- `POST /api/v1/api-auth-profiles/{api_auth_profile_id}/test`
 - `GET /api/v1/projects/{project_id}/authorization-checks`
 - `POST /api/v1/projects/{project_id}/authorization-checks`
 - `GET /api/v1/authorization-checks/{authorization_check_id}`
@@ -264,7 +272,7 @@ Safe by default means:
 
 - Only `GET`, `HEAD`, and `OPTIONS` operations are eligible.
 - `POST`, `PUT`, `PATCH`, `DELETE`, and `TRACE` are skipped.
-- Authenticated operations are skipped.
+- Authenticated operations are skipped unless the user explicitly selects an enabled project API auth profile for an authenticated API smoke run.
 - Operations with required request bodies are skipped.
 - Operations with unresolved path parameters are skipped unless a safe `example`, `default`, or `enum` value exists.
 - Required query parameters are sent only when a safe sample value exists.
@@ -272,7 +280,11 @@ Safe by default means:
 - Redirects to external origins are not followed.
 - Response bodies and request bodies are not stored.
 
-API smoke reports include `api_results`, `api_summary`, API findings, `api_observations`, `openapi_summary`, and per-request `api_request` evidence metadata.
+API auth profiles are project-scoped records in `api_auth_profiles`. Bearer tokens, API keys, and basic auth credentials are encrypted with the same local secret mechanism used for other encrypted Qualora secrets. API responses expose only safe metadata such as profile name, type, configured flags, and redacted display hints. Auth headers, tokens, cookies, request bodies, and response bodies are not stored in API check results, evidence metadata, reports, AI inputs, CI output, or issue export previews.
+
+Contract validation is intentionally lightweight. It checks documented status codes, obvious response content-type matches, JSON parseability for JSON responses, and simple OpenAPI response schema rules such as object/array/scalar type, required fields, nullable, enum, and simple array item types. It is not a full OpenAPI validator and does not fuzz payloads.
+
+API smoke reports include `api_results`, `api_summary`, safe `api_auth` metadata, API findings, `api_observations`, `openapi_summary`, and per-request `api_request` evidence metadata.
 
 ### `qualora-worker-api`
 
@@ -288,7 +300,7 @@ It currently captures:
 - Safe OpenAPI operation checks for `GET`, `HEAD`, and `OPTIONS`.
 - Findings for unreachable APIs, invalid OpenAPI documents, 5xx responses, unexpected status codes, obvious content type mismatches, and visible stack traces.
 
-It does not perform authenticated API checks, request body generation, schema fuzzing, or destructive methods.
+It does not perform request body generation, schema fuzzing, active scanning, or destructive methods. Authenticated API coverage in v0.20 is limited to configured API auth profiles and safe imported OpenAPI operations in the control-plane executor.
 
 This worker remains available for legacy project-level API jobs. New imported-spec API smoke runs use the control-plane executor so operation discovery and result rows are first-class API/UI concepts.
 
@@ -298,7 +310,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.19.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.20.0-alpha`.
 
 ### PostgreSQL
 
@@ -308,6 +320,7 @@ PostgreSQL stores durable metadata:
 - `user_sessions`
 - `projects`
 - `credential_profiles`
+- `api_auth_profiles`
 - `discovery_runs`
 - `discovered_pages`
 - `discovered_links`
@@ -437,17 +450,16 @@ The workflow is orchestration, not free-form autonomy. It does not give an LLM b
 - Safe test plan execution is alpha and limited to approved non-destructive browser DSL steps.
 - API smoke execution is alpha and read-only by default.
 - Credential profiles and authenticated browser smoke are alpha and intended for deterministic test accounts only.
-- Authenticated API testing is not supported.
+- Authenticated API testing is alpha and limited to configured API auth profiles plus read-only imported OpenAPI operations.
 - Request bodies and response bodies are not stored.
 - Only OpenAI-compatible chat completion providers are supported.
 - Evidence download is limited to stored evidence records and is not a signed URL system.
-- No authenticated API testing.
 - No arbitrary form submission, MFA, session export, multi-step authenticated journeys, or AI-controlled login.
 - No autonomous AI browser control.
 - No automatic execution of generated AI test plan steps and no free-form model-controlled browser actions. Safe QA execution requires an explicit user request and still runs only persisted safe DSL steps.
 - No active security scanning.
 - No destructive API testing by default.
-- No full OpenAPI schema validation or fuzzing.
+- No full OpenAPI schema validation, request-body validation, response-body storage, schema fuzzing, or payload generation.
 - No Playwright trace export yet.
 - No Kubernetes or Helm support yet.
 

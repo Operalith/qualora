@@ -117,6 +117,7 @@ export type TestRun = {
   run_type: "full" | "browser_smoke" | "api_smoke" | "login_check" | "authenticated_browser_smoke" | string;
   api_spec_id?: string;
   credential_profile_id?: string;
+  api_auth_profile_id?: string;
   target_path?: string;
   capture_screenshot?: boolean;
   max_duration_seconds?: number;
@@ -914,6 +915,7 @@ export type QARunInput = {
   mode?: "safe";
   start_url?: string;
   credential_profile_id?: string;
+  api_auth_profile_id?: string;
   max_pages?: number;
   max_depth?: number;
   max_scenarios?: number;
@@ -928,6 +930,10 @@ export type QARunInput = {
   quality_include_security?: boolean;
   quality_include_accessibility?: boolean;
   quality_include_performance?: boolean;
+  include_api_checks?: boolean;
+  api_validate_contract?: boolean;
+  api_validate_schema?: boolean;
+  api_include_unauthenticated_comparison?: boolean;
 };
 
 export type QARun = {
@@ -937,9 +943,11 @@ export type QARun = {
   mode: "safe" | string;
   discovery_run_id?: string;
   quality_check_run_id?: string;
+  api_smoke_run_id?: string;
   test_plan_id?: string;
   test_plan_execution_id?: string;
   credential_profile_id?: string;
+  api_auth_profile_id?: string;
   error_message?: string;
   summary: Record<string, unknown>;
   started_at?: string;
@@ -956,6 +964,11 @@ export type QARunReport = ReportIntelligenceFields & {
   quality_check_run?: QualityCheckRun;
   quality_summary?: QualityCheckSummary;
   quality_results?: QualityCheckResult[];
+  api_smoke_run?: TestRun;
+  api_spec?: APISpec;
+  api_auth?: APIAuthSummary;
+  api_summary?: APISmokeSummary;
+  api_results?: APICheckResult[];
   test_plan?: TestPlan;
   execution_preview?: TestPlanExecutionPreview;
   execution_report?: TestPlanExecutionReport;
@@ -1009,6 +1022,7 @@ export type APIOperation = {
   tags: string[];
   expected_statuses: string[];
   expected_content_types: string[];
+  response_schemas?: Record<string, unknown>;
   requires_authentication?: boolean;
   safe_to_execute: boolean;
   skip_reason?: string;
@@ -1021,19 +1035,38 @@ export type APISpecDetail = {
   operations?: APIOperation[];
 };
 
+export type APISmokeRunInput = {
+  api_auth_profile_id?: string;
+  authenticated?: boolean;
+  validate_contract?: boolean;
+  validate_schema?: boolean;
+  max_operations?: number;
+  include_unauthenticated_comparison?: boolean;
+};
+
 export type APICheckResult = {
   id: string;
   run_id: string;
   api_spec_id: string;
   operation_id?: string;
+  api_auth_profile_id?: string;
+  auth_mode?: string;
   method: string;
   path: string;
   resolved_url?: string;
   status: "passed" | "failed" | "skipped" | "error" | string;
   http_status?: number;
+  actual_status?: number;
   duration_ms?: number;
+  response_time_ms?: number;
   response_content_type?: string;
+  actual_content_type?: string;
   response_size_bytes?: number;
+  expected_statuses?: string[];
+  expected_content_types?: string[];
+  contract_validation_status?: string;
+  schema_validation_errors?: string[];
+  unauthenticated_status?: number;
   error_message?: string;
   skipped_reason?: string;
   created_at: string;
@@ -1046,6 +1079,76 @@ export type APISmokeSummary = {
   passed_operations: number;
   failed_operations: number;
   errored_operations: number;
+  authenticated_operations?: number;
+  unauthenticated_comparisons?: number;
+  contract_passed?: number;
+  contract_failed?: number;
+  contract_skipped?: number;
+  contract_unknown?: number;
+  schema_validation_error_count?: number;
+};
+
+export type APIAuthProfile = {
+  id: string;
+  project_id: string;
+  name: string;
+  type: "bearer_token" | "api_key_header" | "api_key_query" | "basic_auth" | "none" | string;
+  header_name?: string;
+  query_param_name?: string;
+  username_display_hint?: string;
+  token_display_hint?: string;
+  api_key_display_hint?: string;
+  username_configured: boolean;
+  password_configured: boolean;
+  token_configured: boolean;
+  api_key_configured: boolean;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type APIAuthProfileInput = {
+  name: string;
+  type: "bearer_token" | "api_key_header" | "api_key_query" | "basic_auth" | "none";
+  header_name?: string;
+  query_param_name?: string;
+  username?: string;
+  password?: string;
+  token?: string;
+  api_key?: string;
+  enabled?: boolean;
+};
+
+export type APIAuthProfileTestInput = {
+  test_path?: string;
+  method?: "GET" | "HEAD";
+};
+
+export type APIAuthProfileTestResult = {
+  success: boolean;
+  profile_id: string;
+  profile_name: string;
+  auth_mode: string;
+  method: string;
+  url: string;
+  http_status?: number;
+  response_content_type?: string;
+  duration_ms: number;
+  redacted_headers?: Record<string, string>;
+  error_message?: string;
+};
+
+export type APIAuthSummary = {
+  profile_id?: string;
+  profile_name?: string;
+  type?: string;
+  auth_mode: string;
+  display_hint?: string;
+  authenticated: boolean;
+  secrets_stored: string;
+  secrets_returned: boolean;
+  secrets_sent_to_ai: boolean;
+  auth_headers_stored: boolean;
 };
 
 export type ReportSummary = {
@@ -1414,6 +1517,7 @@ export type Report = ReportIntelligenceFields & {
   ai_analysis: AIAnalysis | null;
   test_plans: TestPlanRef[];
   api_spec?: APISpec;
+  api_auth?: APIAuthSummary;
   api_summary?: APISmokeSummary;
   api_results?: APICheckResult[];
   login_summary?: {

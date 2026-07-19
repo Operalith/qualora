@@ -81,7 +81,7 @@ func TestBuildAPIOperationFindingsForInvalidJSON(t *testing.T) {
 	if len(findings) != 1 {
 		t.Fatalf("expected one invalid JSON finding, got %#v", findings)
 	}
-	if findings[0].Title != "API endpoint returned invalid JSON" || findings[0].Severity != "medium" {
+	if findings[0].Title != "API contract JSON parse failure" || findings[0].Severity != "medium" {
 		t.Fatalf("unexpected invalid JSON finding: %#v", findings[0])
 	}
 }

@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.19.0-alpha is the nineteenth public alpha release. It adds native CI run orchestration, pipeline-friendly helper scripts, and optional sanitized GitHub/GitLab issue export while keeping local auth, browser/API smoke, credential profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, report intelligence, baselines, quality gates, AI analysis, Safe QA Runs, and approved safe plan execution intact.
+Qualora v0.20.0-alpha is the twentieth public alpha release. It adds encrypted API auth profiles, authenticated read-only API smoke runs, and lightweight OpenAPI contract validation while keeping local auth, browser/API smoke, credential profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, report intelligence, baselines, quality gates, CI runs, issue export, AI analysis, Safe QA Runs, and approved safe plan execution intact.
 
 ## Pre-Release Checklist
 
@@ -24,7 +24,7 @@ Confirm:
 - The web UI is reachable at `http://localhost:3000`.
 - A fresh database requires first-run admin setup before project data is visible.
 - Setup, login, logout, `/auth/me`, CSRF, and protected route checks pass.
-- The dashboard shows the `v0.19.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
+- The dashboard shows the `v0.20.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
 - The guided setup route `#/setup-project` renders the project basics, AI, login, OpenAPI, workflow, and results steps.
 - `POST /api/v1/onboarding/project-setup` can create a project, optionally configure a demo AI provider, optionally create a credential profile, optionally import a demo OpenAPI spec, and start selected safe checks.
 - The guided demo flow starts browser smoke, authenticated browser smoke, discovery, quality checks, Safe QA, and API smoke when all demo dependencies are configured.
@@ -56,18 +56,23 @@ Confirm:
 - Existing discovery JSON/HTML reports and application maps still work.
 - Existing quality check JSON/HTML reports still work and remain passive metadata checks.
 - Existing API smoke reports still include `api_observations`, `openapi_summary`, `api_request`, `api_summary`, and `api_results`.
+- API auth profiles can be created, listed, read, updated, deleted, and tested without returning bearer tokens, API keys, basic auth credentials, Authorization headers, or encrypted payloads.
+- The demo API bearer profile using `demo-api-token` succeeds against `/private/profile`.
+- Authenticated API smoke executes safe protected `GET` operations from the imported demo OpenAPI spec and records `api_auth`, `authenticated_operations`, and unauthenticated comparison status.
+- Lightweight contract validation records the deterministic `/private/broken-contract` required-field mismatch without storing response bodies.
+- Authenticated API smoke JSON reports, HTML reports, API result rows, AI analysis inputs/results, CI output, and issue export dry-run previews do not contain `demo-api-token`.
 - Existing AI analysis, AI test planning, discovery-aware planning, safe plan preview/execution, and Safe QA Run flows still work.
-- Documentation does not claim unsupported multi-user management, password reset, SSO/OIDC/SAML, enterprise RBAC, multi-tenancy, authenticated API testing, arbitrary login automation, active security scanning, destructive API testing, schema fuzzing, trace export, autonomous AI browser control, automatic/free-form execution of generated test plans, native Anthropic/Gemini support, or full browser/API test coverage.
+- Documentation does not claim unsupported multi-user management, password reset, SSO/OIDC/SAML, enterprise RBAC, multi-tenancy, destructive API testing, full OpenAPI validation, schema fuzzing, trace export, autonomous AI browser control, automatic/free-form execution of generated test plans, native Anthropic/Gemini support, or full browser/API test coverage.
 
 ## Tagging
 
 ```bash
 git status --short
 git add .
-git commit -m "feat: add CI mode and issue export for v0.19.0-alpha"
-git tag -a v0.19.0-alpha -m "v0.19.0-alpha"
+git commit -m "feat: add authenticated API contract testing for v0.20.0-alpha"
+git tag -a v0.20.0-alpha -m "v0.20.0-alpha"
 git push origin main
-git push origin v0.19.0-alpha
+git push origin v0.20.0-alpha
 ```
 
 ## GitHub Release
@@ -75,7 +80,7 @@ git push origin v0.19.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.19.0-alpha
+Qualora v0.20.0-alpha
 ```
 
-Use [release-notes/v0.19.0-alpha.md](release-notes/v0.19.0-alpha.md) as the release body.
+Use [release-notes/v0.20.0-alpha.md](release-notes/v0.20.0-alpha.md) as the release body.

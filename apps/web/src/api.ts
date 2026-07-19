@@ -1,10 +1,15 @@
 import type {
   AIAnalysis,
   APICheckResult,
+  APIAuthProfile,
+  APIAuthProfileInput,
+  APIAuthProfileTestInput,
+  APIAuthProfileTestResult,
   APIOperation,
   APISpec,
   APISpecDetail,
   APISpecImportInput,
+  APISmokeRunInput,
   AIProvider,
   AIProviderInput,
   AIProviderTestResult,
@@ -221,6 +226,38 @@ export async function deleteCredentialProfile(profileID: string): Promise<void> 
 export async function testCredentialProfileLogin(profileID: string): Promise<TestRun> {
   return request<TestRun>(`/api/v1/credential-profiles/${profileID}/test-login`, {
     method: "POST"
+  });
+}
+
+export async function listAPIAuthProfiles(projectID: string): Promise<APIAuthProfile[]> {
+  const response = await request<{ api_auth_profiles: APIAuthProfile[] }>(`/api/v1/projects/${projectID}/api-auth-profiles`);
+  return response.api_auth_profiles;
+}
+
+export async function createAPIAuthProfile(projectID: string, input: APIAuthProfileInput): Promise<APIAuthProfile> {
+  return request<APIAuthProfile>(`/api/v1/projects/${projectID}/api-auth-profiles`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function updateAPIAuthProfile(profileID: string, input: APIAuthProfileInput): Promise<APIAuthProfile> {
+  return request<APIAuthProfile>(`/api/v1/api-auth-profiles/${profileID}`, {
+    method: "PUT",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function deleteAPIAuthProfile(profileID: string): Promise<void> {
+  await request<void>(`/api/v1/api-auth-profiles/${profileID}`, {
+    method: "DELETE"
+  });
+}
+
+export async function testAPIAuthProfile(profileID: string, input: APIAuthProfileTestInput): Promise<APIAuthProfileTestResult> {
+  return request<APIAuthProfileTestResult>(`/api/v1/api-auth-profiles/${profileID}/test`, {
+    method: "POST",
+    body: JSON.stringify(input)
   });
 }
 
@@ -481,9 +518,10 @@ export async function deleteAPISpec(apiSpecID: string): Promise<void> {
   });
 }
 
-export async function startAPISmokeRun(apiSpecID: string): Promise<TestRun> {
+export async function startAPISmokeRun(apiSpecID: string, input: APISmokeRunInput = {}): Promise<TestRun> {
   return request<TestRun>(`/api/v1/api-specs/${apiSpecID}/api-smoke-runs`, {
-    method: "POST"
+    method: "POST",
+    body: JSON.stringify(input)
   });
 }
 

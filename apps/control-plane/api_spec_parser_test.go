@@ -56,11 +56,58 @@ func TestParseOpenAPISpecDiscoversSafeAndSkippedOperations(t *testing.T) {
 	if byMethodPath["DELETE /users/{id}"].SafeToExecute || !strings.Contains(byMethodPath["DELETE /users/{id}"].SkipReason, "read-only") {
 		t.Fatalf("DELETE should be skipped as unsafe: %#v", byMethodPath["DELETE /users/{id}"])
 	}
-	if byMethodPath["GET /profile"].SafeToExecute || !strings.Contains(byMethodPath["GET /profile"].SkipReason, "authentication") {
+	if byMethodPath["GET /profile"].SafeToExecute || !strings.Contains(byMethodPath["GET /profile"].SkipReason, "authentication") || byMethodPath["GET /profile"].ResolvedPath != "/profile" {
 		t.Fatalf("auth-required GET should be skipped: %#v", byMethodPath["GET /profile"])
 	}
 	if byMethodPath["POST /items"].SafeToExecute || !strings.Contains(byMethodPath["POST /items"].SkipReason, "read-only") {
 		t.Fatalf("POST should be skipped as unsafe: %#v", byMethodPath["POST /items"])
+	}
+}
+
+func TestParseOpenAPISpecStoresSimpleResponseSchemas(t *testing.T) {
+	raw := `{
+		"openapi": "3.0.3",
+		"info": {"title": "Schema API", "version": "1.0.0"},
+		"components": {
+			"schemas": {
+				"Profile": {
+					"type": "object",
+					"required": ["id", "email"],
+					"properties": {
+						"id": {"type": "string"},
+						"email": {"type": "string"}
+					}
+				}
+			}
+		},
+		"paths": {
+			"/profile": {
+				"get": {
+					"responses": {
+						"200": {
+							"description": "ok",
+							"content": {
+								"application/json": {
+									"schema": {"$ref": "#/components/schemas/Profile"}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`
+	parsed, err := ParseOpenAPISpec(raw, "", "")
+	if err != nil {
+		t.Fatalf("ParseOpenAPISpec returned error: %v", err)
+	}
+	if len(parsed.Operations) != 1 {
+		t.Fatalf("expected one operation, got %d", len(parsed.Operations))
+	}
+	schemaByStatus := asMap(parsed.Operations[0].ResponseSchemas["200"])
+	schema := asMap(schemaByStatus["application/json"])
+	if schemaPrimaryType(schema) != "object" || len(stringSlice(sliceField(schema, "required"))) != 2 {
+		t.Fatalf("expected resolved object schema, got %#v", parsed.Operations[0].ResponseSchemas)
 	}
 }
 

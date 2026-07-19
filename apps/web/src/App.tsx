@@ -4,6 +4,7 @@ import {
   API_BASE_URL,
   authorizationCheckHTMLReportURL,
   compareReport,
+  createAPIAuthProfile,
   createAuthorizationCheck,
   createCredentialProfile,
   createAIProvider,
@@ -11,6 +12,7 @@ import {
   createProject,
   createReportBaseline,
   deleteAIProvider,
+  deleteAPIAuthProfile,
   deleteAuthorizationCheck,
   deleteAPISpec,
   deleteCredentialProfile,
@@ -37,6 +39,7 @@ import {
   getTestPlanExecutionReport,
   htmlReportURL,
   importAPISpec,
+  listAPIAuthProfiles,
   listAIProviders,
   listAuthorizationCheckRuns,
   listAuthorizationChecks,
@@ -73,12 +76,14 @@ import {
   startQualityCheckRun,
   startSafeExplorerRun,
   startRun,
+  testAPIAuthProfile,
   testCredentialProfileLogin,
   testIssueExportConfig,
   testPlanExportURL,
   testPlanExecutionHTMLReportURL,
   testAIProvider,
   updateAuthorizationCheck,
+  updateAPIAuthProfile,
   updateCredentialProfile,
   updateIssueExportConfig,
   updateAIProvider
@@ -86,6 +91,8 @@ import {
 import type {
   AIAnalysis,
   APICheckResult,
+  APIAuthProfile,
+  APIAuthProfileInput,
   APIOperation,
   APISpec,
   APISpecDetail,
@@ -181,7 +188,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.19.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.20.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -597,7 +604,7 @@ function Dashboard({
             <h2>Qualora version badge: {formatVersionBadge(version)}</h2>
             <p>Configure a real project, optional AI, optional login, optional OpenAPI, and start the first safe workflow.</p>
           </div>
-          <span className="pill">v0.19 CI & issue export</span>
+          <span className="pill">Qualora v0.20.0-alpha</span>
         </div>
         <div className="quick-grid">
           <a className="quick-card" href="#/setup-project">
@@ -1771,6 +1778,7 @@ function ProjectPage({
   const [providers, setProviders] = useState<AIProvider[]>([]);
   const [testPlans, setTestPlans] = useState<LoadState<TestPlan[]>>({ data: [], loading: true, error: "" });
   const [apiSpecs, setAPISpecs] = useState<LoadState<APISpec[]>>({ data: [], loading: true, error: "" });
+  const [apiAuthProfiles, setAPIAuthProfiles] = useState<LoadState<APIAuthProfile[]>>({ data: [], loading: true, error: "" });
   const [credentialProfiles, setCredentialProfiles] = useState<LoadState<CredentialProfile[]>>({ data: [], loading: true, error: "" });
   const [authorizationChecks, setAuthorizationChecks] = useState<LoadState<AuthorizationCheck[]>>({ data: [], loading: true, error: "" });
   const [authorizationRuns, setAuthorizationRuns] = useState<LoadState<AuthorizationCheckRun[]>>({ data: [], loading: true, error: "" });
@@ -1788,6 +1796,7 @@ function ProjectPage({
     setRuns((current) => ({ ...current, loading: true, error: "" }));
     setTestPlans((current) => ({ ...current, loading: true, error: "" }));
     setAPISpecs((current) => ({ ...current, loading: true, error: "" }));
+    setAPIAuthProfiles((current) => ({ ...current, loading: true, error: "" }));
     setCredentialProfiles((current) => ({ ...current, loading: true, error: "" }));
     setAuthorizationChecks((current) => ({ ...current, loading: true, error: "" }));
     setAuthorizationRuns((current) => ({ ...current, loading: true, error: "" }));
@@ -1806,6 +1815,7 @@ function ProjectPage({
         nextProviders,
         nextTestPlans,
         nextAPISpecs,
+        nextAPIAuthProfiles,
         nextCredentialProfiles,
         nextAuthorizationChecks,
         nextAuthorizationRuns,
@@ -1822,6 +1832,7 @@ function ProjectPage({
         listAIProviders(),
         listTestPlans(projectID),
         listAPISpecs(projectID),
+        listAPIAuthProfiles(projectID),
         listCredentialProfiles(projectID),
         listAuthorizationChecks(projectID),
         listAuthorizationCheckRuns(projectID),
@@ -1838,6 +1849,7 @@ function ProjectPage({
       setProviders(nextProviders);
       setTestPlans({ data: nextTestPlans, loading: false, error: "" });
       setAPISpecs({ data: nextAPISpecs, loading: false, error: "" });
+      setAPIAuthProfiles({ data: nextAPIAuthProfiles, loading: false, error: "" });
       setCredentialProfiles({ data: nextCredentialProfiles, loading: false, error: "" });
       setAuthorizationChecks({ data: nextAuthorizationChecks, loading: false, error: "" });
       setAuthorizationRuns({ data: nextAuthorizationRuns, loading: false, error: "" });
@@ -1854,6 +1866,7 @@ function ProjectPage({
       setRuns((current) => ({ ...current, loading: false, error: message }));
       setTestPlans((current) => ({ ...current, loading: false, error: message }));
       setAPISpecs((current) => ({ ...current, loading: false, error: message }));
+      setAPIAuthProfiles((current) => ({ ...current, loading: false, error: message }));
       setCredentialProfiles((current) => ({ ...current, loading: false, error: message }));
       setAuthorizationChecks((current) => ({ ...current, loading: false, error: message }));
       setAuthorizationRuns((current) => ({ ...current, loading: false, error: message }));
@@ -2149,6 +2162,8 @@ function ProjectPage({
           project={project}
           providers={providers}
           profiles={credentialProfiles.data}
+          apiAuthProfiles={apiAuthProfiles.data}
+          apiSpecs={apiSpecs.data}
           discoveryRuns={discoveryRuns.data}
           disabled={starting !== ""}
           onStart={(input) => void startSafeQARun(input)}
@@ -2309,6 +2324,31 @@ function ProjectPage({
         <div className="section-split">
           {apiSpecs.error && <Notice tone="danger" message={apiSpecs.error} />}
           {apiSpecs.loading ? <SkeletonRows /> : <APISpecTable specs={apiSpecs.data} onDeleted={() => void refresh()} />}
+        </div>
+      </section>
+
+      <section id="api-authentication">
+        <div className="section-heading">
+          <div>
+            <h2>API Authentication</h2>
+            <p>Project-scoped encrypted profiles for authenticated read-only API checks.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="API secrets are encrypted and never sent to AI. Only safe read-only operations are executed by default."
+        />
+        <APIAuthProfileForm project={project} onSaved={() => void refresh()} />
+        <div className="section-split">
+          {apiAuthProfiles.error && <Notice tone="danger" message={apiAuthProfiles.error} />}
+          {apiAuthProfiles.loading ? (
+            <SkeletonRows />
+          ) : (
+            <APIAuthProfileTable profiles={apiAuthProfiles.data} onChanged={() => void refresh()} />
+          )}
         </div>
       </section>
 
@@ -3157,6 +3197,8 @@ function QARunForm({
   project,
   providers,
   profiles,
+  apiAuthProfiles,
+  apiSpecs,
   discoveryRuns,
   disabled,
   onStart
@@ -3164,6 +3206,8 @@ function QARunForm({
   project: Project;
   providers: AIProvider[];
   profiles: CredentialProfile[];
+  apiAuthProfiles: APIAuthProfile[];
+  apiSpecs: APISpec[];
   discoveryRuns: DiscoveryRun[];
   disabled: boolean;
   onStart: (input: QARunInput) => void;
@@ -3182,6 +3226,11 @@ function QARunForm({
   const [qualityIncludeSecurity, setQualityIncludeSecurity] = useState(true);
   const [qualityIncludeAccessibility, setQualityIncludeAccessibility] = useState(true);
   const [qualityIncludePerformance, setQualityIncludePerformance] = useState(true);
+  const [includeAPIChecks, setIncludeAPIChecks] = useState(false);
+  const [apiAuthProfileID, setAPIAuthProfileID] = useState("");
+  const [apiValidateContract, setAPIValidateContract] = useState(true);
+  const [apiValidateSchema, setAPIValidateSchema] = useState(true);
+  const [apiIncludeUnauthComparison, setAPIIncludeUnauthComparison] = useState(false);
   const [execute, setExecute] = useState(false);
   const [productContext, setProductContext] = useState("");
   const [focusAreas, setFocusAreas] = useState<string[]>(["smoke", "functional", "regression"]);
@@ -3214,6 +3263,11 @@ function QARunForm({
       quality_include_security: qualityIncludeSecurity,
       quality_include_accessibility: qualityIncludeAccessibility,
       quality_include_performance: qualityIncludePerformance,
+      include_api_checks: includeAPIChecks,
+      api_auth_profile_id: includeAPIChecks ? apiAuthProfileID || undefined : undefined,
+      api_validate_contract: apiValidateContract,
+      api_validate_schema: apiValidateSchema,
+      api_include_unauthenticated_comparison: apiIncludeUnauthComparison,
       execute,
       product_context: productContext.trim() || undefined,
       focus_areas: focusAreas
@@ -3354,6 +3408,45 @@ function QARunForm({
           </div>
         </div>
       )}
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={includeAPIChecks}
+          disabled={apiSpecs.length === 0}
+          onChange={(event) => setIncludeAPIChecks(event.target.checked)}
+        />
+        Include authenticated API checks
+      </label>
+      {includeAPIChecks && (
+        <div className="form-grid two">
+          <label>
+            API Auth Profile
+            <select value={apiAuthProfileID} onChange={(event) => setAPIAuthProfileID(event.target.value)}>
+              <option value="">Unauthenticated API smoke</option>
+              {apiAuthProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name} ({apiAuthTypeLabel(profile.type)})
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="checkbox-grid">
+            <label className="check-row">
+              <input type="checkbox" checked={apiValidateContract} onChange={(event) => setAPIValidateContract(event.target.checked)} />
+              Contract validation
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={apiValidateSchema} onChange={(event) => setAPIValidateSchema(event.target.checked)} />
+              Schema validation
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={apiIncludeUnauthComparison} onChange={(event) => setAPIIncludeUnauthComparison(event.target.checked)} />
+              Compare without auth
+            </label>
+          </div>
+        </div>
+      )}
+      {apiSpecs.length === 0 && <Notice tone="info" message="Import an OpenAPI spec to enable Safe QA API checks." />}
       <div className="form-actions">
         <button
           type="submit"
@@ -3423,6 +3516,235 @@ function QARunTable({ runs }: { runs: QARun[] }) {
       </table>
     </div>
   );
+}
+
+function APIAuthProfileForm({ project, onSaved }: { project: Project; onSaved: () => void }) {
+  const [form, setForm] = useState<APIAuthProfileInput>({
+    name: "Demo API Bearer",
+    type: "bearer_token",
+    header_name: "Authorization",
+    query_param_name: "",
+    token: "",
+    api_key: "",
+    username: "",
+    password: "",
+    enabled: true
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      const saved = await createAPIAuthProfile(project.id, {
+        ...form,
+        name: form.name.trim(),
+        header_name: form.header_name?.trim(),
+        query_param_name: form.query_param_name?.trim(),
+        username: form.username?.trim()
+      });
+      setMessage(`Saved API auth profile ${saved.name}.`);
+      setForm({ ...form, token: "", api_key: "", username: "", password: "" });
+      onSaved();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="project-form credential-form" onSubmit={(event) => void submit(event)}>
+      {error && <Notice tone="danger" message={error} />}
+      {message && <Notice tone="info" message={message} />}
+      <div className="form-grid three">
+        <label>
+          Profile name
+          <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+        </label>
+        <label>
+          Auth type
+          <select
+            value={form.type}
+            onChange={(event) => setForm({ ...form, type: event.target.value as APIAuthProfileInput["type"] })}
+          >
+            <option value="bearer_token">Bearer token</option>
+            <option value="api_key_header">API key header</option>
+            <option value="api_key_query">API key query</option>
+            <option value="basic_auth">Basic auth</option>
+            <option value="none">None</option>
+          </select>
+        </label>
+        <label className="checkbox-row inline">
+          <input type="checkbox" checked={form.enabled ?? true} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
+          Enabled
+        </label>
+      </div>
+      {form.type === "bearer_token" && (
+        <label>
+          Bearer token
+          <input type="password" value={form.token || ""} onChange={(event) => setForm({ ...form, token: event.target.value })} required />
+        </label>
+      )}
+      {form.type === "api_key_header" && (
+        <div className="form-grid two">
+          <label>
+            Header name
+            <input value={form.header_name || "X-API-Key"} onChange={(event) => setForm({ ...form, header_name: event.target.value })} required />
+          </label>
+          <label>
+            API key
+            <input type="password" value={form.api_key || ""} onChange={(event) => setForm({ ...form, api_key: event.target.value })} required />
+          </label>
+        </div>
+      )}
+      {form.type === "api_key_query" && (
+        <div className="form-grid two">
+          <label>
+            Query parameter
+            <input value={form.query_param_name || "api_key"} onChange={(event) => setForm({ ...form, query_param_name: event.target.value })} required />
+          </label>
+          <label>
+            API key
+            <input type="password" value={form.api_key || ""} onChange={(event) => setForm({ ...form, api_key: event.target.value })} required />
+          </label>
+        </div>
+      )}
+      {form.type === "basic_auth" && (
+        <div className="form-grid two">
+          <label>
+            Username
+            <input value={form.username || ""} onChange={(event) => setForm({ ...form, username: event.target.value })} required />
+          </label>
+          <label>
+            Password
+            <input type="password" value={form.password || ""} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
+          </label>
+        </div>
+      )}
+      <p className="muted">API auth secrets are encrypted at rest. Auth headers and tokens are redacted from reports, issue exports, CI output, and AI input.</p>
+      <div className="form-actions">
+        <button type="submit" disabled={saving}>
+          {saving ? "Saving" : "Add API Auth Profile"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function APIAuthProfileTable({ profiles, onChanged }: { profiles: APIAuthProfile[]; onChanged: () => void }) {
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  if (profiles.length === 0) {
+    return <EmptyState title="No API auth profiles" body="Create an API authentication profile to run authenticated API smoke and contract checks." />;
+  }
+
+  async function runAction(profile: APIAuthProfile, action: "test" | "toggle" | "delete") {
+    setBusy(`${action}:${profile.id}`);
+    setMessage("");
+    setError("");
+    try {
+      if (action === "test") {
+        const path = window.prompt("Safe API test path", "/public/health") || "";
+        const result = await testAPIAuthProfile(profile.id, { method: "GET", test_path: path });
+        setMessage(result.success ? `API auth test passed with HTTP ${result.http_status ?? "n/a"}.` : result.error_message || "API auth test failed.");
+      } else if (action === "toggle") {
+        await updateAPIAuthProfile(profile.id, apiAuthProfileInputFromProfile(profile, { enabled: !profile.enabled }));
+        onChanged();
+      } else if (action === "delete") {
+        if (window.confirm(`Delete API auth profile ${profile.name}?`)) {
+          await deleteAPIAuthProfile(profile.id);
+          onChanged();
+        }
+      }
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : String(actionError));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div>
+      {error && <Notice tone="danger" message={error} />}
+      {message && <Notice tone="info" message={message} />}
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Target</th>
+            <th>Configured</th>
+            <th>Status</th>
+            <th>Updated</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {profiles.map((profile) => (
+            <tr key={profile.id}>
+              <td>
+                <strong>{profile.name}</strong>
+                <div className="muted">{profile.token_display_hint || profile.api_key_display_hint || profile.username_display_hint || "No secret hint"}</div>
+              </td>
+              <td>{apiAuthTypeLabel(profile.type)}</td>
+              <td>{profile.header_name || profile.query_param_name || "n/a"}</td>
+              <td>
+                Token {profile.token_configured ? "yes" : "no"} · API key {profile.api_key_configured ? "yes" : "no"} · Basic {profile.username_configured && profile.password_configured ? "yes" : "no"}
+              </td>
+              <td>{profile.enabled ? "Enabled" : "Disabled"}</td>
+              <td>{formatDate(profile.updated_at)}</td>
+              <td>
+                <div className="button-row compact">
+                  <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void runAction(profile, "test")}>
+                    {busy === `test:${profile.id}` ? "Testing" : "Test profile"}
+                  </button>
+                  <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void runAction(profile, "toggle")}>
+                    {profile.enabled ? "Disable" : "Enable"}
+                  </button>
+                  <button type="button" className="secondary" disabled={busy !== ""} onClick={() => void runAction(profile, "delete")}>
+                    Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function apiAuthProfileInputFromProfile(profile: APIAuthProfile, overrides: Partial<APIAuthProfileInput> = {}): APIAuthProfileInput {
+  return {
+    name: profile.name,
+    type: profile.type as APIAuthProfileInput["type"],
+    header_name: profile.header_name || "",
+    query_param_name: profile.query_param_name || "",
+    enabled: profile.enabled,
+    ...overrides
+  };
+}
+
+function apiAuthTypeLabel(type: string): string {
+  switch (type) {
+    case "bearer_token":
+      return "Bearer token";
+    case "api_key_header":
+      return "API key header";
+    case "api_key_query":
+      return "API key query";
+    case "basic_auth":
+      return "Basic auth";
+    default:
+      return type || "None";
+  }
 }
 
 function CredentialProfileForm({ project, onSaved }: { project: Project; onSaved: () => void }) {
@@ -4204,6 +4526,11 @@ function APISpecPage({
 }) {
   const [detail, setDetail] = useState<APISpecDetail | undefined>();
   const [project, setProject] = useState<Project | undefined>();
+  const [apiAuthProfiles, setAPIAuthProfiles] = useState<APIAuthProfile[]>([]);
+  const [apiAuthProfileID, setAPIAuthProfileID] = useState("");
+  const [validateContract, setValidateContract] = useState(true);
+  const [validateSchema, setValidateSchema] = useState(true);
+  const [includeUnauthComparison, setIncludeUnauthComparison] = useState(false);
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -4214,8 +4541,11 @@ function APISpecPage({
     try {
       const nextDetail = await getAPISpec(apiSpecID);
       const nextProject = projectByID.get(nextDetail.spec.project_id) ?? (await getProject(nextDetail.spec.project_id));
+      const nextAPIAuthProfiles = await listAPIAuthProfiles(nextDetail.spec.project_id);
       setDetail(nextDetail);
       setProject(nextProject);
+      setAPIAuthProfiles(nextAPIAuthProfiles);
+      setAPIAuthProfileID((current) => current || nextAPIAuthProfiles[0]?.id || "");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
@@ -4227,14 +4557,20 @@ function APISpecPage({
     void refresh();
   }, [refresh]);
 
-  async function runSmoke() {
+  async function runSmoke(authenticated: boolean) {
     if (!detail) {
       return;
     }
     setRunning(true);
     setError("");
     try {
-      const run = await startAPISmokeRun(detail.spec.id);
+      const run = await startAPISmokeRun(detail.spec.id, {
+        api_auth_profile_id: authenticated ? apiAuthProfileID || undefined : undefined,
+        authenticated,
+        validate_contract: validateContract,
+        validate_schema: validateSchema,
+        include_unauthenticated_comparison: authenticated ? includeUnauthComparison : false
+      });
       onOpenRun(run.id);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : String(runError));
@@ -4266,16 +4602,48 @@ function APISpecPage({
             <a className="button secondary-link" href={`#/projects/${project.id}`}>
               Project
             </a>
-            <button type="button" disabled={running || detail.spec.status !== "parsed"} onClick={() => void runSmoke()}>
-              {running ? "Running" : "Run safe API smoke test"}
-            </button>
           </div>
         </div>
         {detail.spec.error_message && <Notice tone="danger" message={detail.spec.error_message} />}
         <Notice
           tone="info"
-          message="Only safe read-only operations are executed. Mutating, authenticated, ambiguous, or unsafe operations are skipped."
+          message="Only safe read-only operations are executed. Mutating, ambiguous, destructive, and request-body operations are skipped. Authenticated operations require an API auth profile."
         />
+        <div className="form-grid two">
+          <label>
+            API Auth Profile
+            <select value={apiAuthProfileID} onChange={(event) => setAPIAuthProfileID(event.target.value)}>
+              <option value="">No API auth profile</option>
+              {apiAuthProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name} ({apiAuthTypeLabel(profile.type)})
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="checkbox-grid">
+            <label className="check-row">
+              <input type="checkbox" checked={validateContract} onChange={(event) => setValidateContract(event.target.checked)} />
+              Contract validation
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={validateSchema} onChange={(event) => setValidateSchema(event.target.checked)} />
+              Schema validation
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={includeUnauthComparison} onChange={(event) => setIncludeUnauthComparison(event.target.checked)} />
+              Include unauthenticated comparison
+            </label>
+          </div>
+        </div>
+        <div className="button-row">
+          <button type="button" className="secondary" disabled={running || detail.spec.status !== "parsed"} onClick={() => void runSmoke(false)}>
+            {running ? "Running" : "Run unauthenticated API smoke"}
+          </button>
+          <button type="button" className="secondary" disabled={running || detail.spec.status !== "parsed" || !apiAuthProfileID} onClick={() => void runSmoke(true)}>
+            {running ? "Running" : "Run authenticated API smoke"}
+          </button>
+        </div>
         <div className="summary-grid">
           <Metric label="Operations" value={detail.spec.operation_count} />
           <Metric label="Safe" value={detail.spec.safe_operation_count} />
@@ -5772,6 +6140,30 @@ function QARunPage({ runID }: { runID: string }) {
         </section>
       )}
 
+      {report.api_smoke_run && report.api_summary && (
+        <section>
+          <div className="section-heading">
+            <div>
+              <h2>Authenticated API Smoke</h2>
+              <p>{report.api_spec ? `${report.api_spec.name} · ${report.api_spec.parsed_title || "OpenAPI spec"}` : "Safe API contract checks."}</p>
+            </div>
+            <a className="button secondary-link" href={`#/runs/${report.api_smoke_run.id}`}>
+              API report
+            </a>
+          </div>
+          <div className="summary-grid">
+            <Metric label="Executed" value={report.api_summary.executed_operations} />
+            <Metric label="Authenticated" value={report.api_summary.authenticated_operations || 0} />
+            <Metric label="Contract failed" value={report.api_summary.contract_failed || 0} tone={(report.api_summary.contract_failed || 0) > 0 ? "high" : undefined} />
+            <Metric label="Schema errors" value={report.api_summary.schema_validation_error_count || 0} tone={(report.api_summary.schema_validation_error_count || 0) > 0 ? "medium" : undefined} />
+            <Metric label="Skipped" value={report.api_summary.skipped_operations} tone="medium" />
+            <Metric label="Unauth comparisons" value={report.api_summary.unauthenticated_comparisons || 0} />
+          </div>
+          {report.api_auth && <Field label="API auth mode" value={`${report.api_auth.auth_mode}${report.api_auth.profile_name ? ` · ${report.api_auth.profile_name}` : ""}`} />}
+          <APIResultsTable results={report.api_results || []} />
+        </section>
+      )}
+
       {report.test_plan && (
         <section>
           <h2>AI Test Plan</h2>
@@ -6888,6 +7280,9 @@ function RunReportPage({ runID, cachedRun, projectByID }: { runID: string; cache
             <div className="summary-grid">
               <Metric label="Total" value={report.api_summary.total_operations} />
               <Metric label="Executed" value={report.api_summary.executed_operations} />
+              <Metric label="Authenticated" value={report.api_summary.authenticated_operations || 0} />
+              <Metric label="Contract validation" value={report.api_summary.contract_failed || 0} tone={(report.api_summary.contract_failed || 0) > 0 ? "high" : undefined} />
+              <Metric label="Schema errors" value={report.api_summary.schema_validation_error_count || 0} tone={(report.api_summary.schema_validation_error_count || 0) > 0 ? "medium" : undefined} />
               <Metric label="Passed" value={report.api_summary.passed_operations} />
               <Metric label="Failed" value={report.api_summary.failed_operations} tone="high" />
               <Metric label="Errors" value={report.api_summary.errored_operations} tone="high" />
@@ -7369,9 +7764,13 @@ function APIResultsTable({ results }: { results: APICheckResult[] }) {
             <th>Method</th>
             <th>Path</th>
             <th>HTTP</th>
+            <th>Auth</th>
+            <th>Contract validation</th>
             <th>Duration</th>
             <th>Size</th>
             <th>Content Type</th>
+            <th>Schema errors</th>
+            <th>Unauth</th>
             <th>Reason/Error</th>
           </tr>
         </thead>
@@ -7389,9 +7788,13 @@ function APIResultsTable({ results }: { results: APICheckResult[] }) {
                 {result.resolved_url && <p className="muted">{result.resolved_url}</p>}
               </td>
               <td>{result.http_status ?? "n/a"}</td>
+              <td>{result.auth_mode || "none"}</td>
+              <td>{result.contract_validation_status || "unknown"}</td>
               <td>{result.duration_ms === undefined ? "n/a" : `${result.duration_ms}ms`}</td>
               <td>{result.response_size_bytes === undefined ? "n/a" : `${result.response_size_bytes} bytes`}</td>
               <td>{result.response_content_type || "n/a"}</td>
+              <td>{result.schema_validation_errors?.length || 0}</td>
+              <td>{result.unauthenticated_status ?? "n/a"}</td>
               <td>{result.skipped_reason || result.error_message || ""}</td>
             </tr>
           ))}

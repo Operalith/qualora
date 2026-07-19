@@ -331,7 +331,7 @@ func (a *App) startSelectedSetupWorkflows(ctx context.Context, project Project, 
 			operations, err := a.store.ListAPIOperations(ctx, apiSpec.ID)
 			if err != nil {
 				response.addSkipped("api_smoke", RedactSecrets(err.Error()))
-			} else if run, err := a.ExecuteAPISmokeRun(ctx, project, *apiSpec, operations); err != nil {
+			} else if run, err := a.ExecuteAPISmokeRun(ctx, project, *apiSpec, operations, APISmokeExecutionOptions{ValidateContract: true, ValidateSchema: true}); err != nil {
 				response.addSkipped("api_smoke", RedactSecrets(err.Error()))
 				if run != nil {
 					response.Started.APISmokeRunID = run.ID

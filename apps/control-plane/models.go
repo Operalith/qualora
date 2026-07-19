@@ -225,6 +225,7 @@ type TestRun struct {
 	RunType             string     `json:"run_type"`
 	APISpecID           string     `json:"api_spec_id,omitempty"`
 	CredentialProfileID string     `json:"credential_profile_id,omitempty"`
+	APIAuthProfileID    string     `json:"api_auth_profile_id,omitempty"`
 	TargetPath          string     `json:"target_path,omitempty"`
 	CaptureScreenshot   bool       `json:"capture_screenshot"`
 	MaxDurationSeconds  int        `json:"max_duration_seconds"`
@@ -293,6 +294,7 @@ type Report struct {
 	AIAnalysis   *AIAnalysis      `json:"ai_analysis"`
 	TestPlans    []TestPlanRef    `json:"test_plans"`
 	APISpec      *APISpec         `json:"api_spec,omitempty"`
+	APIAuth      *APIAuthSummary  `json:"api_auth,omitempty"`
 	APISummary   *APISmokeSummary `json:"api_summary,omitempty"`
 	APIResults   []APICheckResult `json:"api_results,omitempty"`
 	LoginSummary *LoginSummary    `json:"login_summary,omitempty"`
@@ -1349,6 +1351,7 @@ type QARunRequest struct {
 	Mode                        string   `json:"mode"`
 	StartURL                    string   `json:"start_url,omitempty"`
 	CredentialProfileID         string   `json:"credential_profile_id,omitempty"`
+	APIAuthProfileID            string   `json:"api_auth_profile_id,omitempty"`
 	MaxPages                    int      `json:"max_pages,omitempty"`
 	MaxDepth                    int      `json:"max_depth,omitempty"`
 	MaxScenarios                int      `json:"max_scenarios,omitempty"`
@@ -1363,6 +1366,10 @@ type QARunRequest struct {
 	QualityIncludeSecurity      *bool    `json:"quality_include_security,omitempty"`
 	QualityIncludeAccessibility *bool    `json:"quality_include_accessibility,omitempty"`
 	QualityIncludePerformance   *bool    `json:"quality_include_performance,omitempty"`
+	IncludeAPIChecks            *bool    `json:"include_api_checks,omitempty"`
+	APIValidateContract         *bool    `json:"api_validate_contract,omitempty"`
+	APIValidateSchema           *bool    `json:"api_validate_schema,omitempty"`
+	APIIncludeUnauthComparison  *bool    `json:"api_include_unauthenticated_comparison,omitempty"`
 }
 
 type QARun struct {
@@ -1372,9 +1379,11 @@ type QARun struct {
 	Mode                string         `json:"mode"`
 	DiscoveryRunID      string         `json:"discovery_run_id,omitempty"`
 	QualityCheckRunID   string         `json:"quality_check_run_id,omitempty"`
+	APISmokeRunID       string         `json:"api_smoke_run_id,omitempty"`
 	TestPlanID          string         `json:"test_plan_id,omitempty"`
 	TestPlanExecutionID string         `json:"test_plan_execution_id,omitempty"`
 	CredentialProfileID string         `json:"credential_profile_id,omitempty"`
+	APIAuthProfileID    string         `json:"api_auth_profile_id,omitempty"`
 	ErrorMessage        string         `json:"error_message,omitempty"`
 	Summary             map[string]any `json:"summary"`
 	StartedAt           *time.Time     `json:"started_at,omitempty"`
@@ -1391,6 +1400,11 @@ type QARunReport struct {
 	QualityCheckRun  *QualityCheckRun          `json:"quality_check_run,omitempty"`
 	QualitySummary   *QualityCheckSummary      `json:"quality_summary,omitempty"`
 	QualityResults   []QualityCheckResult      `json:"quality_results,omitempty"`
+	APISmokeRun      *TestRun                  `json:"api_smoke_run,omitempty"`
+	APISpec          *APISpec                  `json:"api_spec,omitempty"`
+	APIAuth          *APIAuthSummary           `json:"api_auth,omitempty"`
+	APISummary       *APISmokeSummary          `json:"api_summary,omitempty"`
+	APIResults       []APICheckResult          `json:"api_results,omitempty"`
 	TestPlan         *TestPlan                 `json:"test_plan,omitempty"`
 	ExecutionPreview *TestPlanExecutionPreview `json:"execution_preview,omitempty"`
 	ExecutionReport  *TestPlanExecutionReport  `json:"execution_report,omitempty"`
@@ -1436,50 +1450,144 @@ type APISpecDetail struct {
 	Operations []APIOperation `json:"operations,omitempty"`
 }
 
+type APISmokeRunRequest struct {
+	APIAuthProfileID                 string `json:"api_auth_profile_id,omitempty"`
+	Authenticated                    *bool  `json:"authenticated,omitempty"`
+	ValidateContract                 *bool  `json:"validate_contract,omitempty"`
+	ValidateSchema                   *bool  `json:"validate_schema,omitempty"`
+	MaxOperations                    int    `json:"max_operations,omitempty"`
+	IncludeUnauthenticatedComparison *bool  `json:"include_unauthenticated_comparison,omitempty"`
+}
+
 type APIOperation struct {
-	ID                     string    `json:"id"`
-	APISpecID              string    `json:"api_spec_id"`
-	ProjectID              string    `json:"project_id"`
-	Method                 string    `json:"method"`
-	Path                   string    `json:"path"`
-	ResolvedPath           string    `json:"resolved_path,omitempty"`
-	QueryString            string    `json:"query_string,omitempty"`
-	OperationID            string    `json:"operation_id,omitempty"`
-	Summary                string    `json:"summary,omitempty"`
-	Description            string    `json:"description,omitempty"`
-	Tags                   []string  `json:"tags"`
-	ExpectedStatuses       []string  `json:"expected_statuses"`
-	ExpectedContentTypes   []string  `json:"expected_content_types"`
-	RequiresAuthentication *bool     `json:"requires_authentication,omitempty"`
-	SafeToExecute          bool      `json:"safe_to_execute"`
-	SkipReason             string    `json:"skip_reason,omitempty"`
-	CreatedAt              time.Time `json:"created_at"`
-	UpdatedAt              time.Time `json:"updated_at"`
+	ID                     string         `json:"id"`
+	APISpecID              string         `json:"api_spec_id"`
+	ProjectID              string         `json:"project_id"`
+	Method                 string         `json:"method"`
+	Path                   string         `json:"path"`
+	ResolvedPath           string         `json:"resolved_path,omitempty"`
+	QueryString            string         `json:"query_string,omitempty"`
+	OperationID            string         `json:"operation_id,omitempty"`
+	Summary                string         `json:"summary,omitempty"`
+	Description            string         `json:"description,omitempty"`
+	Tags                   []string       `json:"tags"`
+	ExpectedStatuses       []string       `json:"expected_statuses"`
+	ExpectedContentTypes   []string       `json:"expected_content_types"`
+	ResponseSchemas        map[string]any `json:"response_schemas,omitempty"`
+	RequiresAuthentication *bool          `json:"requires_authentication,omitempty"`
+	SafeToExecute          bool           `json:"safe_to_execute"`
+	SkipReason             string         `json:"skip_reason,omitempty"`
+	CreatedAt              time.Time      `json:"created_at"`
+	UpdatedAt              time.Time      `json:"updated_at"`
 }
 
 type APICheckResult struct {
-	ID                  string    `json:"id"`
-	RunID               string    `json:"run_id"`
-	APISpecID           string    `json:"api_spec_id"`
-	OperationID         string    `json:"operation_id,omitempty"`
-	Method              string    `json:"method"`
-	Path                string    `json:"path"`
-	ResolvedURL         string    `json:"resolved_url,omitempty"`
-	Status              string    `json:"status"`
-	HTTPStatus          *int      `json:"http_status,omitempty"`
-	DurationMS          *int      `json:"duration_ms,omitempty"`
-	ResponseContentType string    `json:"response_content_type,omitempty"`
-	ResponseSizeBytes   *int      `json:"response_size_bytes,omitempty"`
-	ErrorMessage        string    `json:"error_message,omitempty"`
-	SkippedReason       string    `json:"skipped_reason,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
+	ID                       string    `json:"id"`
+	RunID                    string    `json:"run_id"`
+	APISpecID                string    `json:"api_spec_id"`
+	OperationID              string    `json:"operation_id,omitempty"`
+	APIAuthProfileID         string    `json:"api_auth_profile_id,omitempty"`
+	AuthMode                 string    `json:"auth_mode,omitempty"`
+	Method                   string    `json:"method"`
+	Path                     string    `json:"path"`
+	ResolvedURL              string    `json:"resolved_url,omitempty"`
+	Status                   string    `json:"status"`
+	HTTPStatus               *int      `json:"http_status,omitempty"`
+	ActualStatus             *int      `json:"actual_status,omitempty"`
+	DurationMS               *int      `json:"duration_ms,omitempty"`
+	ResponseTimeMS           *int      `json:"response_time_ms,omitempty"`
+	ResponseContentType      string    `json:"response_content_type,omitempty"`
+	ActualContentType        string    `json:"actual_content_type,omitempty"`
+	ResponseSizeBytes        *int      `json:"response_size_bytes,omitempty"`
+	ExpectedStatuses         []string  `json:"expected_statuses,omitempty"`
+	ExpectedContentTypes     []string  `json:"expected_content_types,omitempty"`
+	ContractValidationStatus string    `json:"contract_validation_status,omitempty"`
+	SchemaValidationErrors   []string  `json:"schema_validation_errors,omitempty"`
+	UnauthenticatedStatus    *int      `json:"unauthenticated_status,omitempty"`
+	ErrorMessage             string    `json:"error_message,omitempty"`
+	SkippedReason            string    `json:"skipped_reason,omitempty"`
+	CreatedAt                time.Time `json:"created_at"`
 }
 
 type APISmokeSummary struct {
-	TotalOperations    int `json:"total_operations"`
-	ExecutedOperations int `json:"executed_operations"`
-	SkippedOperations  int `json:"skipped_operations"`
-	PassedOperations   int `json:"passed_operations"`
-	FailedOperations   int `json:"failed_operations"`
-	ErroredOperations  int `json:"errored_operations"`
+	TotalOperations            int `json:"total_operations"`
+	ExecutedOperations         int `json:"executed_operations"`
+	SkippedOperations          int `json:"skipped_operations"`
+	PassedOperations           int `json:"passed_operations"`
+	FailedOperations           int `json:"failed_operations"`
+	ErroredOperations          int `json:"errored_operations"`
+	AuthenticatedOperations    int `json:"authenticated_operations"`
+	UnauthenticatedComparisons int `json:"unauthenticated_comparisons"`
+	ContractPassed             int `json:"contract_passed"`
+	ContractFailed             int `json:"contract_failed"`
+	ContractSkipped            int `json:"contract_skipped"`
+	ContractUnknown            int `json:"contract_unknown"`
+	SchemaValidationErrorCount int `json:"schema_validation_error_count"`
+}
+
+type APIAuthProfile struct {
+	ID                  string    `json:"id"`
+	ProjectID           string    `json:"project_id"`
+	Name                string    `json:"name"`
+	Type                string    `json:"type"`
+	HeaderName          string    `json:"header_name,omitempty"`
+	QueryParamName      string    `json:"query_param_name,omitempty"`
+	UsernameEncrypted   string    `json:"-"`
+	PasswordEncrypted   string    `json:"-"`
+	TokenEncrypted      string    `json:"-"`
+	APIKeyEncrypted     string    `json:"-"`
+	UsernameDisplayHint string    `json:"username_display_hint,omitempty"`
+	TokenDisplayHint    string    `json:"token_display_hint,omitempty"`
+	APIKeyDisplayHint   string    `json:"api_key_display_hint,omitempty"`
+	UsernameConfigured  bool      `json:"username_configured"`
+	PasswordConfigured  bool      `json:"password_configured"`
+	TokenConfigured     bool      `json:"token_configured"`
+	APIKeyConfigured    bool      `json:"api_key_configured"`
+	Enabled             bool      `json:"enabled"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+type APIAuthProfileRequest struct {
+	Name           string `json:"name"`
+	Type           string `json:"type"`
+	HeaderName     string `json:"header_name,omitempty"`
+	QueryParamName string `json:"query_param_name,omitempty"`
+	Username       string `json:"username,omitempty"`
+	Password       string `json:"password,omitempty"`
+	Token          string `json:"token,omitempty"`
+	APIKey         string `json:"api_key,omitempty"`
+	Enabled        *bool  `json:"enabled,omitempty"`
+}
+
+type APIAuthProfileTestRequest struct {
+	TestPath string `json:"test_path,omitempty"`
+	Method   string `json:"method,omitempty"`
+}
+
+type APIAuthProfileTestResult struct {
+	Success             bool              `json:"success"`
+	ProfileID           string            `json:"profile_id"`
+	ProfileName         string            `json:"profile_name"`
+	AuthMode            string            `json:"auth_mode"`
+	Method              string            `json:"method"`
+	URL                 string            `json:"url"`
+	HTTPStatus          *int              `json:"http_status,omitempty"`
+	ResponseContentType string            `json:"response_content_type,omitempty"`
+	DurationMS          int               `json:"duration_ms"`
+	RedactedHeaders     map[string]string `json:"redacted_headers,omitempty"`
+	ErrorMessage        string            `json:"error_message,omitempty"`
+}
+
+type APIAuthSummary struct {
+	ProfileID         string `json:"profile_id,omitempty"`
+	ProfileName       string `json:"profile_name,omitempty"`
+	Type              string `json:"type,omitempty"`
+	AuthMode          string `json:"auth_mode"`
+	DisplayHint       string `json:"display_hint,omitempty"`
+	Authenticated     bool   `json:"authenticated"`
+	SecretsStored     string `json:"secrets_stored"`
+	SecretsReturned   bool   `json:"secrets_returned"`
+	SecretsSentToAI   bool   `json:"secrets_sent_to_ai"`
+	AuthHeadersStored bool   `json:"auth_headers_stored"`
 }

@@ -245,6 +245,9 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
     {{ with .Report.APISpec }}
     <p><strong>Spec:</strong> {{ .Name }} {{ if .ParsedVersion }}<span class="subtle">({{ .ParsedVersion }})</span>{{ end }}</p>
     {{ end }}
+    {{ with .Report.APIAuth }}
+    <p><strong>API auth mode:</strong> <span class="status">{{ .AuthMode }}</span> {{ if .ProfileName }}<strong>Profile:</strong> {{ .ProfileName }}{{ end }}</p>
+    {{ end }}
     {{ with .Report.APISummary }}
     <div class="grid six" style="margin: 12px 0;">
       <div class="metric"><span>Total</span><strong>{{ .TotalOperations }}</strong></div>
@@ -258,7 +261,7 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
     <p class="subtle">Qualora executes only safe read-only API operations in this alpha. Request bodies, response bodies, auth headers, cookies, and tokens are not stored.</p>
     <table>
       <thead>
-        <tr><th>Status</th><th>Method</th><th>Path</th><th>HTTP</th><th>Duration</th><th>Content Type</th><th>Reason/Error</th></tr>
+        <tr><th>Status</th><th>Method</th><th>Path</th><th>HTTP</th><th>Duration</th><th>Content Type</th><th>Contract</th><th>Reason/Error</th></tr>
       </thead>
       <tbody>
         {{ range .Report.APIResults }}
@@ -269,6 +272,7 @@ var htmlReportTemplate = template.Must(template.New("html-report").Funcs(templat
           <td>{{ if .HTTPStatus }}{{ intValue .HTTPStatus }}{{ else }}<span class="subtle">n/a</span>{{ end }}</td>
           <td>{{ if .DurationMS }}{{ intValue .DurationMS }}ms{{ else }}<span class="subtle">n/a</span>{{ end }}</td>
           <td>{{ if .ResponseContentType }}{{ .ResponseContentType }}{{ else }}<span class="subtle">n/a</span>{{ end }}</td>
+          <td>{{ .ContractValidationStatus }}</td>
           <td>{{ if .SkippedReason }}{{ .SkippedReason }}{{ else }}{{ .ErrorMessage }}{{ end }}</td>
         </tr>
         {{ end }}

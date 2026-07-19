@@ -13,12 +13,12 @@ import (
 
 func (s *Store) CreateQARun(ctx context.Context, projectID string, input QARunRequest) (*QARun, error) {
 	run, err := scanQARun(s.db.QueryRow(ctx, `
-INSERT INTO qa_runs (id, project_id, status, mode, credential_profile_id)
-VALUES ($1, $2, $3, $4, NULLIF($5, '')::uuid)
-RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
-	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
+INSERT INTO qa_runs (id, project_id, status, mode, credential_profile_id, api_auth_profile_id)
+VALUES ($1, $2, $3, $4, NULLIF($5, '')::uuid, NULLIF($6, '')::uuid)
+RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, api_smoke_run_id::text, test_plan_id::text,
+	test_plan_execution_id::text, credential_profile_id::text, api_auth_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
-`, uuid.NewString(), projectID, StatusQueued, input.Mode, input.CredentialProfileID))
+`, uuid.NewString(), projectID, StatusQueued, input.Mode, input.CredentialProfileID, input.APIAuthProfileID))
 	if err != nil {
 		return nil, fmt.Errorf("insert QA run: %w", err)
 	}
@@ -27,8 +27,8 @@ RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_ru
 
 func (s *Store) ListQARuns(ctx context.Context, projectID string) ([]QARun, error) {
 	rows, err := s.db.Query(ctx, `
-SELECT id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
-	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
+SELECT id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, api_smoke_run_id::text, test_plan_id::text,
+	test_plan_execution_id::text, credential_profile_id::text, api_auth_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 FROM qa_runs
 WHERE project_id = $1
@@ -55,8 +55,8 @@ ORDER BY created_at DESC
 
 func (s *Store) GetQARun(ctx context.Context, id string) (*QARun, error) {
 	run, err := scanQARun(s.db.QueryRow(ctx, `
-SELECT id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
-	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
+SELECT id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, api_smoke_run_id::text, test_plan_id::text,
+	test_plan_execution_id::text, credential_profile_id::text, api_auth_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 FROM qa_runs
 WHERE id = $1
@@ -77,8 +77,8 @@ SET status = $2,
 	started_at = COALESCE(started_at, now()),
 	updated_at = now()
 WHERE id = $1
-RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
-	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
+RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, api_smoke_run_id::text, test_plan_id::text,
+	test_plan_execution_id::text, credential_profile_id::text, api_auth_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 `, id, status))
 	if err != nil {
@@ -98,6 +98,10 @@ func (s *Store) AttachQARunQualityCheck(ctx context.Context, id string, qualityC
 	return s.updateQARunLink(ctx, id, "quality_check_run_id", qualityCheckRunID)
 }
 
+func (s *Store) AttachQARunAPISmoke(ctx context.Context, id string, apiSmokeRunID string) (*QARun, error) {
+	return s.updateQARunLink(ctx, id, "api_smoke_run_id", apiSmokeRunID)
+}
+
 func (s *Store) AttachQARunTestPlan(ctx context.Context, id string, testPlanID string) (*QARun, error) {
 	return s.updateQARunLink(ctx, id, "test_plan_id", testPlanID)
 }
@@ -111,8 +115,8 @@ func (s *Store) updateQARunLink(ctx context.Context, id string, column string, v
 UPDATE qa_runs
 SET %s = NULLIF($2, '')::uuid, updated_at = now()
 WHERE id = $1
-RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
-	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
+RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, api_smoke_run_id::text, test_plan_id::text,
+	test_plan_execution_id::text, credential_profile_id::text, api_auth_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 `, column), id, value))
 	if err != nil {
@@ -149,8 +153,8 @@ SET status = $2,
 	completed_at = now(),
 	updated_at = now()
 WHERE id = $1
-RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, test_plan_id::text,
-	test_plan_execution_id::text, credential_profile_id::text, error_message, summary_json,
+RETURNING id, project_id, status, mode, discovery_run_id::text, quality_check_run_id::text, api_smoke_run_id::text, test_plan_id::text,
+	test_plan_execution_id::text, credential_profile_id::text, api_auth_profile_id::text, error_message, summary_json,
 	started_at, completed_at, created_at, updated_at
 `, id, status, message, rawSummary))
 	if err != nil {
@@ -166,9 +170,11 @@ func scanQARun(row scanRow) (QARun, error) {
 	var run QARun
 	var discoveryRunID sql.NullString
 	var qualityCheckRunID sql.NullString
+	var apiSmokeRunID sql.NullString
 	var testPlanID sql.NullString
 	var executionID sql.NullString
 	var credentialProfileID sql.NullString
+	var apiAuthProfileID sql.NullString
 	var summaryRaw []byte
 	if err := row.Scan(
 		&run.ID,
@@ -177,9 +183,11 @@ func scanQARun(row scanRow) (QARun, error) {
 		&run.Mode,
 		&discoveryRunID,
 		&qualityCheckRunID,
+		&apiSmokeRunID,
 		&testPlanID,
 		&executionID,
 		&credentialProfileID,
+		&apiAuthProfileID,
 		&run.ErrorMessage,
 		&summaryRaw,
 		&run.StartedAt,
@@ -195,6 +203,9 @@ func scanQARun(row scanRow) (QARun, error) {
 	if qualityCheckRunID.Valid {
 		run.QualityCheckRunID = qualityCheckRunID.String
 	}
+	if apiSmokeRunID.Valid {
+		run.APISmokeRunID = apiSmokeRunID.String
+	}
 	if testPlanID.Valid {
 		run.TestPlanID = testPlanID.String
 	}
@@ -203,6 +214,9 @@ func scanQARun(row scanRow) (QARun, error) {
 	}
 	if credentialProfileID.Valid {
 		run.CredentialProfileID = credentialProfileID.String
+	}
+	if apiAuthProfileID.Valid {
+		run.APIAuthProfileID = apiAuthProfileID.String
 	}
 	run.Summary = map[string]any{}
 	if len(summaryRaw) > 0 {

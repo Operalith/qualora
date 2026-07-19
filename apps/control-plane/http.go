@@ -48,6 +48,7 @@ func (a *App) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/test-plans/", a.handleTestPlanSubroutes)
 	mux.HandleFunc("/api/v1/test-plan-executions/", a.handleTestPlanExecutionSubroutes)
 	mux.HandleFunc("/api/v1/api-specs/", a.handleAPISpecSubroutes)
+	mux.HandleFunc("/api/v1/api-auth-profiles/", a.handleAPIAuthProfileSubroutes)
 	mux.HandleFunc("/api/v1/credential-profiles/", a.handleCredentialProfileSubroutes)
 	mux.HandleFunc("/api/v1/authorization-checks/", a.handleAuthorizationCheckSubroutes)
 	mux.HandleFunc("/api/v1/authorization-check-runs/", a.handleAuthorizationCheckRunSubroutes)
@@ -186,6 +187,17 @@ func (a *App) handleProjectSubroutes(w http.ResponseWriter, r *http.Request) {
 			a.createAPISpec(w, r, parts[0])
 		case http.MethodGet:
 			a.listAPISpecs(w, r, parts[0])
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
+		}
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "api-auth-profiles" {
+		switch r.Method {
+		case http.MethodPost:
+			a.createAPIAuthProfile(w, r, parts[0])
+		case http.MethodGet:
+			a.listAPIAuthProfiles(w, r, parts[0])
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method is not allowed")
 		}

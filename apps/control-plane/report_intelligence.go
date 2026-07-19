@@ -965,6 +965,9 @@ func qaRunCompletedChecks(report *QARunReport) []string {
 	if report.QualityCheckRun != nil {
 		out = append(out, "Passive quality checks")
 	}
+	if report.APISmokeRun != nil {
+		out = append(out, "Safe API smoke and contract validation")
+	}
 	if report.TestPlan != nil {
 		out = append(out, "AI-assisted test planning")
 	}
@@ -981,6 +984,9 @@ func qaRunSkippedChecks(report *QARunReport) []string {
 	out := []string{}
 	if report.QualityCheckRun == nil {
 		out = append(out, "Passive quality checks")
+	}
+	if report.APISmokeRun == nil {
+		out = append(out, "Safe API smoke and contract validation")
 	}
 	if report.TestPlan == nil {
 		out = append(out, "AI-assisted test planning")

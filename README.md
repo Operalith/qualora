@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.19.0-alpha` adds native CI mode and optional GitHub/GitLab issue export. A logged-in self-hosted user can run a CI-friendly Safe QA workflow, compare against a baseline, evaluate quality gates, get deterministic exit codes, and dry-run sanitized issue previews from grouped findings. Qualora remains useful without AI for discovery, Safe Explorer, quality checks, browser checks, login checks, authenticated smoke checks, authorization checks, OpenAPI operation discovery, safe API smoke execution, evidence collection, report intelligence, baseline comparison, quality gates, issue-export dry-runs, HTML reports, and approved safe test plan execution.
+`v0.20.0-alpha` adds project-scoped API authentication profiles and lightweight OpenAPI contract validation for safe read-only API smoke runs. A logged-in self-hosted user can import an OpenAPI spec, store encrypted bearer/API key/basic auth material, test the profile, run authenticated `GET`/`HEAD`/`OPTIONS` checks, detect status/content-type/schema mismatches, and carry those sanitized results into reports, AI analysis, baselines, CI gates, and issue-export dry-runs.
 
 ## Current Alpha Capabilities
 
@@ -47,11 +47,17 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Import OpenAPI 3.x specs from URL or pasted JSON/YAML.
 - Discover API operations, classify safe operations, and persist skip reasons.
 - Run safe API smoke tests from imported OpenAPI specs.
+- Create project-scoped API authentication profiles for bearer tokens, API keys, basic auth, or explicit unauthenticated API checks.
+- Store API auth secrets encrypted at rest and return only safe display hints.
+- Test API auth profiles with safe `GET` or `HEAD` requests without exposing auth headers or token values.
+- Run authenticated safe API smoke checks from imported OpenAPI specs.
+- Optionally compare authenticated API checks with unauthenticated status-only observations.
+- Validate documented status codes, obvious content types, JSON parseability, and lightweight OpenAPI response schemas where practical.
 - Test only safe OpenAPI methods by default: `GET`, `HEAD`, and `OPTIONS`.
-- Skip mutating, authenticated, ambiguous, request-body, unresolved-parameter, and sensitive API operations.
+- Skip mutating, ambiguous, request-body, unresolved-parameter, and sensitive API operations.
 - Enforce project `allowed_hosts` for browser and API requests.
 - Collect page title, final URL, status code, screenshot evidence, browser observations, login observations, API observations, OpenAPI summaries, and API request evidence.
-- Persist API smoke result rows with method, path, status, HTTP status, duration, content type, response size, error, and skip reason.
+- Persist API smoke result rows with method, path, status, HTTP status, duration, content type, response size, auth mode, contract validation status, expected statuses/content types, schema validation errors, unauthenticated comparison status, error, and skip reason.
 - Store metadata in PostgreSQL.
 - Queue worker jobs with Redis.
 - Store screenshots in MinIO/S3, with a local filesystem fallback.
@@ -87,10 +93,9 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 ```text
 API client / smoke script / web UI
         |
-        v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines, ci_runs, issue_export_configs
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, api_auth_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines, ci_runs, issue_export_configs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
@@ -114,6 +119,8 @@ qualora-api
         +--> Safe OpenAPI import and API smoke execution in control plane
                 +--> OpenAPI 3.x operation discovery
                 +--> GET/HEAD/OPTIONS-only API smoke checks
+                +--> Encrypted API auth profile injection for safe requests
+                +--> Lightweight status/content-type/schema contract validation
                 +--> API result rows, evidence, findings, reports
 ```
 
@@ -308,6 +315,47 @@ API_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/api-specs/${API_SPEC_
   -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
   -H "X-Qualora-CSRF: ${CSRF}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+```
+
+Create an API authentication profile. The secret is encrypted at rest and is never returned raw:
+
+```bash
+API_AUTH_PROFILE_ID=$(curl -s "http://localhost:8080/api/v1/projects/${PROJECT_ID}/api-auth-profiles" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Demo API bearer",
+    "type": "bearer_token",
+    "token": "demo-api-token",
+    "enabled": true
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+```
+
+Test the API auth profile with a safe read-only request:
+
+```bash
+curl -s -X POST "http://localhost:8080/api/v1/api-auth-profiles/${API_AUTH_PROFILE_ID}/test" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"GET","test_path":"/private/profile"}' | python3 -m json.tool
+```
+
+Run authenticated safe API smoke with lightweight contract and schema validation:
+
+```bash
+AUTH_API_RUN_ID=$(curl -s -X POST "http://localhost:8080/api/v1/api-specs/${API_SPEC_ID}/api-smoke-runs" \
+  -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+  -H "X-Qualora-CSRF: ${CSRF}" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "api_auth_profile_id": "'"${API_AUTH_PROFILE_ID}"'",
+    "authenticated": true,
+    "validate_contract": true,
+    "validate_schema": true,
+    "include_unauthenticated_comparison": true
+  }' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 ```
 
 Fetch API smoke results:
@@ -782,7 +830,7 @@ curl -s -X POST "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/execute" \
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.19.0-alpha`:
+Supported provider type in `v0.20.0-alpha`:
 
 - `openai-compatible`
 
@@ -802,11 +850,11 @@ AI prompt safety defaults:
 - Full HTML disabled.
 - Network bodies disabled.
 
-AI-assisted test plans are reviewable suggestions. In `v0.19.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, guided onboarding, report intelligence, baseline comparison, quality gates, CI runs, and issue export previews are deterministic paths and are not AI-controlled.
+AI-assisted test plans are reviewable suggestions. In `v0.20.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, guided onboarding, report intelligence, baseline comparison, quality gates, CI runs, and issue export previews are deterministic paths and are not AI-controlled.
 
 ## Report Intelligence
 
-Every primary JSON and HTML report includes deterministic report intelligence in `v0.19.0-alpha`:
+Every primary JSON and HTML report includes deterministic report intelligence in `v0.20.0-alpha`:
 
 - `executive_summary` with pass/warning/fail/unknown status, what was tested, what was not tested, recommended next actions, and safety limitations.
 - `severity_counts` normalized to `critical`, `high`, `medium`, `low`, and `info`.
@@ -831,7 +879,7 @@ Quality gates are designed for CI and release checks. Defaults fail on new criti
 
 ## CI Mode And Issue Export
 
-`v0.19.0-alpha` includes a native CI run endpoint at `POST /api/v1/projects/{project_id}/ci-runs`. It can start a Safe QA run, wait for completion, compare with a selected/default Safe QA baseline, evaluate a quality gate, persist a `ci_runs` record, and return `exit_code` `0` for passed/warning or `1` for failed/error. CI gate evaluation and issue export do not require AI.
+`v0.20.0-alpha` includes a native CI run endpoint at `POST /api/v1/projects/{project_id}/ci-runs`. It can start a Safe QA run, wait for completion, compare with a selected/default Safe QA baseline, evaluate a quality gate, persist a `ci_runs` record, and return `exit_code` `0` for passed/warning or `1` for failed/error. CI gate evaluation and issue export do not require AI.
 
 `scripts/qualora-ci-gate.sh` evaluates an existing report. `scripts/qualora-ci-run.sh` starts the workflow and evaluates the gate. Both scripts log in with `QUALORA_EMAIL` and `QUALORA_PASSWORD`, avoid printing secrets, and exit with the Qualora CI exit code.
 
@@ -927,7 +975,7 @@ The alpha is safe by default:
 - `localhost`, `.local`, loopback, link-local, private IP literal targets, common cloud metadata targets, and public hostnames resolving to blocked IP ranges are blocked by default.
 - `allow_private_targets: true` may be used for local/private systems you control.
 - Authenticated browser smoke is limited to configured credential profiles and deterministic selectors.
-- Authenticated API testing is not implemented in this release.
+- Authenticated API smoke is limited to configured API auth profiles and safe read-only imported OpenAPI operations.
 - Login automation is not autonomous and never uses AI browser control.
 - Secrets, credentials, cookies, and authorization headers must not be logged.
 - Screenshots and reports should be treated as sensitive evidence artifacts.
@@ -965,12 +1013,12 @@ See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.
 - Safe test plan execution is limited to the supported non-destructive browser DSL and same-origin link checks.
 - Screenshot preview/download is available only for evidence records known to Qualora.
 - Quality checks are alpha heuristics, not full security, accessibility, performance, Lighthouse, Core Web Vitals, or WCAG coverage.
-- No authenticated API testing.
+- Authenticated API testing is alpha and limited to configured API auth profiles plus safe read-only OpenAPI operations.
 - Authenticated browser smoke supports one configured login form and one same-origin target path per run.
 - No arbitrary form submission, multi-step authenticated journeys, MFA, role switching, or session export.
 - No active security scanning.
 - No destructive API testing by default.
-- No full OpenAPI schema validation or schema fuzzing.
+- OpenAPI contract validation is lightweight; no full OpenAPI validator, request-body validation, response-body storage, schema fuzzing, or payload generation is implemented.
 - No request body generation.
 - No Playwright trace download/export yet.
 - No autonomous AI browser control.
