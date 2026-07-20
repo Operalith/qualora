@@ -256,7 +256,7 @@ Delivered:
 
 ## v0.20.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Project-scoped API auth profiles for bearer tokens, API keys, basic auth, and explicit no-auth API checks.
 - Encrypted API auth secret storage using `QUALORA_ENCRYPTION_KEY`.
@@ -270,7 +270,21 @@ Current alpha scope:
 - Demo API protected bearer-token endpoints and deterministic contract mismatch fixture.
 - Smoke validation for API auth profile creation/test, authenticated API smoke, contract mismatch findings, no token leakage, old API smoke, AI, CI, and issue export flows.
 
-## Phase 20: Run And Worker Hardening
+## v0.21.0-alpha
+
+Current alpha scope:
+
+- Policy-gated AI Browser Control for projects with `frontend_url`.
+- Project-scoped AI Browser Control runs and step traces.
+- OpenAI-compatible provider suggestions constrained to one strict typed JSON action at a time.
+- Deterministic policy validation before Playwright executes any suggested browser action.
+- Supported safe actions: safe navigation, assertions, screenshot capture, browser-signal collection, and stop.
+- Sanitized observation evidence, AI suggestion metadata, policy decisions, execution status, screenshot evidence, JSON reports, and self-contained HTML reports.
+- Web UI project card, start form, run list, report page, and report index integration.
+- Deterministic fake-LLM smoke path plus an unsafe suggestion fixture that must be blocked by policy.
+- Smoke validation for safe action execution, policy blocks, reports, UI bundle text, and no secret leakage.
+
+## Phase 21: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.

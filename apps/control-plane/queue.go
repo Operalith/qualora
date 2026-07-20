@@ -41,6 +41,11 @@ type SafeExplorerRunJob struct {
 	ProjectID         string `json:"project_id"`
 }
 
+type AIBrowserControlRunJob struct {
+	AIBrowserControlRunID string `json:"ai_browser_control_run_id"`
+	ProjectID             string `json:"project_id"`
+}
+
 type APIRunJob struct {
 	JobID     string `json:"job_id"`
 	RunID     string `json:"run_id"`
@@ -122,6 +127,17 @@ func (q *Queue) EnqueueSafeExplorerRun(ctx context.Context, job SafeExplorerRunJ
 	}
 	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
 		return fmt.Errorf("enqueue safe explorer run: %w", err)
+	}
+	return nil
+}
+
+func (q *Queue) EnqueueAIBrowserControlRun(ctx context.Context, job AIBrowserControlRunJob) error {
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("marshal AI Browser Control run job: %w", err)
+	}
+	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
+		return fmt.Errorf("enqueue AI Browser Control run: %w", err)
 	}
 	return nil
 }

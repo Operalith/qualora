@@ -53,6 +53,15 @@ import {
   type SafeExplorerPageFindingInput,
   type SafeExplorerPolicy
 } from "./safe_explorer";
+import {
+  buildAIBrowserFinding,
+  evaluateAIBrowserPolicy,
+  parseAIBrowserSuggestion,
+  redactObservationValue,
+  type AIBrowserObservation,
+  type AIBrowserPolicyDecision,
+  type AIBrowserSuggestion
+} from "./ai_browser_control";
 
 type Config = {
   databaseUrl: string;
@@ -99,7 +108,12 @@ type SafeExplorerRunJob = {
   project_id: string;
 };
 
-type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob & DiscoveryRunJob & QualityCheckRunJob & SafeExplorerRunJob>;
+type AIBrowserControlRunJob = {
+  ai_browser_control_run_id: string;
+  project_id: string;
+};
+
+type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob & DiscoveryRunJob & QualityCheckRunJob & SafeExplorerRunJob & AIBrowserControlRunJob>;
 
 type Project = {
   id: string;
@@ -209,6 +223,33 @@ type SafeExplorerRunContext = {
   project: Project;
 };
 
+type AIBrowserControlRunContext = {
+  id: string;
+  project_id: string;
+  provider_id: string;
+  credential_profile_id: string;
+  status: string;
+  start_url: string;
+  goal: string;
+  max_steps: number;
+  max_depth: number;
+  same_origin_only: boolean;
+  project: Project;
+};
+
+type AIProviderContext = {
+  id: string;
+  name: string;
+  type: string;
+  base_url: string;
+  model: string;
+  api_key_encrypted: string;
+  extra_headers_encrypted: string;
+  temperature: number;
+  max_output_tokens: number;
+  timeout_seconds: number;
+};
+
 type AuthorizationCheck = {
   id: string;
   project_id: string;
@@ -275,6 +316,7 @@ type EvidenceOwner = {
   authorizationRunID?: string;
   discoveryRunID?: string;
   safeExplorerRunID?: string;
+  aiBrowserControlRunID?: string;
 };
 
 type FindingOwner = EvidenceOwner & {
@@ -352,6 +394,11 @@ async function main(): Promise<void> {
       if (job.safe_explorer_run_id) {
         await handleSafeExplorerRunJob({
           safe_explorer_run_id: job.safe_explorer_run_id,
+          project_id: job.project_id ?? ""
+        });
+      } else if (job.ai_browser_control_run_id) {
+        await handleAIBrowserControlRunJob({
+          ai_browser_control_run_id: job.ai_browser_control_run_id,
           project_id: job.project_id ?? ""
         });
       } else if (job.quality_check_run_id) {
@@ -618,6 +665,16 @@ type SafeExplorerRunTotals = {
   totalFindings: number;
 };
 
+type AIBrowserControlRunTotals = {
+  totalSteps: number;
+  totalAISuggestions: number;
+  totalActionsApproved: number;
+  totalActionsExecuted: number;
+  totalActionsSkipped: number;
+  totalPolicyBlocks: number;
+  totalFindings: number;
+};
+
 type QualityCheckRunTotals = {
   totalPages: number;
   totalFindings: number;
@@ -868,6 +925,249 @@ async function runSafeExplorer(run: SafeExplorerRunContext): Promise<SafeExplore
       }
     }
 
+    return totals;
+  } finally {
+    await browser.close();
+  }
+}
+
+async function handleAIBrowserControlRunJob(job: AIBrowserControlRunJob): Promise<void> {
+  log("ai_browser_control_run_started", { ai_browser_control_run_id: job.ai_browser_control_run_id, project_id: job.project_id });
+  try {
+    if (!job.ai_browser_control_run_id || !job.project_id) {
+      throw new Error("AI Browser Control run job is missing required IDs");
+    }
+    const run = await getAIBrowserControlRunContext(job.ai_browser_control_run_id, job.project_id);
+    const scopeCheck = await validateTargetURL(run.start_url, run.project.allowed_hosts, run.project.allow_private_targets);
+    if (!scopeCheck.ok) {
+      throw new Error(scopeCheck.reason);
+    }
+    await markAIBrowserControlRunRunning(run.id);
+    const totals = await runAIBrowserControl(run);
+    await finishAIBrowserControlRun(run.id, "completed", "", totals);
+    log("ai_browser_control_run_completed", {
+      ai_browser_control_run_id: run.id,
+      steps: totals.totalSteps,
+      suggestions: totals.totalAISuggestions,
+      approved: totals.totalActionsApproved,
+      executed: totals.totalActionsExecuted,
+      skipped: totals.totalActionsSkipped,
+      policy_blocks: totals.totalPolicyBlocks,
+      findings: totals.totalFindings
+    });
+  } catch (error) {
+    const message = sanitizeText(error instanceof Error ? error.message : String(error));
+    if (job.ai_browser_control_run_id) {
+      await finishAIBrowserControlRun(job.ai_browser_control_run_id, "failed", message, emptyAIBrowserControlTotals()).catch(() => undefined);
+    }
+    log("ai_browser_control_run_failed", { ai_browser_control_run_id: job.ai_browser_control_run_id, error: message });
+  }
+}
+
+async function runAIBrowserControl(run: AIBrowserControlRunContext): Promise<AIBrowserControlRunTotals> {
+  const provider = await getAIProviderContext(run.provider_id);
+  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
+  const context = await browser.newContext({ ignoreHTTPSErrors: false, viewport: { width: 1365, height: 768 } });
+  const page = await context.newPage();
+  const signals = createBrowserSignals(page);
+  await installAllowedHostRoutes(page, run.project, signals);
+
+  const totals = emptyAIBrowserControlTotals();
+  const visited = new Set<string>();
+  const previousSteps: AIBrowserObservation["previous_steps"] = [];
+  let currentURL = run.start_url;
+  let depth = 0;
+  let blockedInARow = 0;
+
+  try {
+    if (run.credential_profile_id) {
+      const profile = await getCredentialProfile(run.credential_profile_id, run.project.id);
+      const login = await executeLoginFlowOnPage(page, run.project, profile, signals, 30);
+      const loginEvidenceID = await insertEvidence({ aiBrowserControlRunID: run.id }, "login_observations", "inline://ai-browser-control-login-observations", {
+        credential_profile_id: profile.id,
+        credential_profile_name: profile.name,
+        role_name: profile.role_name,
+        subject_label: profile.subject_label,
+        login_url: login.loginURL,
+        final_url: login.finalURL,
+        page_title: login.pageTitle,
+        login_status: login.success ? "passed" : "failed",
+        success: login.success,
+        duration_ms: login.durationMS,
+        failure_reason: login.failureReason,
+        console_error_count: login.consoleErrors.length,
+        failed_request_count: login.failedRequests.length,
+        blocked_request_count: login.blockedRequests.length,
+        credentials_sent_to_ai: false,
+        browser_storage_recorded: false
+      });
+      if (!login.success) {
+        await insertFinding({ aiBrowserControlRunID: run.id }, {
+          title: "AI Browser Control login failed",
+          severity: login.failureCategory === "login_selector_missing" ? "medium" : "high",
+          category: login.failureCategory === "login_selector_missing" ? "missing_selector" : "login_failure",
+          confidence: "high",
+          description: `AI Browser Control could not complete the configured selector-based login: ${login.failureReason}`,
+          recommendation: "Verify the credential profile selectors and dedicated test account before using authenticated AI Browser Control.",
+          evidenceIds: [loginEvidenceID]
+        });
+        totals.totalFindings += 1;
+        throw new Error(login.failureReason || "AI Browser Control login failed");
+      }
+      currentURL = login.finalURL || run.start_url;
+    }
+
+    for (let stepIndex = 0; stepIndex < run.max_steps; stepIndex += 1) {
+      const normalizedCurrent = normalizeSafeExplorerURL(currentURL);
+      visited.add(normalizedCurrent);
+
+      const snapshot = await captureSafeExplorerPage(page, currentURL, signals);
+      const screenshotEvidenceID = snapshot.screenshot ? await insertAIBrowserScreenshotEvidence(run, snapshot) : "";
+      const observation = await buildAIBrowserObservation(page, run, snapshot, previousSteps);
+      const observationEvidenceID = await insertEvidence({ aiBrowserControlRunID: run.id }, "ai_browser_observation", "inline://ai-browser-control-observation", {
+        step_index: stepIndex,
+        current_url: observation.current_url,
+        current_path: observation.current_path,
+        page_title: observation.page_title,
+        safe_candidate_links_count: observation.safe_candidate_links.length,
+        candidate_buttons_count: observation.candidate_buttons.length,
+        forms_count: observation.forms.length,
+        console_error_count: observation.console_error_count,
+        failed_request_count: observation.failed_request_count,
+        credentials_sent_to_ai: false,
+        browser_storage_recorded: false,
+        full_html_recorded: false
+      });
+      const evidenceIDs = [screenshotEvidenceID, observationEvidenceID].filter(Boolean);
+
+      let suggestion: AIBrowserSuggestion | null = null;
+      let decision: AIBrowserPolicyDecision;
+      try {
+        const rawSuggestion = await requestAIBrowserSuggestion(provider, observation);
+        const parsed = parseAIBrowserSuggestion(rawSuggestion);
+        if (parsed.error) {
+          decision = {
+            decision: "invalid",
+            reason: parsed.error,
+            action: null,
+            targetURL: "",
+            selectorHint: "",
+            label: "invalid AI action"
+          };
+        } else {
+          suggestion = parsed.suggestion;
+          decision = evaluateAIBrowserPolicy({
+            suggestion,
+            observation,
+            policy: {
+              sourceURL: observation.current_url || run.start_url,
+              frontendURL: run.project.frontend_url,
+              allowedHosts: run.project.allowed_hosts,
+              sameOriginOnly: run.same_origin_only,
+              allowGetForms: false
+            },
+            startURL: run.start_url,
+            depth,
+            maxDepth: run.max_depth,
+            visited
+          });
+        }
+      } catch (error) {
+        decision = {
+          decision: "invalid",
+          reason: `AI provider request failed: ${sanitizeText(error instanceof Error ? error.message : String(error))}`,
+          action: null,
+          targetURL: "",
+          selectorHint: "",
+          label: "AI provider error"
+        };
+      }
+
+      totals.totalAISuggestions += suggestion ? 1 : 0;
+      let executionStatus: "executed" | "skipped" | "failed" | "error" = "skipped";
+      let executionError = "";
+      let finalURL = snapshot.finalURL || currentURL;
+      let durationMS: number | null = snapshot.loadDurationMS;
+      if (decision.decision === "approved") {
+        totals.totalActionsApproved += 1;
+        const startedAt = Date.now();
+        const execution = await executeAIBrowserAction(page, decision, observation);
+        executionStatus = execution.status;
+        executionError = execution.error;
+        finalURL = execution.finalURL || finalURL;
+        durationMS = Date.now() - startedAt;
+        if (executionStatus === "executed") {
+          totals.totalActionsExecuted += 1;
+          blockedInARow = 0;
+        } else {
+          totals.totalActionsSkipped += 1;
+        }
+      } else {
+        totals.totalActionsSkipped += 1;
+        if (decision.decision === "blocked") {
+          totals.totalPolicyBlocks += 1;
+          blockedInARow += 1;
+        }
+      }
+
+      await insertAIBrowserControlStep(run, {
+        stepIndex,
+        pageURL: snapshot.finalURL || snapshot.targetURL,
+        normalizedURL: snapshot.normalizedURL,
+        pageTitle: snapshot.title,
+        depth,
+        sanitizedObservation: observation,
+        aiSuggestion: suggestion ? JSON.parse(JSON.stringify(suggestion)) : {},
+        decision,
+        executionStatus,
+        finalURL,
+        httpStatus: snapshot.statusCode,
+        screenshotEvidenceID,
+        consoleErrorCount: snapshot.consoleErrors.length,
+        failedRequestCount: snapshot.failedRequests.length,
+        durationMS
+      });
+      totals.totalSteps += 1;
+
+      for (const finding of buildAIBrowserFinding({
+        decision,
+        executionStatus,
+        executionError,
+        consoleErrorCount: snapshot.consoleErrors.length,
+        failedRequestCount: snapshot.failedRequests.length,
+        evidenceIds: evidenceIDs
+      })) {
+        await insertFinding({ aiBrowserControlRunID: run.id }, finding);
+        totals.totalFindings += 1;
+      }
+
+      previousSteps.push({
+        step_index: stepIndex,
+        page: observation.current_path || observation.current_url,
+        action: decision.action?.type || "",
+        decision: decision.decision,
+        result: executionStatus
+      } as AIBrowserObservation["previous_steps"][number]);
+      if (previousSteps.length > 6) {
+        previousSteps.shift();
+      }
+
+      if (decision.action?.type === "stop") {
+        break;
+      }
+      if (decision.decision !== "approved" && blockedInARow >= 2) {
+        break;
+      }
+      if (executionStatus !== "executed") {
+        continue;
+      }
+      if (decision.targetURL) {
+        currentURL = decision.targetURL;
+        depth += 1;
+      } else {
+        currentURL = finalURL || currentURL;
+      }
+    }
     return totals;
   } finally {
     await browser.close();
@@ -1459,6 +1759,227 @@ async function extractSafeExplorerActions(page: Page): Promise<ExtractedSafeExpl
   });
 }
 
+async function buildAIBrowserObservation(
+  page: Page,
+  run: AIBrowserControlRunContext,
+  snapshot: SafeExplorerPageSnapshot,
+  previousSteps: AIBrowserObservation["previous_steps"]
+): Promise<AIBrowserObservation> {
+  const dom = await page
+    .evaluate(() => {
+      const clean = (value: string | null | undefined, max = 500) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+      const bodyText = clean(document.body?.innerText || "", 2200);
+      const snippets = bodyText
+        .split(/[.!?\n]/)
+        .map((part) => clean(part, 220))
+        .filter(Boolean)
+        .slice(0, 8);
+      const headings = Array.from(document.querySelectorAll("h1,h2,h3"))
+        .map((heading) => clean(heading.textContent, 180))
+        .filter(Boolean)
+        .slice(0, 12);
+      const forms = Array.from(document.querySelectorAll("form"))
+        .map((form) => {
+          const fields = Array.from(form.querySelectorAll("input,select,textarea"));
+          const passwordCount = fields.filter((field) => clean(field.getAttribute("type"), 40).toLowerCase() === "password").length;
+          const method = clean(form.getAttribute("method") || "GET", 16).toUpperCase();
+          return {
+            method,
+            field_count: fields.length,
+            password_field_count: passwordCount,
+            classification: method === "GET" && passwordCount === 0 ? "metadata_only" : "unsafe_or_unsupported"
+          };
+        })
+        .slice(0, 12);
+      return { snippets, headings, forms };
+    })
+    .catch(() => ({ snippets: [], headings: [], forms: [] }));
+
+  const policy: SafeExplorerPolicy = {
+    sourceURL: snapshot.finalURL || snapshot.targetURL,
+    frontendURL: run.project.frontend_url,
+    allowedHosts: run.project.allowed_hosts,
+    sameOriginOnly: run.same_origin_only,
+    allowGetForms: false
+  };
+  const classified = snapshot.actions.map((action) => classifySafeExplorerAction(action, policy));
+  const links = classified
+    .filter((action) => action.actionType === "link_navigation" && action.decision === "execute")
+    .slice(0, 30)
+    .map((action) => {
+      const parsed = new URL(action.normalizedURL || action.targetURL);
+      return {
+        text: redactObservationValue(action.text || action.label),
+        path: redactObservationValue(parsed.pathname + parsed.search),
+        target_url: redactObservationValue(action.normalizedURL || action.targetURL),
+        same_origin: action.sameOrigin,
+        safety: action.safety,
+        selector_hint: redactObservationValue(action.selectorHint)
+      };
+    });
+  const buttons = classified
+    .filter((action) => action.actionType === "button" || action.actionType === "input")
+    .slice(0, 20)
+    .map((action) => ({
+      label: redactObservationValue(action.label || action.text),
+      safety: action.safety,
+      selector_hint: redactObservationValue(action.selectorHint)
+    }));
+  const current = new URL(snapshot.normalizedURL || snapshot.finalURL || snapshot.targetURL);
+  return {
+    project_name: redactObservationValue(run.project.id),
+    goal: redactObservationValue(run.goal),
+    current_url: redactObservationValue(snapshot.normalizedURL || snapshot.finalURL || snapshot.targetURL),
+    current_path: redactObservationValue(current.pathname + current.search),
+    page_title: redactObservationValue(snapshot.title),
+    visible_text_snippets: dom.snippets.map(redactObservationValue),
+    headings: dom.headings.map(redactObservationValue),
+    safe_candidate_links: links,
+    candidate_buttons: buttons,
+    forms: dom.forms,
+    console_error_count: snapshot.consoleErrors.length,
+    failed_request_count: snapshot.failedRequests.length,
+    previous_steps: previousSteps.slice(-6)
+  };
+}
+
+async function requestAIBrowserSuggestion(provider: AIProviderContext, observation: AIBrowserObservation): Promise<string> {
+  const endpoint = chatCompletionsURL(provider.base_url);
+  const apiKey = decryptSecret(provider.api_key_encrypted);
+  const extraHeaders = parseEncryptedExtraHeaders(provider.extra_headers_encrypted);
+  const body = {
+    model: provider.model,
+    temperature: provider.temperature,
+    max_tokens: Math.min(Math.max(provider.max_output_tokens || 800, 200), 1200),
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You are a QA navigation planner for Qualora AI Browser Control.",
+          "Propose exactly one next action as strict JSON.",
+          "Use only the sanitized observation. Do not invent pages, selectors, form values, cookies, tokens, auth headers, storage, HTML, screenshots, request bodies, or response bodies.",
+          "Prefer safe same-origin navigation from safe_candidate_links.",
+          "Never submit forms, click destructive or mutating actions, attempt exploitation, fuzzing, payloads, bypasses, external navigation, uploads, logout, delete, payment, transfer, or password changes.",
+          "Return JSON: {\"rationale\":\"...\",\"action\":{\"type\":\"click_link|goto|click_safe_navigation|assert_text_visible|assert_url_contains|assert_title_contains|capture_screenshot|collect_browser_signals|stop\",...},\"expected_result\":\"...\",\"risk_assessment\":\"safe_navigation\"}."
+        ].join(" ")
+      },
+      {
+        role: "user",
+        content: JSON.stringify({ sanitized_observation: observation })
+      }
+    ]
+  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(provider.timeout_seconds || 30, 1) * 1000);
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        ...extraHeaders
+      },
+      body: JSON.stringify(body)
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`AI provider returned HTTP ${response.status}: ${sanitizeText(text)}`);
+    }
+    const payload = JSON.parse(text) as { choices?: Array<{ message?: { content?: string } }> };
+    const content = payload.choices?.[0]?.message?.content || "";
+    if (!content.trim()) {
+      throw new Error("AI provider returned no message content");
+    }
+    return content;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function executeAIBrowserAction(
+  page: Page,
+  decision: AIBrowserPolicyDecision,
+  observation: AIBrowserObservation
+): Promise<{ status: "executed" | "skipped" | "failed" | "error"; finalURL: string; error: string }> {
+  const action = decision.action;
+  if (!action) {
+    return { status: "skipped", finalURL: page.url(), error: decision.reason };
+  }
+  try {
+    switch (action.type) {
+      case "stop":
+        return { status: "skipped", finalURL: page.url(), error: "" };
+      case "capture_screenshot":
+      case "collect_browser_signals":
+        return { status: "executed", finalURL: page.url(), error: "" };
+      case "assert_url_contains": {
+        const expected = action.text || "";
+        return page.url().includes(expected)
+          ? { status: "executed", finalURL: page.url(), error: "" }
+          : { status: "failed", finalURL: page.url(), error: `URL did not contain expected text ${expected}` };
+      }
+      case "assert_title_contains": {
+        const title = await page.title().catch(() => "");
+        const expected = action.text || "";
+        return title.includes(expected)
+          ? { status: "executed", finalURL: page.url(), error: "" }
+          : { status: "failed", finalURL: page.url(), error: `title did not contain expected text ${expected}` };
+      }
+      case "assert_text_visible": {
+        const expected = action.text || "";
+        const found = observation.visible_text_snippets.join(" ").includes(expected);
+        return found
+          ? { status: "executed", finalURL: page.url(), error: "" }
+          : { status: "failed", finalURL: page.url(), error: `visible text did not contain expected text ${expected}` };
+      }
+      case "goto":
+      case "click_link":
+      case "click_safe_navigation": {
+        if (!decision.targetURL) {
+          return { status: "skipped", finalURL: page.url(), error: "approved navigation action had no target URL" };
+        }
+        await page.goto(decision.targetURL, { waitUntil: "domcontentloaded", timeout: 30000 });
+        await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+        return { status: "executed", finalURL: sanitizeURL(page.url() || decision.targetURL), error: "" };
+      }
+      default:
+        return { status: "skipped", finalURL: page.url(), error: `unsupported action ${action.type}` };
+    }
+  } catch (error) {
+    return { status: "error", finalURL: sanitizeURL(page.url()), error: sanitizeText(error instanceof Error ? error.message : String(error)) };
+  }
+}
+
+function parseEncryptedExtraHeaders(encrypted: string): Record<string, string> {
+  if (!encrypted) {
+    return {};
+  }
+  try {
+    const decrypted = decryptSecret(encrypted);
+    const parsed = JSON.parse(decrypted) as Record<string, string>;
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!/authorization|cookie|token|secret|password/i.test(key)) {
+        out[key] = String(value);
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function chatCompletionsURL(baseURL: string): string {
+  const parsed = new URL(baseURL);
+  parsed.pathname = `${parsed.pathname.replace(/\/$/, "")}/chat/completions`;
+  parsed.search = "";
+  parsed.hash = "";
+  return parsed.toString();
+}
+
 async function captureDiscoveryPage(page: Page, run: DiscoveryRunContext, targetURL: string, signals: BrowserSignals): Promise<DiscoveryPageSnapshot> {
   const startedAt = Date.now();
   const consoleStart = signals.consoleErrors.length;
@@ -1871,6 +2392,28 @@ async function insertSafeExplorerScreenshotEvidence(run: SafeExplorerRunContext,
   });
 }
 
+async function insertAIBrowserScreenshotEvidence(run: AIBrowserControlRunContext, snapshot: SafeExplorerPageSnapshot): Promise<string> {
+  if (!snapshot.screenshot) {
+    return "";
+  }
+  const object = await storeScreenshot("ai-browser-control-runs", run.id, snapshot.screenshot);
+  return insertEvidence({ aiBrowserControlRunID: run.id }, "screenshot", object.uri, {
+    filename: object.filename,
+    key: object.key,
+    content_type: object.contentType,
+    size_bytes: object.sizeBytes,
+    created_at: object.createdAt,
+    storage: object.storage,
+    target_url: snapshot.targetURL,
+    final_url: snapshot.finalURL,
+    normalized_url: snapshot.normalizedURL,
+    page_title: snapshot.title,
+    status_code: snapshot.statusCode,
+    ai_direct_browser_control: false,
+    credentials_sent_to_ai: false
+  });
+}
+
 type SafeExplorerStepInsert = {
   stepIndex: number;
   pageURL: string;
@@ -1888,6 +2431,24 @@ type SafeExplorerStepInsert = {
   resultStatus: string;
   httpStatus: number | null;
   finalURL: string;
+  screenshotEvidenceID: string;
+  consoleErrorCount: number;
+  failedRequestCount: number;
+  durationMS: number | null;
+};
+
+type AIBrowserControlStepInsert = {
+  stepIndex: number;
+  pageURL: string;
+  normalizedURL: string;
+  pageTitle: string;
+  depth: number;
+  sanitizedObservation: Record<string, unknown>;
+  aiSuggestion: Record<string, unknown>;
+  decision: AIBrowserPolicyDecision;
+  executionStatus: string;
+  finalURL: string;
+  httpStatus: number | null;
   screenshotEvidenceID: string;
   consoleErrorCount: number;
   failedRequestCount: number;
@@ -1977,6 +2538,49 @@ async function updateSafeExplorerActionDecision(actionID: string, action: Classi
   );
 }
 
+async function insertAIBrowserControlStep(run: AIBrowserControlRunContext, step: AIBrowserControlStepInsert): Promise<string> {
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO ai_browser_control_steps (
+       id, run_id, project_id, step_index, page_url, normalized_url, page_title, depth,
+       sanitized_observation_json, ai_suggestion_json, action_type, action_label, action_target_url,
+       action_selector_hint, policy_decision, policy_reason, execution_status, final_url, http_status,
+       screenshot_evidence_id, console_error_count, failed_request_count, duration_ms
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6, $7, $8,
+       $9, $10, $11, $12, $13,
+       $14, $15, $16, $17, $18, $19,
+       NULLIF($20, '')::uuid, $21, $22, $23
+     )`,
+    [
+      id,
+      run.id,
+      run.project_id,
+      step.stepIndex,
+      sanitizeURL(step.pageURL),
+      sanitizeURL(step.normalizedURL),
+      sanitizeText(step.pageTitle),
+      step.depth,
+      JSON.stringify(step.sanitizedObservation),
+      Object.keys(step.aiSuggestion).length > 0 ? JSON.stringify(step.aiSuggestion) : null,
+      sanitizeText(step.decision.action?.type || ""),
+      sanitizeText(step.decision.label),
+      sanitizeURL(step.decision.targetURL),
+      sanitizeText(step.decision.selectorHint),
+      step.decision.decision,
+      sanitizeText(step.decision.reason),
+      step.executionStatus,
+      sanitizeURL(step.finalURL),
+      step.httpStatus,
+      step.screenshotEvidenceID,
+      step.consoleErrorCount,
+      step.failedRequestCount,
+      step.durationMS
+    ]
+  );
+  return id;
+}
+
 async function getSafeExplorerRunContext(runID: string, projectID: string): Promise<SafeExplorerRunContext> {
   const result = await pool.query(
     `SELECT s.id, s.project_id, s.credential_profile_id::text, s.status, s.start_url,
@@ -2023,9 +2627,92 @@ async function getSafeExplorerRunContext(runID: string, projectID: string): Prom
   };
 }
 
+async function getAIBrowserControlRunContext(runID: string, projectID: string): Promise<AIBrowserControlRunContext> {
+  const result = await pool.query(
+    `SELECT r.id, r.project_id, r.provider_id, r.credential_profile_id::text, r.status, r.start_url,
+            r.goal, r.max_steps, r.max_depth, r.same_origin_only,
+            p.frontend_url, p.allowed_hosts, p.allow_private_targets
+     FROM ai_browser_control_runs r
+     JOIN projects p ON p.id = r.project_id
+     WHERE r.id = $1 AND p.id = $2`,
+    [runID, projectID]
+  );
+  if (result.rowCount !== 1) {
+    throw new Error("AI Browser Control run was not found");
+  }
+  const row = result.rows[0] as {
+    id: string;
+    project_id: string;
+    provider_id: string;
+    credential_profile_id: string | null;
+    status: string;
+    start_url: string;
+    goal: string;
+    max_steps: number;
+    max_depth: number;
+    same_origin_only: boolean;
+    frontend_url: string;
+    allowed_hosts: string[] | string;
+    allow_private_targets: boolean;
+  };
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    provider_id: row.provider_id,
+    credential_profile_id: row.credential_profile_id ?? "",
+    status: row.status,
+    start_url: row.start_url,
+    goal: sanitizeText(row.goal || ""),
+    max_steps: Number(row.max_steps || 8),
+    max_depth: Number(row.max_depth || 2),
+    same_origin_only: row.same_origin_only,
+    project: {
+      id: row.project_id,
+      frontend_url: row.frontend_url,
+      allowed_hosts: Array.isArray(row.allowed_hosts) ? row.allowed_hosts : JSON.parse(row.allowed_hosts),
+      allow_private_targets: row.allow_private_targets
+    }
+  };
+}
+
+async function getAIProviderContext(providerID: string): Promise<AIProviderContext> {
+  const result = await pool.query(
+    `SELECT id, name, type, base_url, model, api_key_encrypted, extra_headers_encrypted,
+            temperature, max_output_tokens, timeout_seconds
+     FROM ai_providers
+     WHERE id = $1`,
+    [providerID]
+  );
+  if (result.rowCount !== 1) {
+    throw new Error("AI provider was not found");
+  }
+  const row = result.rows[0] as AIProviderContext;
+  return {
+    id: row.id,
+    name: sanitizeText(row.name || ""),
+    type: row.type || "",
+    base_url: row.base_url || "",
+    model: row.model || "",
+    api_key_encrypted: row.api_key_encrypted || "",
+    extra_headers_encrypted: row.extra_headers_encrypted || "",
+    temperature: Number(row.temperature ?? 0.2),
+    max_output_tokens: Number(row.max_output_tokens || 1000),
+    timeout_seconds: Number(row.timeout_seconds || 30)
+  };
+}
+
 async function markSafeExplorerRunRunning(runID: string): Promise<void> {
   await pool.query(
     `UPDATE safe_explorer_runs
+     SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
+     WHERE id = $1`,
+    [runID]
+  );
+}
+
+async function markAIBrowserControlRunRunning(runID: string): Promise<void> {
+  await pool.query(
+    `UPDATE ai_browser_control_runs
      SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
      WHERE id = $1`,
     [runID]
@@ -2060,6 +2747,41 @@ async function finishSafeExplorerRun(runID: string, status: "completed" | "faile
   );
 }
 
+async function finishAIBrowserControlRun(
+  runID: string,
+  status: "completed" | "failed" | "error",
+  errorMessage: string,
+  totals: AIBrowserControlRunTotals
+): Promise<void> {
+  await pool.query(
+    `UPDATE ai_browser_control_runs
+     SET status = $2,
+         error_message = $3,
+         completed_at = now(),
+         total_steps = $4,
+         total_ai_suggestions = $5,
+         total_actions_approved = $6,
+         total_actions_executed = $7,
+         total_actions_skipped = $8,
+         total_policy_blocks = $9,
+         total_findings = $10,
+         updated_at = now()
+     WHERE id = $1`,
+    [
+      runID,
+      status,
+      errorMessage,
+      totals.totalSteps,
+      totals.totalAISuggestions,
+      totals.totalActionsApproved,
+      totals.totalActionsExecuted,
+      totals.totalActionsSkipped,
+      totals.totalPolicyBlocks,
+      totals.totalFindings
+    ]
+  );
+}
+
 function emptySafeExplorerTotals(): SafeExplorerRunTotals {
   return {
     totalSteps: 0,
@@ -2067,6 +2789,18 @@ function emptySafeExplorerTotals(): SafeExplorerRunTotals {
     totalActionsDetected: 0,
     totalActionsExecuted: 0,
     totalActionsSkipped: 0,
+    totalFindings: 0
+  };
+}
+
+function emptyAIBrowserControlTotals(): AIBrowserControlRunTotals {
+  return {
+    totalSteps: 0,
+    totalAISuggestions: 0,
+    totalActionsApproved: 0,
+    totalActionsExecuted: 0,
+    totalActionsSkipped: 0,
+    totalPolicyBlocks: 0,
     totalFindings: 0
   };
 }
@@ -4076,8 +4810,8 @@ async function captureScreenshot(page: Page): Promise<Buffer | null> {
 async function insertEvidence(owner: EvidenceOwner, type: string, uri: string, metadata: Record<string, unknown>): Promise<string> {
   const id = randomUUID();
   await pool.query(
-    `INSERT INTO evidence (id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, safe_explorer_run_id, type, uri, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    `INSERT INTO evidence (id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, safe_explorer_run_id, ai_browser_control_run_id, type, uri, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       id,
       owner.runID ?? null,
@@ -4085,6 +4819,7 @@ async function insertEvidence(owner: EvidenceOwner, type: string, uri: string, m
       owner.authorizationRunID ?? null,
       owner.discoveryRunID ?? null,
       owner.safeExplorerRunID ?? null,
+      owner.aiBrowserControlRunID ?? null,
       type,
       uri,
       JSON.stringify(metadata)
@@ -4097,10 +4832,10 @@ async function insertFinding(owner: FindingOwner, finding: FindingInput): Promis
   const id = randomUUID();
   await pool.query(
     `INSERT INTO findings (
-       id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, safe_explorer_run_id, scenario_execution_id, step_execution_id,
+       id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, safe_explorer_run_id, ai_browser_control_run_id, scenario_execution_id, step_execution_id,
        title, severity, category, confidence, description, recommendation, evidence_ids
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
     [
       id,
       owner.runID ?? null,
@@ -4108,6 +4843,7 @@ async function insertFinding(owner: FindingOwner, finding: FindingInput): Promis
       owner.authorizationRunID ?? null,
       owner.discoveryRunID ?? null,
       owner.safeExplorerRunID ?? null,
+      owner.aiBrowserControlRunID ?? null,
       owner.scenarioExecutionID ?? null,
       owner.stepExecutionID ?? null,
       finding.title,
@@ -4134,7 +4870,11 @@ async function ensureS3Bucket(): Promise<void> {
   }
 }
 
-async function storeScreenshot(ownerKind: "runs" | "test-plan-executions" | "authorization-check-runs" | "discovery-runs" | "safe-explorer-runs", ownerID: string, screenshot: Buffer): Promise<StoredEvidenceObject> {
+async function storeScreenshot(
+  ownerKind: "runs" | "test-plan-executions" | "authorization-check-runs" | "discovery-runs" | "safe-explorer-runs" | "ai-browser-control-runs",
+  ownerID: string,
+  screenshot: Buffer
+): Promise<StoredEvidenceObject> {
   const filename = `${Date.now()}-${randomUUID()}.png`;
   const key = `${ownerKind}/${ownerID}/screenshots/${filename}`;
   const createdAt = new Date().toISOString();

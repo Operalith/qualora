@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.20.0-alpha is the twentieth public alpha release. It adds encrypted API auth profiles, authenticated read-only API smoke runs, and lightweight OpenAPI contract validation while keeping local auth, browser/API smoke, credential profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, report intelligence, baselines, quality gates, CI runs, issue export, AI analysis, Safe QA Runs, and approved safe plan execution intact.
+Qualora v0.21.0-alpha is the twenty-first public alpha release. It adds policy-gated AI Browser Control while keeping local auth, browser/API smoke, credential profiles, API auth profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, report intelligence, baselines, quality gates, CI runs, issue export, AI analysis, Safe QA Runs, authenticated read-only API smoke, lightweight API contract validation, and approved safe plan execution intact.
 
 ## Pre-Release Checklist
 
@@ -24,7 +24,7 @@ Confirm:
 - The web UI is reachable at `http://localhost:3000`.
 - A fresh database requires first-run admin setup before project data is visible.
 - Setup, login, logout, `/auth/me`, CSRF, and protected route checks pass.
-- The dashboard shows the `v0.20.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
+- The dashboard shows the `v0.21.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
 - The guided setup route `#/setup-project` renders the project basics, AI, login, OpenAPI, workflow, and results steps.
 - `POST /api/v1/onboarding/project-setup` can create a project, optionally configure a demo AI provider, optionally create a credential profile, optionally import a demo OpenAPI spec, and start selected safe checks.
 - The guided demo flow starts browser smoke, authenticated browser smoke, discovery, quality checks, Safe QA, and API smoke when all demo dependencies are configured.
@@ -34,7 +34,10 @@ Confirm:
 - Project detail pages show the Interactive Safe Explorer card, run form, run list, and warning text.
 - Safe Explorer runs complete against `demo-web`, execute at least one safe action, skip unsafe/external/POST/unsupported actions with reasons, and produce screenshot evidence.
 - Safe Explorer JSON/HTML reports and trace endpoints work and do not expose demo passwords, cookies, browser storage, auth headers, or tokens.
-- The reports landing page lists recent browser, API, discovery, Safe Explorer, quality, and Safe QA reports with status, high/medium counts, grouped counts, raw counts, and report links for recent reports.
+- AI Browser Control runs complete against `demo-web` using `fake-llm`, execute approved safe actions, record AI suggestions, policy decisions, sanitized observations, screenshot evidence, trace data, JSON reports, and HTML reports.
+- The unsafe AI Browser Control smoke goal makes `fake-llm` propose a destructive route and Qualora records a policy block instead of executing it.
+- AI Browser Control reports do not expose demo passwords, cookies, browser storage, auth headers, tokens, screenshots to AI, full HTML, request bodies, or response bodies.
+- The reports landing page lists recent browser, API, discovery, Safe Explorer, AI Browser Control, quality, and Safe QA reports with status, high/medium counts, grouped counts, raw counts, and report links for recent reports.
 - JSON reports include `executive_summary`, `severity_counts`, `grouped_findings`, `top_findings`, `top_affected_pages`, `noise_summary`, `raw_findings_count`, `deduplication_summary`, and `safety_limitations`.
 - HTML reports include Executive Summary, Grouped Findings, Affected Pages, Noise / Repeated Findings, and the existing raw details.
 - A completed Safe QA report can be marked as the default `safe_qa` baseline.
@@ -62,17 +65,17 @@ Confirm:
 - Lightweight contract validation records the deterministic `/private/broken-contract` required-field mismatch without storing response bodies.
 - Authenticated API smoke JSON reports, HTML reports, API result rows, AI analysis inputs/results, CI output, and issue export dry-run previews do not contain `demo-api-token`.
 - Existing AI analysis, AI test planning, discovery-aware planning, safe plan preview/execution, and Safe QA Run flows still work.
-- Documentation does not claim unsupported multi-user management, password reset, SSO/OIDC/SAML, enterprise RBAC, multi-tenancy, destructive API testing, full OpenAPI validation, schema fuzzing, trace export, autonomous AI browser control, automatic/free-form execution of generated test plans, native Anthropic/Gemini support, or full browser/API test coverage.
+- Documentation does not claim unsupported multi-user management, password reset, SSO/OIDC/SAML, enterprise RBAC, multi-tenancy, destructive API testing, full OpenAPI validation, schema fuzzing, trace export beyond existing alpha report traces, autonomous/direct AI browser control, automatic/free-form execution of generated test plans, native Anthropic/Gemini support, or full browser/API test coverage.
 
 ## Tagging
 
 ```bash
 git status --short
 git add .
-git commit -m "feat: add authenticated API contract testing for v0.20.0-alpha"
-git tag -a v0.20.0-alpha -m "v0.20.0-alpha"
+git commit -m "feat: add policy-gated AI browser control for v0.21.0-alpha"
+git tag -a v0.21.0-alpha -m "v0.21.0-alpha"
 git push origin main
-git push origin v0.20.0-alpha
+git push origin v0.21.0-alpha
 ```
 
 ## GitHub Release
@@ -80,7 +83,7 @@ git push origin v0.20.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.20.0-alpha
+Qualora v0.21.0-alpha
 ```
 
-Use [release-notes/v0.20.0-alpha.md](release-notes/v0.20.0-alpha.md) as the release body.
+Use [release-notes/v0.21.0-alpha.md](release-notes/v0.21.0-alpha.md) as the release body.

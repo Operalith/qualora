@@ -246,9 +246,10 @@ const server = http.createServer((req, res) => {
         const content = Array.isArray(request.messages)
           ? request.messages.map((message) => String(message.content || "")).join("\n").toLowerCase()
           : "";
+        const isAIBrowserControl = content.includes("ai browser control") || content.includes("sanitized_observation");
         const isTestPlan = content.includes("test plan") || content.includes("test planning");
         const isDiscoveryAware = /"discovery_map"\s*:\s*\{/.test(content) || content.includes("generated_from_discovery");
-        const payload = isTestPlan ? (isDiscoveryAware ? discoveryTestPlan : testPlan) : analysis;
+        const payload = isAIBrowserControl ? aiBrowserSuggestion(request, content) : isTestPlan ? (isDiscoveryAware ? discoveryTestPlan : testPlan) : analysis;
         writeJSON(res, 200, {
           id: "chatcmpl-qualora-fake",
           object: "chat.completion",
@@ -265,8 +266,8 @@ const server = http.createServer((req, res) => {
           ],
           usage: {
             prompt_tokens: 120,
-            completion_tokens: isTestPlan ? 240 : 90,
-            total_tokens: isTestPlan ? 360 : 210
+            completion_tokens: isAIBrowserControl ? 80 : isTestPlan ? 240 : 90,
+            total_tokens: isAIBrowserControl ? 200 : isTestPlan ? 360 : 210
           }
         });
       })
@@ -276,6 +277,81 @@ const server = http.createServer((req, res) => {
 
   writeJSON(res, 404, { error: "not_found" });
 });
+
+function aiBrowserSuggestion(request, content) {
+  if (process.env.QUALORA_FAKE_LLM_AI_BROWSER_MODE === "unsafe" || content.includes("force_unsafe_ai_browser_action")) {
+    return {
+      rationale: "Unsafe-mode smoke test asks for a policy-blocked navigation.",
+      action: {
+        type: "goto",
+        target_url: "/delete-account",
+        label: "Delete account"
+      },
+      expected_result: "The policy engine should block this action.",
+      risk_assessment: "unsafe_mutation"
+    };
+  }
+
+  let currentPath = "/";
+  let previousSteps = [];
+  try {
+    const userContent = request.messages.find((message) => String(message.role || "") === "user")?.content || "";
+    const parsed = JSON.parse(userContent);
+    const observation = parsed.sanitized_observation || {};
+    currentPath = observation.current_path || "/";
+    previousSteps = Array.isArray(observation.previous_steps) ? observation.previous_steps : [];
+  } catch {
+    currentPath = content.includes("/about") ? "/about" : content.includes("/status") ? "/status" : content.includes("/pricing") ? "/pricing" : "/";
+  }
+
+  if (currentPath.startsWith("/about")) {
+    return {
+      rationale: "The status link is a safe same-origin navigation candidate.",
+      action: { type: "click_link", target_url: "/status", link_text: "Status" },
+      expected_result: "The status page should load.",
+      risk_assessment: "safe_navigation"
+    };
+  }
+  if (currentPath.startsWith("/status")) {
+    return {
+      rationale: "The pricing link is a safe same-origin navigation candidate.",
+      action: { type: "click_link", target_url: "/pricing", link_text: "Pricing" },
+      expected_result: "The pricing page should load.",
+      risk_assessment: "safe_navigation"
+    };
+  }
+  if (currentPath.startsWith("/pricing")) {
+    const latestStep = previousSteps[previousSteps.length - 1] || {};
+    if (latestStep.page === "/pricing" && latestStep.action === "capture_screenshot") {
+      return {
+        rationale: "The demo goal is complete after safe navigation and screenshot evidence.",
+        action: { type: "stop", reason: "Demo path complete." },
+        expected_result: "The run should stop cleanly.",
+        risk_assessment: "safe_stop"
+      };
+    }
+    return {
+      rationale: "A screenshot is useful evidence after safe navigation coverage.",
+      action: { type: "capture_screenshot" },
+      expected_result: "Qualora records screenshot evidence without sending it to AI.",
+      risk_assessment: "safe_metadata"
+    };
+  }
+  if (currentPath.startsWith("/quality-console")) {
+    return {
+      rationale: "No additional safe action is needed for this demo page.",
+      action: { type: "stop", reason: "No further safe useful action exists." },
+      expected_result: "The run should stop safely.",
+      risk_assessment: "safe_stop"
+    };
+  }
+  return {
+    rationale: "The page has an observed safe same-origin About link.",
+    action: { type: "click_link", target_url: "/about", link_text: "About" },
+    expected_result: "The About page should load.",
+    risk_assessment: "safe_navigation"
+  };
+}
 
 function readBody(req) {
   return new Promise((resolve, reject) => {

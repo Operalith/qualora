@@ -695,6 +695,8 @@ func inferFindingSourceType(finding Finding, fallback string) string {
 		return RunTypeAppDiscovery
 	case finding.SafeExplorerRunID != "":
 		return RunTypeSafeExplorer
+	case finding.AIBrowserControlRunID != "":
+		return RunTypeAIBrowserControl
 	case finding.AuthorizationRunID != "":
 		return "authorization_check"
 	case finding.TestPlanExecutionID != "":
@@ -815,6 +817,8 @@ func friendlyReportType(reportType string) string {
 		return "Quality check"
 	case RunTypeSafeExplorer:
 		return "Safe Explorer"
+	case RunTypeAIBrowserControl:
+		return "AI Browser Control"
 	case "authorization_check":
 		return "Authorization check"
 	case "test_plan_execution":
@@ -837,6 +841,8 @@ func defaultWhatWasTested(reportType string, project *Project) []string {
 		return []string{"Passive security header heuristics", "Basic accessibility heuristics", "Front-end and performance metadata"}
 	case RunTypeSafeExplorer:
 		return []string{"Classified safe navigation actions", "Observed page metadata, skip reasons, screenshots, console errors, and failed network requests"}
+	case RunTypeAIBrowserControl:
+		return []string{"Sanitized page observations", "AI-proposed typed actions", "Deterministic policy decisions", "Policy-approved safe browser actions", "Screenshots, console error counts, and failed request counts"}
 	case "safe_qa_run":
 		return []string{"Discovery, optional quality checks, AI-assisted test planning, and approved safe browser DSL execution"}
 	case "authorization_check":
@@ -875,6 +881,8 @@ func defaultWhatWasNotTested(reportType string) []string {
 		return append(common, "Full WCAG certification", "Lighthouse scoring", "Penetration testing")
 	case RunTypeAppDiscovery, RunTypeSafeExplorer:
 		return append(common, "Arbitrary form submission", "Unsafe clicks and mutating actions", "External-domain crawling by default")
+	case RunTypeAIBrowserControl:
+		return []string{"Destructive actions", "Active exploitation or fuzzing", "Direct AI browser control", "Arbitrary form submission", "Unsafe clicks and mutating actions", "External-domain crawling by default", "Payload attacks"}
 	case "authorization_check":
 		return append(common, "API authorization checks with credentials", "Broad access-control crawling")
 	case "safe_qa_run":

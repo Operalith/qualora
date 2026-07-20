@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   API_BASE_URL,
+  aiBrowserControlHTMLReportURL,
   authorizationCheckHTMLReportURL,
   compareReport,
   createAPIAuthProfile,
@@ -25,6 +26,7 @@ import {
   executeQARun,
   exportReportIssues,
   generateAITestPlan,
+  getAIBrowserControlReport,
   getAuthorizationCheckReport,
   getAPISpec,
   getDiscoveryReport,
@@ -41,6 +43,7 @@ import {
   importAPISpec,
   listAPIAuthProfiles,
   listAIProviders,
+  listAIBrowserControlRuns,
   listAuthorizationCheckRuns,
   listAuthorizationChecks,
   listAPISpecs,
@@ -66,6 +69,7 @@ import {
   runProjectSetup,
   safeExplorerHTMLReportURL,
   setupAdmin,
+  startAIBrowserControlRun,
   startAuthorizationCheckRun,
   startAPISmokeRun,
   startAuthenticatedBrowserSmokeRun,
@@ -90,6 +94,10 @@ import {
 } from "./api";
 import type {
   AIAnalysis,
+  AIBrowserControlReport,
+  AIBrowserControlRun,
+  AIBrowserControlRunInput,
+  AIBrowserControlStep,
   APICheckResult,
   APIAuthProfile,
   APIAuthProfileInput,
@@ -169,6 +177,7 @@ type Route =
   | { name: "discovery-run"; id: string }
   | { name: "quality-check-run"; id: string }
   | { name: "safe-explorer-run"; id: string }
+  | { name: "ai-browser-control-run"; id: string }
   | { name: "qa-run"; id: string }
   | { name: "run"; id: string };
 
@@ -188,7 +197,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.20.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.21.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -413,6 +422,7 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
         {route.name === "discovery-run" && <DiscoveryRunPage runID={route.id} />}
         {route.name === "quality-check-run" && <QualityCheckRunPage runID={route.id} />}
         {route.name === "safe-explorer-run" && <SafeExplorerRunPage runID={route.id} />}
+        {route.name === "ai-browser-control-run" && <AIBrowserControlRunPage runID={route.id} />}
         {route.name === "qa-run" && <QARunPage runID={route.id} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
       </main>
@@ -604,7 +614,7 @@ function Dashboard({
             <h2>Qualora version badge: {formatVersionBadge(version)}</h2>
             <p>Configure a real project, optional AI, optional login, optional OpenAPI, and start the first safe workflow.</p>
           </div>
-          <span className="pill">Qualora v0.20.0-alpha</span>
+          <span className="pill">Qualora v0.21.0-alpha</span>
         </div>
         <div className="quick-grid">
           <a className="quick-card" href="#/setup-project">
@@ -1169,10 +1179,11 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
       try {
         const projectItems = await Promise.all(
           projects.data.map(async (project) => {
-            const [discovery, quality, safeExplorer, qaRuns, baselines] = await Promise.all([
+            const [discovery, quality, safeExplorer, aiBrowser, qaRuns, baselines] = await Promise.all([
               listDiscoveryRuns(project.id),
               listQualityCheckRuns(project.id),
               listSafeExplorerRuns(project.id),
+              listAIBrowserControlRuns(project.id),
               listQARuns(project.id),
               listReportBaselines(project.id, "safe_qa")
             ]);
@@ -1207,6 +1218,16 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
                 created_at: run.created_at,
                 web_href: `#/safe-explorer-runs/${run.id}`,
                 html_href: safeExplorerHTMLReportURL(run.id)
+              })),
+              ...aiBrowser.map((run): ReportIndexItem => ({
+                id: run.id,
+                project_id: project.id,
+                project_name: project.name,
+                type: "AI Browser Control",
+                status: run.status,
+                created_at: run.created_at,
+                web_href: `#/ai-browser-control-runs/${run.id}`,
+                html_href: aiBrowserControlHTMLReportURL(run.id)
               })),
               ...qaRuns.map((run): ReportIndexItem => ({
                 id: run.id,
@@ -1291,6 +1312,9 @@ async function loadReportIndexIntelligence(item: ReportIndexItem): Promise<Repor
   }
   if (item.web_href.startsWith("#/safe-explorer-runs/")) {
     return getSafeExplorerReport(item.id);
+  }
+  if (item.web_href.startsWith("#/ai-browser-control-runs/")) {
+    return getAIBrowserControlReport(item.id);
   }
   if (item.web_href.startsWith("#/qa-runs/")) {
     return getQARunReport(item.id);
@@ -1785,6 +1809,7 @@ function ProjectPage({
   const [discoveryRuns, setDiscoveryRuns] = useState<LoadState<DiscoveryRun[]>>({ data: [], loading: true, error: "" });
   const [qualityRuns, setQualityRuns] = useState<LoadState<QualityCheckRun[]>>({ data: [], loading: true, error: "" });
   const [safeExplorerRuns, setSafeExplorerRuns] = useState<LoadState<SafeExplorerRun[]>>({ data: [], loading: true, error: "" });
+  const [aiBrowserRuns, setAIBrowserRuns] = useState<LoadState<AIBrowserControlRun[]>>({ data: [], loading: true, error: "" });
   const [qaRuns, setQARuns] = useState<LoadState<QARun[]>>({ data: [], loading: true, error: "" });
   const [baselines, setBaselines] = useState<LoadState<ReportBaseline[]>>({ data: [], loading: true, error: "" });
   const [ciRuns, setCIRuns] = useState<LoadState<CIRun[]>>({ data: [], loading: true, error: "" });
@@ -1803,6 +1828,7 @@ function ProjectPage({
     setDiscoveryRuns((current) => ({ ...current, loading: true, error: "" }));
     setQualityRuns((current) => ({ ...current, loading: true, error: "" }));
     setSafeExplorerRuns((current) => ({ ...current, loading: true, error: "" }));
+    setAIBrowserRuns((current) => ({ ...current, loading: true, error: "" }));
     setQARuns((current) => ({ ...current, loading: true, error: "" }));
     setBaselines((current) => ({ ...current, loading: true, error: "" }));
     setCIRuns((current) => ({ ...current, loading: true, error: "" }));
@@ -1822,6 +1848,7 @@ function ProjectPage({
         nextDiscoveryRuns,
         nextQualityRuns,
         nextSafeExplorerRuns,
+        nextAIBrowserRuns,
         nextQARuns,
         nextBaselines,
         nextCIRuns,
@@ -1839,6 +1866,7 @@ function ProjectPage({
         listDiscoveryRuns(projectID),
         listQualityCheckRuns(projectID),
         listSafeExplorerRuns(projectID),
+        listAIBrowserControlRuns(projectID),
         listQARuns(projectID),
         listReportBaselines(projectID, "safe_qa"),
         listCIRuns(projectID),
@@ -1856,6 +1884,7 @@ function ProjectPage({
       setDiscoveryRuns({ data: nextDiscoveryRuns, loading: false, error: "" });
       setQualityRuns({ data: nextQualityRuns, loading: false, error: "" });
       setSafeExplorerRuns({ data: nextSafeExplorerRuns, loading: false, error: "" });
+      setAIBrowserRuns({ data: nextAIBrowserRuns, loading: false, error: "" });
       setQARuns({ data: nextQARuns, loading: false, error: "" });
       setBaselines({ data: nextBaselines, loading: false, error: "" });
       setCIRuns({ data: nextCIRuns, loading: false, error: "" });
@@ -1873,6 +1902,7 @@ function ProjectPage({
       setDiscoveryRuns((current) => ({ ...current, loading: false, error: message }));
       setQualityRuns((current) => ({ ...current, loading: false, error: message }));
       setSafeExplorerRuns((current) => ({ ...current, loading: false, error: message }));
+      setAIBrowserRuns((current) => ({ ...current, loading: false, error: message }));
       setQARuns((current) => ({ ...current, loading: false, error: message }));
       setBaselines((current) => ({ ...current, loading: false, error: message }));
       setCIRuns((current) => ({ ...current, loading: false, error: message }));
@@ -1992,6 +2022,23 @@ function ProjectPage({
       const run = await startSafeExplorerRun(project.id, input);
       await refresh();
       window.location.hash = `#/safe-explorer-runs/${run.id}`;
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : String(startError));
+    } finally {
+      setStarting("");
+    }
+  }
+
+  async function startProjectAIBrowserControl(input: AIBrowserControlRunInput) {
+    if (!project) {
+      return;
+    }
+    setStarting("ai-browser-control");
+    setError("");
+    try {
+      const run = await startAIBrowserControlRun(project.id, input);
+      await refresh();
+      window.location.hash = `#/ai-browser-control-runs/${run.id}`;
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : String(startError));
     } finally {
@@ -2141,6 +2188,33 @@ function ProjectPage({
         <div className="section-split">
           {safeExplorerRuns.error && <Notice tone="danger" message={safeExplorerRuns.error} />}
           {safeExplorerRuns.loading ? <SkeletonRows /> : <SafeExplorerRunTable runs={safeExplorerRuns.data} />}
+        </div>
+      </section>
+
+      <section id="ai-browser-control">
+        <div className="section-heading">
+          <div>
+            <h2>AI Browser Control</h2>
+            <p>Policy-gated AI navigation where the model proposes one typed action and Qualora approves or blocks it.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="AI Browser Control sends only sanitized observations to the selected provider. It does not send credentials, cookies, storage, auth headers, screenshots, full HTML, request bodies, or response bodies, and Playwright executes only approved safe actions."
+        />
+        <AIBrowserControlRunForm
+          project={project}
+          providers={providers}
+          profiles={credentialProfiles.data}
+          disabled={starting !== ""}
+          onStart={(input) => void startProjectAIBrowserControl(input)}
+        />
+        <div className="section-split">
+          {aiBrowserRuns.error && <Notice tone="danger" message={aiBrowserRuns.error} />}
+          {aiBrowserRuns.loading ? <SkeletonRows /> : <AIBrowserControlRunTable runs={aiBrowserRuns.data} />}
         </div>
       </section>
 
@@ -3003,6 +3077,167 @@ function SafeExplorerRunTable({ runs }: { runs: SafeExplorerRun[] }) {
               <td>{formatDate(run.created_at)}</td>
               <td>
                 <a href={`#/safe-explorer-runs/${run.id}`}>Open</a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AIBrowserControlRunForm({
+  project,
+  providers,
+  profiles,
+  disabled,
+  onStart
+}: {
+  project: Project;
+  providers: AIProvider[];
+  profiles: CredentialProfile[];
+  disabled: boolean;
+  onStart: (input: AIBrowserControlRunInput) => void;
+}) {
+  const defaultProvider = providers.find((provider) => provider.is_default) || providers[0];
+  const [form, setForm] = useState<Required<Pick<AIBrowserControlRunInput, "provider_id" | "goal" | "start_url" | "credential_profile_id" | "max_steps" | "max_depth" | "same_origin_only">>>({
+    provider_id: defaultProvider?.id || "",
+    goal: "Explore the main public pages safely and stop after collecting evidence.",
+    start_url: project.frontend_url || "",
+    credential_profile_id: "",
+    max_steps: 8,
+    max_depth: 2,
+    same_origin_only: true
+  });
+
+  useEffect(() => {
+    setForm((current) => ({
+      ...current,
+      provider_id: current.provider_id || defaultProvider?.id || "",
+      start_url: project.frontend_url || current.start_url
+    }));
+  }, [defaultProvider?.id, project.frontend_url]);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onStart({
+      provider_id: form.provider_id,
+      goal: form.goal.trim(),
+      start_url: form.start_url.trim() || undefined,
+      credential_profile_id: form.credential_profile_id || undefined,
+      max_steps: Number(form.max_steps || 8),
+      max_depth: Number(form.max_depth || 2),
+      same_origin_only: form.same_origin_only
+    });
+  }
+
+  return (
+    <form className="project-form compact-form" onSubmit={submit}>
+      <label>
+        AI Provider
+        <select value={form.provider_id} onChange={(event) => setForm({ ...form, provider_id: event.target.value })}>
+          <option value="">Select provider</option>
+          {providers.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.name} ({provider.model})
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Goal
+        <input value={form.goal} onChange={(event) => setForm({ ...form, goal: event.target.value })} />
+      </label>
+      <label>
+        Start URL
+        <input value={form.start_url} onChange={(event) => setForm({ ...form, start_url: event.target.value })} />
+      </label>
+      <label>
+        Credential Profile
+        <select
+          value={form.credential_profile_id}
+          onChange={(event) => setForm({ ...form, credential_profile_id: event.target.value })}
+        >
+          <option value="">Unauthenticated</option>
+          {profiles.map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {credentialProfileLabel(profile)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Max Steps
+        <input
+          type="number"
+          min={1}
+          max={30}
+          value={form.max_steps}
+          onChange={(event) => setForm({ ...form, max_steps: Number(event.target.value) })}
+        />
+      </label>
+      <label>
+        Max Depth
+        <input
+          type="number"
+          min={0}
+          max={5}
+          value={form.max_depth}
+          onChange={(event) => setForm({ ...form, max_depth: Number(event.target.value) })}
+        />
+      </label>
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={form.same_origin_only}
+          onChange={(event) => setForm({ ...form, same_origin_only: event.target.checked })}
+        />
+        Same origin only
+      </label>
+      <div className="form-actions">
+        <button type="submit" disabled={disabled || !project.frontend_url || !form.provider_id || !form.goal.trim()}>
+          {disabled ? "Starting" : "Start AI Browser Control"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function AIBrowserControlRunTable({ runs }: { runs: AIBrowserControlRun[] }) {
+  if (runs.length === 0) {
+    return <EmptyState title="No AI Browser Control runs" body="Start a policy-gated run to record AI suggestions, policy decisions, and approved safe browser actions." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Goal</th>
+            <th>Suggestions</th>
+            <th>Approved</th>
+            <th>Executed</th>
+            <th>Policy Blocks</th>
+            <th>Findings</th>
+            <th>Created</th>
+            <th>Report</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td>
+                <StatusBadge status={run.status} />
+              </td>
+              <td>{truncateText(run.goal, 80)}</td>
+              <td>{run.total_ai_suggestions}</td>
+              <td>{run.total_actions_approved}</td>
+              <td>{run.total_actions_executed}</td>
+              <td>{run.total_policy_blocks}</td>
+              <td>{run.total_findings}</td>
+              <td>{formatDate(run.created_at)}</td>
+              <td>
+                <a href={`#/ai-browser-control-runs/${run.id}`}>Open</a>
               </td>
             </tr>
           ))}
@@ -6538,6 +6773,182 @@ function SafeExplorerRunPage({ runID }: { runID: string }) {
   );
 }
 
+function AIBrowserControlRunPage({ runID }: { runID: string }) {
+  const [report, setReport] = useState<AIBrowserControlReport | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const nextReport = await getAIBrowserControlReport(runID);
+      setReport(nextReport);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [runID]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!report || !isActiveRunStatus(report.run.status)) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => window.clearInterval(timer);
+  }, [refresh, report]);
+
+  if (error) {
+    return <Notice tone="danger" message={error} />;
+  }
+  if (loading && !report) {
+    return <SkeletonRows />;
+  }
+  if (!report) {
+    return <Notice tone="danger" message="AI Browser Control report could not be loaded." />;
+  }
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>{report.project.name}</h2>
+            <p>
+              <StatusBadge status={report.run.status} /> <span className="muted">AI Browser Control run {report.run.id}</span>
+            </p>
+          </div>
+          <div className="button-row">
+            <a className="button secondary-link" href={`#/projects/${report.project.id}`}>
+              Project
+            </a>
+            <a className="button secondary-link" href={`${API_BASE_URL}/api/v1/ai-browser-control-runs/${report.run.id}/report`} target="_blank" rel="noreferrer">
+              JSON Report
+            </a>
+            <a className="button" href={aiBrowserControlHTMLReportURL(report.run.id)} target="_blank" rel="noreferrer">
+              HTML Report
+            </a>
+          </div>
+        </div>
+        {report.run.error_message && <Notice tone="danger" message={report.run.error_message} />}
+        <div className="summary-grid">
+          <Metric label="Steps" value={report.summary.total_steps} />
+          <Metric label="AI Suggestions" value={report.summary.total_ai_suggestions} />
+          <Metric label="Approved" value={report.summary.actions_approved} />
+          <Metric label="Executed" value={report.summary.actions_executed} />
+          <Metric label="Policy Blocks" value={report.summary.policy_blocks} tone="medium" />
+          <Metric label="Findings" value={report.summary.findings} tone="critical" />
+        </div>
+        <div className="detail-grid compact">
+          <Field label="Goal" value={report.run.goal} />
+          <Field label="Start URL" value={report.run.start_url} />
+          <Field label="Max Steps" value={String(report.run.max_steps)} />
+          <Field label="Max Depth" value={String(report.run.max_depth)} />
+          <Field label="Same Origin Only" value={report.run.same_origin_only ? "Yes" : "No"} />
+          <Field label="Execution Mode" value={report.run.execution_mode} />
+          <Field label="Policy Version" value={report.run.policy_version} />
+          <Field label="Generated" value={formatDate(report.generated_at)} />
+        </div>
+      </section>
+
+      <ReportIntelligencePanel report={report} />
+
+      <section>
+        <h2>Safety Scope</h2>
+        <Notice
+          tone="info"
+          message="Policy-Gated AI Browser Control keeps AI out of direct browser execution. The provider proposes one typed action from sanitized observations, then Qualora validates the action before Playwright can execute it."
+        />
+      </section>
+
+      <section>
+        <h2>Policy Timeline</h2>
+        <AIBrowserControlTimelineTable steps={report.steps} />
+      </section>
+
+      <section>
+        <h2>Findings</h2>
+        <FindingTable findings={report.findings} />
+      </section>
+
+      <section>
+        <h2>Evidence</h2>
+        <EvidenceTable evidence={report.evidence} />
+      </section>
+
+      <section>
+        <h2>Safety Notes</h2>
+        <div className="grid two-column">
+          <AnalysisList title="Safety Notes" items={report.safety_notes} />
+          <AnalysisList title="Limitations" items={report.limitations} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AIBrowserControlTimelineTable({ steps }: { steps: AIBrowserControlStep[] }) {
+  if (steps.length === 0) {
+    return <EmptyState title="No policy timeline" body="The AI Browser Control worker has not recorded steps yet." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Policy Decision</th>
+            <th>Execution</th>
+            <th>AI Suggestion</th>
+            <th>Reason</th>
+            <th>URL</th>
+            <th>Signals</th>
+            <th>Screenshot</th>
+          </tr>
+        </thead>
+        <tbody>
+          {steps.map((step) => (
+            <tr key={step.id}>
+              <td>{step.step_index}</td>
+              <td>
+                <StatusBadge status={step.policy_decision} />
+              </td>
+              <td>{step.execution_status}</td>
+              <td>
+                <strong>{step.action_type || aiBrowserActionType(step)}</strong>
+                <br />
+                <span className="muted">{step.action_label || aiBrowserRationale(step) || "No rationale recorded"}</span>
+              </td>
+              <td>{step.policy_reason || "Approved by policy"}</td>
+              <td>
+                <code>{step.action_target_url || step.normalized_url}</code>
+              </td>
+              <td>
+                {step.console_error_count} console, {step.failed_request_count} network
+              </td>
+              <td>{step.screenshot_evidence_id ? <a href={evidenceDownloadURL(step.screenshot_evidence_id)}>Open</a> : "None"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function aiBrowserActionType(step: AIBrowserControlStep): string {
+  const action = typeof step.ai_suggestion.action === "object" && step.ai_suggestion.action !== null ? (step.ai_suggestion.action as Record<string, unknown>) : {};
+  return String(action.type || "unknown");
+}
+
+function aiBrowserRationale(step: AIBrowserControlStep): string {
+  return String(step.ai_suggestion.rationale || step.ai_suggestion.expected_result || "");
+}
+
 function SafeExplorerTimelineTable({ report }: { report: SafeExplorerReport }) {
   if (report.steps.length === 0) {
     return <EmptyState title="No timeline" body="The Safe Explorer worker has not recorded steps yet." />;
@@ -7950,6 +8361,9 @@ function parseHash(hash: string): Route {
   if (parts[0] === "safe-explorer-runs" && parts[1]) {
     return { name: "safe-explorer-run", id: parts[1] };
   }
+  if (parts[0] === "ai-browser-control-runs" && parts[1]) {
+    return { name: "ai-browser-control-run", id: parts[1] };
+  }
   if (parts[0] === "qa-runs" && parts[1]) {
     return { name: "qa-run", id: parts[1] };
   }
@@ -7988,6 +8402,8 @@ function hashForRoute(route: Route): string {
       return `/quality-check-runs/${route.id}`;
     case "safe-explorer-run":
       return `/safe-explorer-runs/${route.id}`;
+    case "ai-browser-control-run":
+      return `/ai-browser-control-runs/${route.id}`;
     case "qa-run":
       return `/qa-runs/${route.id}`;
     case "run":
@@ -8027,6 +8443,8 @@ function titleForRoute(route: Route): string {
       return "Quality Report";
     case "safe-explorer-run":
       return "Safe Explorer Report";
+    case "ai-browser-control-run":
+      return "AI Browser Control Report";
     case "qa-run":
       return "Safe QA Report";
     case "run":
@@ -8365,6 +8783,14 @@ function formatRunType(value: string): string {
     return "Full";
   }
   return value || "Full";
+}
+
+function truncateText(value: string, maxLength: number): string {
+  const clean = value.trim();
+  if (clean.length <= maxLength) {
+    return clean;
+  }
+  return `${clean.slice(0, Math.max(maxLength - 3, 0))}...`;
 }
 
 function formatDate(value: string): string {

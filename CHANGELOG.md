@@ -4,6 +4,41 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.21.0-alpha] - 2026-07-20
+
+### Added
+
+- Policy-gated AI Browser Control runs for projects with `frontend_url`.
+- `ai_browser_control_runs` and `ai_browser_control_steps` persistence with run metrics, sanitized observations, AI suggestions, policy decisions, and execution outcomes.
+- Control-plane endpoints to create/list AI Browser Control runs and view run detail, trace, JSON report, and self-contained HTML report.
+- Browser worker AI Browser Control loop that requests one typed OpenAI-compatible suggestion at a time and executes only deterministic policy-approved safe actions.
+- Findings for policy blocks, invalid/unsupported AI actions, navigation/assertion failures, console errors, failed requests, loop detection, and incomplete goals.
+- Web UI AI Browser Control project card, run form, run table, report page, and reports landing integration.
+- Fake LLM deterministic AI Browser Control path and unsafe suggestion fixture.
+- Smoke coverage for safe AI Browser Control execution, policy-blocked unsafe suggestions, reports, HTML/UI text, screenshot evidence, and no secret leakage.
+- Release notes for `v0.21.0-alpha`.
+
+### Changed
+
+- Package metadata has been updated to `0.21.0-alpha`.
+- Report intelligence recognizes AI Browser Control findings as their own report source.
+- The fake LLM can now return deterministic one-action browser suggestions for smoke tests.
+
+### Security
+
+- AI Browser Control sends only sanitized observations and bounded goals to the selected provider.
+- Credentials, cookies, local/session storage, auth headers, tokens, screenshots, full HTML, request bodies, response bodies, and browser storage are not sent to AI or stored in AI Browser Control reports.
+- AI does not directly control Playwright; every suggestion is parsed as strict JSON and validated by Qualora policy before execution.
+- Form submission, arbitrary unsafe button clicks, external crawling by default, active scanning, payload execution, fuzzing, and destructive actions remain blocked.
+
+### Known Limitations
+
+- AI Browser Control is alpha and conservative.
+- Only OpenAI-compatible chat completion providers are supported.
+- The action schema is intentionally small and does not support arbitrary selectors or form submission.
+- Safe QA integration is standalone for this release; AI Browser Control reports are separate from Safe QA Runs.
+- Policy-gated AI Browser Control does not replace human review, deterministic regression checks, or security testing.
+
 ## [v0.20.0-alpha] - 2026-07-19
 
 ### Added

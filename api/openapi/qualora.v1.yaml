@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.20.0-alpha
-  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, importing OpenAPI specs, managing encrypted API auth profiles, running safe authenticated read-only API smoke and lightweight OpenAPI contract checks, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, managing deterministic report baselines, comparing reports, evaluating CI-friendly quality gates, orchestrating native CI runs, managing optional sanitized GitHub/GitLab issue export, and downloading protected stored evidence objects.
+  version: 0.21.0-alpha
+  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, policy-gated AI Browser Control, importing OpenAPI specs, managing encrypted API auth profiles, running safe authenticated read-only API smoke and lightweight OpenAPI contract checks, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, managing deterministic report baselines, comparing reports, evaluating CI-friendly quality gates, orchestrating native CI runs, managing optional sanitized GitHub/GitLab issue export, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
 security:
@@ -878,6 +878,108 @@ paths:
       responses:
         "200":
           description: HTML Safe Explorer report
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/ai-browser-control-runs:
+    get:
+      summary: List AI Browser Control runs for a project
+      description: Lists policy-gated AI Browser Control runs. Run records contain safe metadata only; raw credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, and response bodies are not returned.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: AI Browser Control run list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ai_browser_control_runs]
+                properties:
+                  ai_browser_control_runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AIBrowserControlRun"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Start an AI Browser Control run
+      description: Starts a bounded policy-gated browser run. The selected OpenAI-compatible provider may propose one typed action at a time, but Qualora validates every action before Playwright executes it.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIBrowserControlRunRequest"
+      responses:
+        "201":
+          description: Created AI Browser Control run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIBrowserControlRun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/ai-browser-control-runs/{ai_browser_control_run_id}:
+    get:
+      summary: Get an AI Browser Control run
+      parameters:
+        - $ref: "#/components/parameters/AIBrowserControlRunID"
+      responses:
+        "200":
+          description: AI Browser Control run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIBrowserControlRun"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/ai-browser-control-runs/{ai_browser_control_run_id}/trace:
+    get:
+      summary: Get AI Browser Control trace
+      description: Returns sanitized observations, AI suggestions, policy decisions, execution status, findings, and evidence metadata for a run.
+      parameters:
+        - $ref: "#/components/parameters/AIBrowserControlRunID"
+      responses:
+        "200":
+          description: AI Browser Control trace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIBrowserControlTrace"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/ai-browser-control-runs/{ai_browser_control_run_id}/report:
+    get:
+      summary: Get AI Browser Control JSON report
+      parameters:
+        - $ref: "#/components/parameters/AIBrowserControlRunID"
+      responses:
+        "200":
+          description: AI Browser Control report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIBrowserControlReport"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/ai-browser-control-runs/{ai_browser_control_run_id}/report.html:
+    get:
+      summary: Get a self-contained HTML AI Browser Control report
+      parameters:
+        - $ref: "#/components/parameters/AIBrowserControlRunID"
+      responses:
+        "200":
+          description: HTML AI Browser Control report
           content:
             text/html:
               schema:
@@ -2075,6 +2177,13 @@ components:
       schema:
         type: string
         format: uuid
+    AIBrowserControlRunID:
+      name: ai_browser_control_run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     QARunID:
       name: qa_run_id
       in: path
@@ -2161,7 +2270,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.20.0-alpha
+          example: 0.21.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -3617,6 +3726,235 @@ components:
     SafeExplorerReport:
       allOf:
         - $ref: "#/components/schemas/SafeExplorerTrace"
+        - $ref: "#/components/schemas/ReportIntelligence"
+        - type: object
+          properties:
+            generated_at:
+              type: string
+              format: date-time
+            settings:
+              type: object
+              additionalProperties: true
+            safety_notes:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            metadata:
+              type: object
+              additionalProperties: true
+    AIBrowserControlRunRequest:
+      type: object
+      additionalProperties: false
+      required: [provider_id]
+      properties:
+        provider_id:
+          type: string
+          format: uuid
+          description: OpenAI-compatible provider used for one-action suggestions.
+        goal:
+          type: string
+          maxLength: 800
+          example: Explore the main public demo pages safely, capture screenshot evidence, and stop.
+        start_url:
+          type: string
+          format: uri
+          description: Optional start URL. Defaults to the project frontend URL and must satisfy allowed_hosts.
+        credential_profile_id:
+          type: string
+          format: uuid
+          description: Optional selector-based login profile. Credentials are never sent to AI.
+        max_steps:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 8
+        max_depth:
+          type: integer
+          minimum: 0
+          maximum: 5
+          default: 2
+        same_origin_only:
+          type: boolean
+          default: true
+    AIBrowserControlRun:
+      type: object
+      required: [id, project_id, provider_id, status, start_url, max_steps, max_depth, same_origin_only, policy_version, execution_mode, total_steps, total_ai_suggestions, total_actions_approved, total_actions_executed, total_actions_skipped, total_policy_blocks, total_findings, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        provider_id:
+          type: string
+          format: uuid
+        provider_name:
+          type: string
+        credential_profile_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, completed, failed, error]
+        start_url:
+          type: string
+        goal:
+          type: string
+        max_steps:
+          type: integer
+        max_depth:
+          type: integer
+        same_origin_only:
+          type: boolean
+        policy_version:
+          type: string
+          example: v0.21.0-alpha
+        execution_mode:
+          type: string
+          example: policy_gated
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        total_steps:
+          type: integer
+        total_ai_suggestions:
+          type: integer
+        total_actions_approved:
+          type: integer
+        total_actions_executed:
+          type: integer
+        total_actions_skipped:
+          type: integer
+        total_policy_blocks:
+          type: integer
+        total_findings:
+          type: integer
+        error_message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AIBrowserControlStep:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        step_index:
+          type: integer
+        page_url:
+          type: string
+        normalized_url:
+          type: string
+        page_title:
+          type: string
+        depth:
+          type: integer
+        sanitized_observation:
+          type: object
+          additionalProperties: true
+          description: Sanitized metadata only. No full HTML, storage, cookies, credentials, request bodies, or response bodies.
+        ai_suggestion:
+          type: object
+          additionalProperties: true
+          description: Strict parsed one-action suggestion returned by the provider.
+        action_type:
+          type: string
+        action_label:
+          type: string
+        action_target_url:
+          type: string
+        action_selector_hint:
+          type: string
+        policy_decision:
+          type: string
+          enum: [approved, blocked, invalid, unsupported]
+        policy_reason:
+          type: string
+        execution_status:
+          type: string
+          enum: [executed, skipped, failed, error]
+        final_url:
+          type: string
+        http_status:
+          type: integer
+        screenshot_evidence_id:
+          type: string
+          format: uuid
+        console_error_count:
+          type: integer
+        failed_request_count:
+          type: integer
+        duration_ms:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    AIBrowserControlSummary:
+      type: object
+      properties:
+        total_steps:
+          type: integer
+        total_ai_suggestions:
+          type: integer
+        actions_approved:
+          type: integer
+        actions_executed:
+          type: integer
+        actions_skipped:
+          type: integer
+        policy_blocks:
+          type: integer
+        findings:
+          type: integer
+        screenshots:
+          type: integer
+        console_errors:
+          type: integer
+        failed_requests:
+          type: integer
+    AIBrowserControlTrace:
+      type: object
+      required: [run, project, summary, steps, findings, evidence]
+      properties:
+        run:
+          $ref: "#/components/schemas/AIBrowserControlRun"
+        project:
+          $ref: "#/components/schemas/Project"
+        summary:
+          $ref: "#/components/schemas/AIBrowserControlSummary"
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIBrowserControlStep"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+    AIBrowserControlReport:
+      allOf:
+        - $ref: "#/components/schemas/AIBrowserControlTrace"
         - $ref: "#/components/schemas/ReportIntelligence"
         - type: object
           properties:
@@ -5257,6 +5595,10 @@ components:
           type: string
           format: uuid
           nullable: true
+        ai_browser_control_run_id:
+          type: string
+          format: uuid
+          nullable: true
         title:
           type: string
         severity:
@@ -5310,9 +5652,13 @@ components:
           type: string
           format: uuid
           nullable: true
+        ai_browser_control_run_id:
+          type: string
+          format: uuid
+          nullable: true
         type:
           type: string
-          enum: [screenshot, browser_observations, login_observations, authorization_observations, api_observations, openapi_summary, api_request]
+          enum: [screenshot, browser_observations, login_observations, authorization_observations, ai_browser_observation, api_observations, openapi_summary, api_request]
         uri:
           type: string
         metadata:

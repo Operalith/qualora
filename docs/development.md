@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.20.0-alpha.
+This document covers local development for Qualora v0.21.0-alpha.
 
 ## Requirements
 
@@ -165,7 +165,7 @@ When changing guided onboarding:
 
 ## AI Provider Development
 
-The v0.20 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
+The v0.21 AI path uses OpenAI-compatible chat completions only. AI analysis and AI-assisted test planning are optional and run synchronously in the control plane for this alpha.
 
 Useful local values:
 
@@ -245,7 +245,7 @@ Safe QA Runs are an orchestration layer over discovery, AI test planning, and ap
 
 Imported OpenAPI specs are parsed without executing API requests. Safe API smoke execution starts only after a user calls `POST /api/v1/api-specs/{api_spec_id}/api-smoke-runs`.
 
-The v0.20 API executor:
+The v0.21 API executor:
 
 - Supports OpenAPI 3.x JSON/YAML.
 - Executes only `GET`, `HEAD`, and `OPTIONS`.
@@ -271,15 +271,35 @@ Relevant files:
 - `scripts/demo-api/openapi.yaml`
 - `scripts/smoke.py`
 
+## AI Browser Control Development
+
+`v0.21.0-alpha` adds policy-gated AI Browser Control through the browser worker. The control plane creates `ai_browser_control_runs`, queues a Redis browser job, and serves run detail, trace, JSON report, and self-contained HTML report endpoints. The browser worker captures sanitized observations, asks the selected OpenAI-compatible provider for one strict JSON action, validates it through deterministic policy, and executes only approved safe Playwright actions.
+
+Important files:
+
+- `apps/control-plane/ai_browser_control.go`
+- `apps/control-plane/ai_browser_control_http.go`
+- `apps/control-plane/ai_browser_control_store.go`
+- `apps/control-plane/ai_browser_control_report_html.go`
+- `apps/control-plane/migrations/018_ai_browser_control.sql`
+- `workers/browser/src/ai_browser_control.ts`
+- `workers/browser/src/ai_browser_control.test.ts`
+- `scripts/fake-llm/server.js`
+- `scripts/smoke.py`
+
+Use the fake LLM for deterministic local testing. Its default AI Browser Control path navigates `/`, `/about`, `/status`, `/pricing`, captures a screenshot once, then stops. A goal containing `force_unsafe_ai_browser_action` makes the fake provider propose `/delete-account`, which the policy engine should block.
+
+AI Browser Control must not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, or response bodies to AI. Do not add arbitrary selectors, form submission, active scanning, fuzzing, payload execution, external crawling, destructive actions, or direct model control of Playwright.
+
 ## Report Intelligence Development
 
-`v0.20.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
+`v0.21.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
 
 When adding new finding sources, provide stable categories, titles, recommendations, evidence IDs, and safe URL metadata where practical. Do not add secrets, cookies, local/session storage, auth headers, request bodies, response bodies, full HTML, or screenshot bytes to report intelligence inputs.
 
 ## Baseline And Quality Gate Development
 
-The v0.20 baseline, CI, and quality gate paths are control-plane only:
+The v0.21 baseline, CI, and quality gate paths are control-plane only:
 
 - `POST /api/v1/projects/{project_id}/report-baselines` stores normalized grouped finding fingerprints and summary metadata from a known report.
 - `GET /api/v1/projects/{project_id}/report-baselines?report_type=safe_qa` lists baselines for the project.

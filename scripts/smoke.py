@@ -142,7 +142,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.20.0-alpha" not in status.get("version", ""):
+    if "0.21.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -993,6 +993,95 @@ def run_safe_explorer(project, profile=None):
     return report
 
 
+def run_ai_browser_control(project, provider, profile=None, unsafe=False):
+    label = "AI Browser Control unsafe policy" if unsafe else "AI Browser Control"
+    payload = {
+        "provider_id": provider["id"],
+        "goal": "force_unsafe_ai_browser_action" if unsafe else "Explore the main public demo pages safely, capture screenshot evidence, and stop.",
+        "start_url": BROWSER_TARGET_URL,
+        "max_steps": 8,
+        "max_depth": 3,
+        "same_origin_only": True,
+    }
+    if profile:
+        payload["credential_profile_id"] = profile["id"]
+    run = request("POST", f"/api/v1/projects/{project['id']}/ai-browser-control-runs", payload)
+    run_id = run["id"]
+    print(f"started {label} run: {run_id}")
+    assert_no_demo_secret(run, f"{label} start response")
+
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/ai-browser-control-runs/{run_id}")
+        status = current["status"]
+        print(f"{label} status: {status}")
+        if status in ("completed", "failed", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"{label} run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    trace = request("GET", f"/api/v1/ai-browser-control-runs/{run_id}/trace")
+    report = request("GET", f"/api/v1/ai-browser-control-runs/{run_id}/report")
+    print(f"{label} report: {json.dumps(report, indent=2)}")
+    assert_no_demo_secret(trace, f"{label} trace")
+    assert_no_demo_secret(report, f"{label} JSON report")
+    if report["run"]["status"] != "completed":
+        raise RuntimeError(f"{label} run did not complete: {report['run']}")
+    summary = report.get("summary") or {}
+    if int(summary.get("total_steps") or 0) < 1:
+        raise RuntimeError(f"{label} did not record steps: {summary}")
+    if int(summary.get("total_ai_suggestions") or 0) < 1:
+        raise RuntimeError(f"{label} did not record AI suggestions: {summary}")
+    if int(summary.get("actions_approved") or 0) < (0 if unsafe else 1):
+        raise RuntimeError(f"{label} did not approve expected safe actions: {summary}")
+    if int(summary.get("actions_executed") or 0) < (0 if unsafe else 1):
+        raise RuntimeError(f"{label} did not execute expected safe actions: {summary}")
+    if int(summary.get("policy_blocks") or 0) < (1 if unsafe else 0):
+        raise RuntimeError(f"{label} did not record expected policy block: {summary}")
+    steps = report.get("steps") or []
+    if not all(step.get("policy_decision") for step in steps):
+        raise RuntimeError(f"{label} step missed policy decision metadata: {steps}")
+    if not all("ai_suggestion" in step and "sanitized_observation" in step for step in steps):
+        raise RuntimeError(f"{label} step missed AI suggestion or sanitized observation metadata: {steps}")
+    if unsafe:
+        if not any(step.get("policy_decision") == "blocked" for step in steps):
+            raise RuntimeError(f"{label} did not block the unsafe suggestion: {steps}")
+        categories = {finding.get("category") for finding in report.get("findings", [])}
+        if "ai_browser_policy_block" not in categories:
+            raise RuntimeError(f"{label} missed policy-block finding: {categories}")
+    else:
+        if int(summary.get("screenshots") or 0) < 1:
+            raise RuntimeError(f"{label} did not record screenshot evidence: {summary}")
+        if not any(step.get("action_type") == "stop" for step in steps):
+            raise RuntimeError(f"{label} did not stop cleanly after safe navigation: {steps}")
+        evidence_types = {item.get("type") for item in report.get("evidence", [])}
+        if "screenshot" not in evidence_types or "ai_browser_observation" not in evidence_types:
+            raise RuntimeError(f"{label} missed expected evidence types: {evidence_types}")
+        screenshot = next(item for item in report.get("evidence", []) if item.get("type") == "screenshot")
+        headers, body = fetch_binary(f"/api/v1/evidence/{screenshot['id']}")
+        if "image/png" not in headers.get("content-type", "") or not body.startswith(b"\x89PNG"):
+            raise RuntimeError(f"{label} screenshot evidence was not downloadable PNG data")
+    if trace.get("summary", {}).get("total_steps") != summary.get("total_steps"):
+        raise RuntimeError(f"{label} trace summary did not match report summary")
+    assert_report_intelligence(report, f"{label} JSON report")
+
+    html = fetch_text(f"/api/v1/ai-browser-control-runs/{run_id}/report.html")
+    assert_no_demo_secret(html, f"{label} HTML report")
+    assert_report_intelligence_html(html, label)
+    if "Qualora Policy-Gated AI Browser Control report" not in html or "Policy Decision" not in html:
+        raise RuntimeError(f"{label} HTML report did not include expected policy-gated content")
+    listed = request("GET", f"/api/v1/projects/{project['id']}/ai-browser-control-runs").get("ai_browser_control_runs", [])
+    if not any(item.get("id") == run_id for item in listed):
+        raise RuntimeError(f"project AI Browser Control list did not include {run_id}")
+
+    print(f"{label} JSON report: {API_URL}/api/v1/ai-browser-control-runs/{run_id}/report")
+    print(f"{label} HTML report: {API_URL}/api/v1/ai-browser-control-runs/{run_id}/report.html")
+    print(f"{label} trace: {API_URL}/api/v1/ai-browser-control-runs/{run_id}/trace")
+    print(f"Web {label} report: {WEB_URL}/#/ai-browser-control-runs/{run_id}")
+    return report
+
+
 def run_quality_check(project, discovery_report, profile=None):
     payload = {
         "use_latest_discovery": True,
@@ -1096,10 +1185,15 @@ def assert_quality_ui_bundle():
         "Run authenticated API smoke",
         "Authenticated API Smoke",
         "Contract validation",
+        "AI Browser Control",
+        "Start AI Browser Control",
+        "AI Browser Control Report",
+        "Policy Decision",
+        "AI Suggestion",
     ):
         if expected not in bundle_text:
-            raise RuntimeError(f"web UI bundle did not include expected v0.20 UI text: {expected}")
-    print("web UI bundle includes guided onboarding, report intelligence, baselines, CI runs, issue export, quality gates, API authentication, authenticated API smoke, Quality Checks, and Safe Explorer screens")
+            raise RuntimeError(f"web UI bundle did not include expected v0.21 UI text: {expected}")
+    print("web UI bundle includes guided onboarding, report intelligence, baselines, CI runs, issue export, quality gates, API authentication, authenticated API smoke, Quality Checks, Safe Explorer, and AI Browser Control screens")
 
 
 def wait_for_discovery_report(run_id, label):
@@ -1778,6 +1872,8 @@ def main():
     generate_ai_test_plan(browser_project, authenticated_report, provider)
     discovery_report = run_application_discovery(browser_project)
     run_safe_explorer(browser_project, credential_profile)
+    run_ai_browser_control(browser_project, provider)
+    run_ai_browser_control(browser_project, provider, unsafe=True)
     run_quality_check(browser_project, discovery_report, credential_profile)
     discovery_plan = generate_discovery_ai_test_plan(browser_project, discovery_report, provider)
     preview_test_plan_execution(discovery_plan)

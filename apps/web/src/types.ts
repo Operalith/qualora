@@ -149,6 +149,7 @@ export type Finding = {
   authorization_check_run_id?: string;
   discovery_run_id?: string;
   safe_explorer_run_id?: string;
+  ai_browser_control_run_id?: string;
   scenario_execution_id?: string;
   step_execution_id?: string;
   title: string;
@@ -168,6 +169,7 @@ export type Evidence = {
   authorization_check_run_id?: string;
   discovery_run_id?: string;
   safe_explorer_run_id?: string;
+  ai_browser_control_run_id?: string;
   type: string;
   uri: string;
   metadata: Record<string, unknown>;
@@ -588,6 +590,100 @@ export type SafeExplorerTrace = {
 };
 
 export type SafeExplorerReport = SafeExplorerTrace & ReportIntelligenceFields & {
+  generated_at: string;
+  settings: Record<string, unknown>;
+  safety_notes: string[];
+  limitations: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type AIBrowserControlRunInput = {
+  provider_id: string;
+  goal: string;
+  start_url?: string;
+  credential_profile_id?: string;
+  max_steps?: number;
+  max_depth?: number;
+  same_origin_only?: boolean;
+};
+
+export type AIBrowserControlRun = {
+  id: string;
+  project_id: string;
+  provider_id: string;
+  credential_profile_id?: string;
+  status: "queued" | "running" | "completed" | "failed" | "error" | string;
+  goal: string;
+  start_url: string;
+  max_steps: number;
+  max_depth: number;
+  same_origin_only: boolean;
+  policy_version: string;
+  execution_mode: string;
+  started_at?: string;
+  completed_at?: string;
+  total_steps: number;
+  total_ai_suggestions: number;
+  total_actions_approved: number;
+  total_actions_executed: number;
+  total_actions_skipped: number;
+  total_policy_blocks: number;
+  total_findings: number;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AIBrowserControlStep = {
+  id: string;
+  run_id: string;
+  project_id: string;
+  step_index: number;
+  page_url: string;
+  normalized_url: string;
+  page_title?: string;
+  depth: number;
+  sanitized_observation: Record<string, unknown>;
+  ai_suggestion: Record<string, unknown>;
+  policy_decision: "approved" | "blocked" | "invalid" | "unsupported" | string;
+  policy_reason?: string;
+  action_type?: string;
+  action_label?: string;
+  action_target_url?: string;
+  selector_hint?: string;
+  execution_status: "executed" | "skipped" | "failed" | "error" | string;
+  final_url?: string;
+  http_status?: number;
+  screenshot_evidence_id?: string;
+  console_error_count: number;
+  failed_request_count: number;
+  duration_ms?: number;
+  created_at: string;
+};
+
+export type AIBrowserControlSummary = {
+  total_steps: number;
+  total_ai_suggestions: number;
+  actions_approved: number;
+  actions_executed: number;
+  actions_skipped: number;
+  policy_blocks: number;
+  findings: number;
+  screenshots: number;
+  console_errors: number;
+  failed_requests: number;
+};
+
+export type AIBrowserControlTrace = {
+  run: AIBrowserControlRun;
+  project: Project;
+  summary: AIBrowserControlSummary;
+  steps: AIBrowserControlStep[];
+  findings: Finding[];
+  evidence: Evidence[];
+};
+
+export type AIBrowserControlReport = AIBrowserControlTrace & ReportIntelligenceFields & {
   generated_at: string;
   settings: Record<string, unknown>;
   safety_notes: string[];

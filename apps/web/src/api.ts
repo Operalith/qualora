@@ -1,5 +1,9 @@
 import type {
   AIAnalysis,
+  AIBrowserControlReport,
+  AIBrowserControlRun,
+  AIBrowserControlRunInput,
+  AIBrowserControlTrace,
   APICheckResult,
   APIAuthProfile,
   APIAuthProfileInput,
@@ -116,6 +120,10 @@ export function qaRunHTMLReportURL(runID: string): string {
 
 export function safeExplorerHTMLReportURL(runID: string): string {
   return `${API_BASE_URL}/api/v1/safe-explorer-runs/${runID}/report.html`;
+}
+
+export function aiBrowserControlHTMLReportURL(runID: string): string {
+  return `${API_BASE_URL}/api/v1/ai-browser-control-runs/${runID}/report.html`;
 }
 
 export async function getSetupStatus(): Promise<SetupStatus> {
@@ -352,6 +360,30 @@ export async function getSafeExplorerTrace(runID: string): Promise<SafeExplorerT
 
 export async function getSafeExplorerReport(runID: string): Promise<SafeExplorerReport> {
   return request<SafeExplorerReport>(`/api/v1/safe-explorer-runs/${runID}/report`);
+}
+
+export async function listAIBrowserControlRuns(projectID: string): Promise<AIBrowserControlRun[]> {
+  const response = await request<{ ai_browser_control_runs: AIBrowserControlRun[] }>(`/api/v1/projects/${projectID}/ai-browser-control-runs`);
+  return response.ai_browser_control_runs;
+}
+
+export async function startAIBrowserControlRun(projectID: string, input: AIBrowserControlRunInput): Promise<AIBrowserControlRun> {
+  return request<AIBrowserControlRun>(`/api/v1/projects/${projectID}/ai-browser-control-runs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getAIBrowserControlRun(runID: string): Promise<AIBrowserControlRun> {
+  return request<AIBrowserControlRun>(`/api/v1/ai-browser-control-runs/${runID}`);
+}
+
+export async function getAIBrowserControlTrace(runID: string): Promise<AIBrowserControlTrace> {
+  return request<AIBrowserControlTrace>(`/api/v1/ai-browser-control-runs/${runID}/trace`);
+}
+
+export async function getAIBrowserControlReport(runID: string): Promise<AIBrowserControlReport> {
+  return request<AIBrowserControlReport>(`/api/v1/ai-browser-control-runs/${runID}/report`);
 }
 
 export async function listQualityCheckRuns(projectID: string): Promise<QualityCheckRun[]> {

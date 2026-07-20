@@ -43,6 +43,7 @@ const (
 	RunTypeAppDiscovery              = "app_discovery"
 	RunTypeQualityCheck              = "quality_check"
 	RunTypeSafeExplorer              = "safe_explorer"
+	RunTypeAIBrowserControl          = "ai_browser_control"
 )
 
 const (
@@ -53,6 +54,7 @@ const (
 	ReportTypeAPISmoke      = "api_smoke"
 	ReportTypeBrowserSmoke  = "browser_smoke"
 	ReportTypeAuthorization = "authorization"
+	ReportTypeAIBrowser     = "ai_browser_control"
 )
 
 const (
@@ -251,35 +253,37 @@ type RunJob struct {
 }
 
 type Finding struct {
-	ID                  string    `json:"id"`
-	RunID               string    `json:"run_id,omitempty"`
-	TestPlanExecutionID string    `json:"test_plan_execution_id,omitempty"`
-	AuthorizationRunID  string    `json:"authorization_check_run_id,omitempty"`
-	DiscoveryRunID      string    `json:"discovery_run_id,omitempty"`
-	SafeExplorerRunID   string    `json:"safe_explorer_run_id,omitempty"`
-	ScenarioExecutionID string    `json:"scenario_execution_id,omitempty"`
-	StepExecutionID     string    `json:"step_execution_id,omitempty"`
-	Title               string    `json:"title"`
-	Severity            string    `json:"severity"`
-	Category            string    `json:"category"`
-	Confidence          string    `json:"confidence"`
-	Description         string    `json:"description"`
-	Recommendation      string    `json:"recommendation"`
-	EvidenceIDs         []string  `json:"evidence_ids"`
-	CreatedAt           time.Time `json:"created_at,omitempty"`
+	ID                    string    `json:"id"`
+	RunID                 string    `json:"run_id,omitempty"`
+	TestPlanExecutionID   string    `json:"test_plan_execution_id,omitempty"`
+	AuthorizationRunID    string    `json:"authorization_check_run_id,omitempty"`
+	DiscoveryRunID        string    `json:"discovery_run_id,omitempty"`
+	SafeExplorerRunID     string    `json:"safe_explorer_run_id,omitempty"`
+	AIBrowserControlRunID string    `json:"ai_browser_control_run_id,omitempty"`
+	ScenarioExecutionID   string    `json:"scenario_execution_id,omitempty"`
+	StepExecutionID       string    `json:"step_execution_id,omitempty"`
+	Title                 string    `json:"title"`
+	Severity              string    `json:"severity"`
+	Category              string    `json:"category"`
+	Confidence            string    `json:"confidence"`
+	Description           string    `json:"description"`
+	Recommendation        string    `json:"recommendation"`
+	EvidenceIDs           []string  `json:"evidence_ids"`
+	CreatedAt             time.Time `json:"created_at,omitempty"`
 }
 
 type Evidence struct {
-	ID                  string         `json:"id"`
-	RunID               string         `json:"run_id,omitempty"`
-	TestPlanExecutionID string         `json:"test_plan_execution_id,omitempty"`
-	AuthorizationRunID  string         `json:"authorization_check_run_id,omitempty"`
-	DiscoveryRunID      string         `json:"discovery_run_id,omitempty"`
-	SafeExplorerRunID   string         `json:"safe_explorer_run_id,omitempty"`
-	Type                string         `json:"type"`
-	URI                 string         `json:"uri"`
-	Metadata            map[string]any `json:"metadata"`
-	CreatedAt           time.Time      `json:"created_at,omitempty"`
+	ID                    string         `json:"id"`
+	RunID                 string         `json:"run_id,omitempty"`
+	TestPlanExecutionID   string         `json:"test_plan_execution_id,omitempty"`
+	AuthorizationRunID    string         `json:"authorization_check_run_id,omitempty"`
+	DiscoveryRunID        string         `json:"discovery_run_id,omitempty"`
+	SafeExplorerRunID     string         `json:"safe_explorer_run_id,omitempty"`
+	AIBrowserControlRunID string         `json:"ai_browser_control_run_id,omitempty"`
+	Type                  string         `json:"type"`
+	URI                   string         `json:"uri"`
+	Metadata              map[string]any `json:"metadata"`
+	CreatedAt             time.Time      `json:"created_at,omitempty"`
 }
 
 type Report struct {
@@ -833,6 +837,108 @@ type SafeExplorerReport struct {
 	SafetyNotes []string             `json:"safety_notes"`
 	Limitations []string             `json:"limitations"`
 	Metadata    map[string]any       `json:"metadata"`
+	ReportIntelligence
+}
+
+type AIBrowserControlRunRequest struct {
+	ProviderID          string `json:"provider_id"`
+	StartURL            string `json:"start_url,omitempty"`
+	CredentialProfileID string `json:"credential_profile_id,omitempty"`
+	Goal                string `json:"goal,omitempty"`
+	MaxSteps            int    `json:"max_steps,omitempty"`
+	MaxDepth            int    `json:"max_depth,omitempty"`
+	SameOriginOnly      *bool  `json:"same_origin_only,omitempty"`
+}
+
+type AIBrowserControlRun struct {
+	ID                   string     `json:"id"`
+	ProjectID            string     `json:"project_id"`
+	ProviderID           string     `json:"provider_id"`
+	ProviderName         string     `json:"provider_name,omitempty"`
+	CredentialProfileID  string     `json:"credential_profile_id,omitempty"`
+	Status               string     `json:"status"`
+	StartURL             string     `json:"start_url"`
+	Goal                 string     `json:"goal,omitempty"`
+	MaxSteps             int        `json:"max_steps"`
+	MaxDepth             int        `json:"max_depth"`
+	SameOriginOnly       bool       `json:"same_origin_only"`
+	PolicyVersion        string     `json:"policy_version"`
+	ExecutionMode        string     `json:"execution_mode"`
+	StartedAt            *time.Time `json:"started_at,omitempty"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
+	TotalSteps           int        `json:"total_steps"`
+	TotalAISuggestions   int        `json:"total_ai_suggestions"`
+	TotalActionsApproved int        `json:"total_actions_approved"`
+	TotalActionsExecuted int        `json:"total_actions_executed"`
+	TotalActionsSkipped  int        `json:"total_actions_skipped"`
+	TotalPolicyBlocks    int        `json:"total_policy_blocks"`
+	TotalFindings        int        `json:"total_findings"`
+	ErrorMessage         string     `json:"error_message,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
+type AIBrowserControlStep struct {
+	ID                   string         `json:"id"`
+	RunID                string         `json:"run_id"`
+	ProjectID            string         `json:"project_id"`
+	StepIndex            int            `json:"step_index"`
+	PageURL              string         `json:"page_url"`
+	NormalizedURL        string         `json:"normalized_url"`
+	PageTitle            string         `json:"page_title,omitempty"`
+	Depth                int            `json:"depth"`
+	SanitizedObservation map[string]any `json:"sanitized_observation"`
+	AISuggestion         map[string]any `json:"ai_suggestion,omitempty"`
+	ActionType           string         `json:"action_type,omitempty"`
+	ActionLabel          string         `json:"action_label,omitempty"`
+	ActionTargetURL      string         `json:"action_target_url,omitempty"`
+	ActionSelectorHint   string         `json:"action_selector_hint,omitempty"`
+	PolicyDecision       string         `json:"policy_decision"`
+	PolicyReason         string         `json:"policy_reason,omitempty"`
+	ExecutionStatus      string         `json:"execution_status"`
+	FinalURL             string         `json:"final_url,omitempty"`
+	HTTPStatus           *int           `json:"http_status,omitempty"`
+	ScreenshotEvidenceID string         `json:"screenshot_evidence_id,omitempty"`
+	ConsoleErrorCount    int            `json:"console_error_count"`
+	FailedRequestCount   int            `json:"failed_request_count"`
+	DurationMS           *int           `json:"duration_ms,omitempty"`
+	CreatedAt            time.Time      `json:"created_at"`
+}
+
+type AIBrowserControlSummary struct {
+	TotalSteps         int `json:"total_steps"`
+	TotalAISuggestions int `json:"total_ai_suggestions"`
+	ActionsApproved    int `json:"actions_approved"`
+	ActionsExecuted    int `json:"actions_executed"`
+	ActionsSkipped     int `json:"actions_skipped"`
+	PolicyBlocks       int `json:"policy_blocks"`
+	Findings           int `json:"findings"`
+	Screenshots        int `json:"screenshots"`
+	ConsoleErrors      int `json:"console_errors"`
+	FailedRequests     int `json:"failed_requests"`
+}
+
+type AIBrowserControlTrace struct {
+	Run      AIBrowserControlRun     `json:"run"`
+	Project  Project                 `json:"project"`
+	Summary  AIBrowserControlSummary `json:"summary"`
+	Steps    []AIBrowserControlStep  `json:"steps"`
+	Findings []Finding               `json:"findings"`
+	Evidence []Evidence              `json:"evidence"`
+}
+
+type AIBrowserControlReport struct {
+	GeneratedAt time.Time               `json:"generated_at"`
+	Run         AIBrowserControlRun     `json:"run"`
+	Project     Project                 `json:"project"`
+	Settings    map[string]any          `json:"settings"`
+	Summary     AIBrowserControlSummary `json:"summary"`
+	Steps       []AIBrowserControlStep  `json:"steps"`
+	Findings    []Finding               `json:"findings"`
+	Evidence    []Evidence              `json:"evidence"`
+	SafetyNotes []string                `json:"safety_notes"`
+	Limitations []string                `json:"limitations"`
+	Metadata    map[string]any          `json:"metadata"`
 	ReportIntelligence
 }
 

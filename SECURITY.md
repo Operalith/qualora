@@ -8,7 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
-| v0.20.0-alpha | Best-effort alpha support |
+| v0.21.0-alpha | Best-effort alpha support |
 | v0.18.0-alpha | Best-effort alpha support |
 | v0.17.0-alpha | Best-effort alpha support |
 | v0.15.0-alpha | Best-effort alpha support |
@@ -44,7 +44,7 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.20.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
+The v0.21.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
 
 Report intelligence, baseline comparison, quality gates, CI run summaries, and issue export previews are deterministic and computed from already stored findings, safe result rows, grouped finding fingerprints, and metadata. They must not include credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, provider secrets, encrypted secret payloads, or raw AI prompts. Sensitive query values are redacted before URLs are used for grouping, fingerprints, or issue content.
 
@@ -84,6 +84,9 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - Interactive Safe Explorer must skip unsafe, external, unsupported, duplicate, sensitive-query, and policy-blocked actions with explicit reasons.
 - Interactive Safe Explorer must not let AI choose or execute actions, submit POST forms, fill arbitrary forms, click arbitrary buttons, run payloads, fuzz inputs, perform active scanning, perform destructive actions, or crawl external domains by default.
 - Interactive Safe Explorer reports and AI inputs must not include credentials, cookies, local/session storage, auth headers, tokens, full HTML, request bodies, or response bodies.
+- AI Browser Control must remain policy-gated: AI proposes one typed JSON action and Qualora executes only deterministic policy-approved safe actions.
+- AI Browser Control must not send credentials, cookies, local/session storage, auth headers, tokens, screenshots, full HTML, request bodies, response bodies, raw traces, or browser storage to AI.
+- AI Browser Control must block unsupported actions, arbitrary selectors, form submission, unsafe buttons, external navigation by default, destructive or mutating paths, active scanning, payloads, fuzzing, and looped targets.
 - Passive quality checks must remain read-only metadata checks. They must not submit forms, click arbitrary buttons, guess sensitive paths, run payloads, fuzz inputs, perform active scanning, perform destructive actions, or use autonomous AI browser control.
 - Quality check reports and AI inputs must not include cookie values, browser storage, auth headers, tokens, credentials, full HTML, request bodies, or response bodies.
 - Safe QA Runs must remain discovery-aware orchestration only: reviewable AI plans, deterministic preview, and explicit safe DSL execution without AI browser control, arbitrary clicks, form submission, active scanning, fuzzing, or destructive actions.
