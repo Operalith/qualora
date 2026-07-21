@@ -16,6 +16,7 @@ export type AIBrowserActionType =
   | "assert_title_contains"
   | "capture_screenshot"
   | "collect_browser_signals"
+  | "submit_safe_get_form"
   | "stop";
 
 export type AIBrowserAction = {
@@ -24,6 +25,8 @@ export type AIBrowserAction = {
   path?: string;
   link_text?: string;
   selector_hint?: string;
+  form_selector_hint?: string;
+  field_values?: Record<string, string>;
   label?: string;
   text?: string;
   reason?: string;
@@ -46,7 +49,16 @@ export type AIBrowserObservation = {
   headings: string[];
   safe_candidate_links: Array<{ text: string; path: string; target_url: string; same_origin: boolean; safety: string; selector_hint: string }>;
   candidate_buttons: Array<{ label: string; safety: string; selector_hint: string }>;
-  forms: Array<{ method: string; field_count: number; password_field_count: number; classification: string }>;
+  forms: Array<{
+    method: string;
+    field_count: number;
+    password_field_count: number;
+    classification: string;
+    safety: string;
+    selector_hint: string;
+    action_url: string;
+    fields: Array<{ name: string; type: string; label: string }>;
+  }>;
   console_error_count: number;
   failed_request_count: number;
   previous_steps: Array<{ step_index: number; page: string; action: string; decision: string; result: string }>;
@@ -80,6 +92,7 @@ const supportedActionTypes = new Set<AIBrowserActionType>([
   "assert_title_contains",
   "capture_screenshot",
   "collect_browser_signals",
+  "submit_safe_get_form",
   "stop"
 ]);
 
@@ -116,6 +129,8 @@ export function parseAIBrowserSuggestion(raw: string): { suggestion: AIBrowserSu
       path: cleanString(actionObject.path, 500),
       link_text: cleanString(actionObject.link_text, 180),
       selector_hint: cleanString(actionObject.selector_hint, 240),
+      form_selector_hint: cleanString(actionObject.form_selector_hint, 240),
+      field_values: cleanFieldValues(actionObject.field_values),
       label: cleanString(actionObject.label, 180),
       text: cleanString(actionObject.text, 500),
       reason: cleanString(actionObject.reason, 500)
@@ -137,8 +152,9 @@ export function evaluateAIBrowserPolicy(input: AIBrowserPolicyInput): AIBrowserP
   if (!action || !supportedActionTypes.has(action.type)) {
     return unsupported(`unsupported action type ${action?.type || "missing"}`, action ?? null);
   }
-  const label = cleanString(action.label || action.link_text || action.text || action.reason || action.type, 240);
-  if (looksDangerous(label)) {
+  const explicitLabel = cleanString(action.label || action.link_text || action.text || action.reason, 240);
+  const label = explicitLabel || action.type;
+  if (action.type !== "submit_safe_get_form" && looksDangerous(label)) {
     return blocked("action label looks destructive or mutating", action);
   }
   if (action.type === "stop") {
@@ -159,6 +175,9 @@ export function evaluateAIBrowserPolicy(input: AIBrowserPolicyInput): AIBrowserP
 
   if (input.depth >= input.maxDepth) {
     return blocked("max_depth reached", action);
+  }
+  if (action.type === "submit_safe_get_form") {
+    return evaluateSafeGetFormPolicy(input, action, explicitLabel);
   }
   const target = action.target_url || action.path || "";
   if (!target) {
@@ -321,10 +340,92 @@ function requiredFieldMissing(action: AIBrowserAction): string {
   if (action.type === "click_safe_navigation" && !action.selector_hint) {
     return "click_safe_navigation requires selector_hint";
   }
+  if (action.type === "submit_safe_get_form") {
+    if (!(action.form_selector_hint || action.selector_hint)) {
+      return "submit_safe_get_form requires form_selector_hint";
+    }
+    if (!action.field_values || Object.keys(action.field_values).length === 0) {
+      return "submit_safe_get_form requires field_values";
+    }
+  }
   if (["assert_text_visible", "assert_url_contains", "assert_title_contains"].includes(action.type) && !action.text) {
     return `${action.type} requires text`;
   }
   return "";
+}
+
+function evaluateSafeGetFormPolicy(input: AIBrowserPolicyInput, action: AIBrowserAction, label: string): AIBrowserPolicyDecision {
+  const selector = cleanString(action.form_selector_hint || action.selector_hint, 240);
+  const observed = input.observation.forms.find((form) => form.selector_hint === selector);
+  if (!observed) {
+    return blocked("form action did not match an observed safe form candidate", action);
+  }
+  if (observed.method.toLowerCase() !== "get") {
+    return blocked("form method is not safe GET", action);
+  }
+  if (observed.safety !== "safe") {
+    return blocked("observed form was not classified safe", action);
+  }
+  if (!["search", "filter", "sort", "navigation"].includes(observed.classification)) {
+    return blocked("observed form classification is not eligible for safe submission", action);
+  }
+
+  const fieldValues = action.field_values || {};
+  const allowedFields = new Map(observed.fields.map((field) => [field.name, field]));
+  const submitted = new URL(observed.action_url || input.observation.current_url, input.observation.current_url);
+  for (const [rawName, rawValue] of Object.entries(fieldValues)) {
+    const name = cleanString(rawName, 120);
+    const value = cleanString(rawValue, 80);
+    const observedField = allowedFields.get(name);
+    if (!observedField) {
+      return blocked(`form field ${name || "missing"} was not in the sanitized observation`, action);
+    }
+    if (hasSensitiveQueryName(name) || hasSensitiveQueryName(value) || looksDangerous(name) || looksDangerous(value)) {
+      return blocked("form field name or value looked sensitive, destructive, or mutating", action);
+    }
+    if (!["", "text", "search", "select-one", "select-multiple", "checkbox", "radio"].includes(observedField.type)) {
+      return blocked(`form field ${name} uses unsupported type ${observedField.type}`, action);
+    }
+    submitted.searchParams.set(name, value);
+  }
+  submitted.hash = "";
+  submitted.searchParams.sort();
+  if (hasSensitiveQuery(submitted)) {
+    return blocked("submitted form URL contains sensitive query parameters", action, submitted.toString());
+  }
+  if (looksDangerous(submitted.pathname) || (label && looksDangerous(label))) {
+    return blocked("submitted form path or label looks destructive or mutating", action, submitted.toString());
+  }
+  const targetURL = submitted.toString();
+  if (input.visited.has(targetURL)) {
+    return blocked("loop detected for previously visited URL", action, targetURL);
+  }
+
+  const explorerAction: ExtractedSafeExplorerAction = {
+    actionType: "form_get",
+    label: label || observed.classification,
+    text: label || observed.classification,
+    selectorHint: selector,
+    href: observed.action_url,
+    targetURL,
+    method: "GET",
+    fieldCount: observed.field_count,
+    hasPasswordField: observed.password_field_count > 0,
+    hasFileField: false,
+    hasHiddenSensitiveField: false
+  };
+  const classified = classifySafeExplorerAction(explorerAction, { ...input.policy, allowGetForms: true });
+  if (classified.decision !== "execute") {
+    return policyFromSafeExplorer(classified, action);
+  }
+  return {
+    decision: "approved",
+    reason: "policy approved safe same-origin GET form submission",
+    action,
+    targetURL: classified.normalizedURL || targetURL,
+    selectorHint: selector,
+    label: label || observed.classification
+  };
 }
 
 function findObservedCandidate(observation: AIBrowserObservation, action: AIBrowserAction, targetURL: string) {
@@ -364,6 +465,21 @@ function cleanString(value: unknown, max = 240): string {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+function cleanFieldValues(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const out: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>).slice(0, 8)) {
+    const name = cleanString(key, 120);
+    const fieldValue = cleanString(raw, 80);
+    if (name && fieldValue) {
+      out[name] = fieldValue;
+    }
+  }
+  return out;
+}
+
 function looksDangerous(value: string): boolean {
   return dangerousMarkers.test(value);
 }
@@ -375,4 +491,8 @@ function hasSensitiveQuery(url: URL): boolean {
     }
   }
   return false;
+}
+
+function hasSensitiveQueryName(value: string): boolean {
+  return sensitiveQueryMarkers.test(value);
 }

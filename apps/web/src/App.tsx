@@ -25,11 +25,13 @@ import {
   executeTestPlan,
   executeQARun,
   exportReportIssues,
+  formTestHTMLReportURL,
   generateAITestPlan,
   getAIBrowserControlReport,
   getAuthorizationCheckReport,
   getAPISpec,
   getDiscoveryReport,
+  getFormTestReport,
   getProject,
   getQARunReport,
   getQualityCheckReport,
@@ -50,6 +52,7 @@ import {
   listCIRuns,
   listCredentialProfiles,
   listDiscoveryRuns,
+  listFormTestRuns,
   listIssueExportConfigs,
   listProjects,
   listQARuns,
@@ -76,6 +79,7 @@ import {
   startBrowserSmokeRun,
   startCIRun,
   startDiscoveryRun,
+  startFormTestRun,
   startQARun,
   startQualityCheckRun,
   startSafeExplorerRun,
@@ -124,6 +128,10 @@ import type {
   DiscoveryRun,
   DiscoveryRunInput,
   Evidence,
+  FormTestReport,
+  FormTestResult,
+  FormTestRun,
+  FormTestRunInput,
   GroupedFinding,
   IssueExportConfig,
   IssueExportConfigInput,
@@ -178,6 +186,7 @@ type Route =
   | { name: "quality-check-run"; id: string }
   | { name: "safe-explorer-run"; id: string }
   | { name: "ai-browser-control-run"; id: string }
+  | { name: "form-test-run"; id: string }
   | { name: "qa-run"; id: string }
   | { name: "run"; id: string };
 
@@ -197,7 +206,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.21.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.22.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -423,6 +432,7 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
         {route.name === "quality-check-run" && <QualityCheckRunPage runID={route.id} />}
         {route.name === "safe-explorer-run" && <SafeExplorerRunPage runID={route.id} />}
         {route.name === "ai-browser-control-run" && <AIBrowserControlRunPage runID={route.id} />}
+        {route.name === "form-test-run" && <FormTestRunPage runID={route.id} />}
         {route.name === "qa-run" && <QARunPage runID={route.id} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
       </main>
@@ -614,7 +624,7 @@ function Dashboard({
             <h2>Qualora version badge: {formatVersionBadge(version)}</h2>
             <p>Configure a real project, optional AI, optional login, optional OpenAPI, and start the first safe workflow.</p>
           </div>
-          <span className="pill">Qualora v0.21.0-alpha</span>
+          <span className="pill">Qualora v0.22.0-alpha</span>
         </div>
         <div className="quick-grid">
           <a className="quick-card" href="#/setup-project">
@@ -1075,6 +1085,7 @@ function ProjectReadinessChecklist({
   discoveryRuns,
   qualityRuns,
   safeExplorerRuns,
+  formTestRuns,
   qaRuns
 }: {
   project: Project;
@@ -1085,6 +1096,7 @@ function ProjectReadinessChecklist({
   discoveryRuns: DiscoveryRun[];
   qualityRuns: QualityCheckRun[];
   safeExplorerRuns: SafeExplorerRun[];
+  formTestRuns: FormTestRun[];
   qaRuns: QARun[];
 }) {
   const latestCompletedRun = runs.find((run) => run.status === "completed");
@@ -1094,10 +1106,11 @@ function ProjectReadinessChecklist({
     { label: "Discovery run exists", ready: discoveryRuns.length > 0, action: "Run discovery", href: `#/projects/${project.id}` },
     { label: "Quality check exists", ready: qualityRuns.length > 0, action: "Run quality checks", href: `#/projects/${project.id}` },
     { label: "Safe Explorer run exists", ready: safeExplorerRuns.length > 0, action: "Start Safe Explorer", href: `#/projects/${project.id}` },
+    { label: "Safe Form Testing run exists", ready: formTestRuns.length > 0, action: "Start Safe Form Testing", href: `#/projects/${project.id}` },
     { label: "Credential profile exists", ready: credentialProfiles.length > 0, action: "Add credentials", href: `#/projects/${project.id}` },
     { label: "OpenAPI spec imported", ready: apiSpecs.length > 0, action: "Import OpenAPI", href: `#/projects/${project.id}` },
     { label: "Latest Safe QA run exists", ready: qaRuns.length > 0, action: "Start Safe QA", href: `#/projects/${project.id}` },
-    { label: "Latest report available", ready: Boolean(latestCompletedRun || qaRuns.length || qualityRuns.length || discoveryRuns.length || safeExplorerRuns.length), action: "View reports", href: "#/reports" }
+    { label: "Latest report available", ready: Boolean(latestCompletedRun || qaRuns.length || qualityRuns.length || discoveryRuns.length || safeExplorerRuns.length || formTestRuns.length), action: "View reports", href: "#/reports" }
   ];
   return (
     <div className="readiness-grid">
@@ -1179,11 +1192,12 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
       try {
         const projectItems = await Promise.all(
           projects.data.map(async (project) => {
-            const [discovery, quality, safeExplorer, aiBrowser, qaRuns, baselines] = await Promise.all([
+            const [discovery, quality, safeExplorer, aiBrowser, formTests, qaRuns, baselines] = await Promise.all([
               listDiscoveryRuns(project.id),
               listQualityCheckRuns(project.id),
               listSafeExplorerRuns(project.id),
               listAIBrowserControlRuns(project.id),
+              listFormTestRuns(project.id),
               listQARuns(project.id),
               listReportBaselines(project.id, "safe_qa")
             ]);
@@ -1228,6 +1242,16 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
                 created_at: run.created_at,
                 web_href: `#/ai-browser-control-runs/${run.id}`,
                 html_href: aiBrowserControlHTMLReportURL(run.id)
+              })),
+              ...formTests.map((run): ReportIndexItem => ({
+                id: run.id,
+                project_id: project.id,
+                project_name: project.name,
+                type: "Safe Form Testing",
+                status: run.status,
+                created_at: run.created_at,
+                web_href: `#/form-test-runs/${run.id}`,
+                html_href: formTestHTMLReportURL(run.id)
               })),
               ...qaRuns.map((run): ReportIndexItem => ({
                 id: run.id,
@@ -1315,6 +1339,9 @@ async function loadReportIndexIntelligence(item: ReportIndexItem): Promise<Repor
   }
   if (item.web_href.startsWith("#/ai-browser-control-runs/")) {
     return getAIBrowserControlReport(item.id);
+  }
+  if (item.web_href.startsWith("#/form-test-runs/")) {
+    return getFormTestReport(item.id);
   }
   if (item.web_href.startsWith("#/qa-runs/")) {
     return getQARunReport(item.id);
@@ -1810,6 +1837,7 @@ function ProjectPage({
   const [qualityRuns, setQualityRuns] = useState<LoadState<QualityCheckRun[]>>({ data: [], loading: true, error: "" });
   const [safeExplorerRuns, setSafeExplorerRuns] = useState<LoadState<SafeExplorerRun[]>>({ data: [], loading: true, error: "" });
   const [aiBrowserRuns, setAIBrowserRuns] = useState<LoadState<AIBrowserControlRun[]>>({ data: [], loading: true, error: "" });
+  const [formTestRuns, setFormTestRuns] = useState<LoadState<FormTestRun[]>>({ data: [], loading: true, error: "" });
   const [qaRuns, setQARuns] = useState<LoadState<QARun[]>>({ data: [], loading: true, error: "" });
   const [baselines, setBaselines] = useState<LoadState<ReportBaseline[]>>({ data: [], loading: true, error: "" });
   const [ciRuns, setCIRuns] = useState<LoadState<CIRun[]>>({ data: [], loading: true, error: "" });
@@ -1829,6 +1857,7 @@ function ProjectPage({
     setQualityRuns((current) => ({ ...current, loading: true, error: "" }));
     setSafeExplorerRuns((current) => ({ ...current, loading: true, error: "" }));
     setAIBrowserRuns((current) => ({ ...current, loading: true, error: "" }));
+    setFormTestRuns((current) => ({ ...current, loading: true, error: "" }));
     setQARuns((current) => ({ ...current, loading: true, error: "" }));
     setBaselines((current) => ({ ...current, loading: true, error: "" }));
     setCIRuns((current) => ({ ...current, loading: true, error: "" }));
@@ -1849,6 +1878,7 @@ function ProjectPage({
         nextQualityRuns,
         nextSafeExplorerRuns,
         nextAIBrowserRuns,
+        nextFormTestRuns,
         nextQARuns,
         nextBaselines,
         nextCIRuns,
@@ -1867,6 +1897,7 @@ function ProjectPage({
         listQualityCheckRuns(projectID),
         listSafeExplorerRuns(projectID),
         listAIBrowserControlRuns(projectID),
+        listFormTestRuns(projectID),
         listQARuns(projectID),
         listReportBaselines(projectID, "safe_qa"),
         listCIRuns(projectID),
@@ -1885,6 +1916,7 @@ function ProjectPage({
       setQualityRuns({ data: nextQualityRuns, loading: false, error: "" });
       setSafeExplorerRuns({ data: nextSafeExplorerRuns, loading: false, error: "" });
       setAIBrowserRuns({ data: nextAIBrowserRuns, loading: false, error: "" });
+      setFormTestRuns({ data: nextFormTestRuns, loading: false, error: "" });
       setQARuns({ data: nextQARuns, loading: false, error: "" });
       setBaselines({ data: nextBaselines, loading: false, error: "" });
       setCIRuns({ data: nextCIRuns, loading: false, error: "" });
@@ -1903,6 +1935,7 @@ function ProjectPage({
       setQualityRuns((current) => ({ ...current, loading: false, error: message }));
       setSafeExplorerRuns((current) => ({ ...current, loading: false, error: message }));
       setAIBrowserRuns((current) => ({ ...current, loading: false, error: message }));
+      setFormTestRuns((current) => ({ ...current, loading: false, error: message }));
       setQARuns((current) => ({ ...current, loading: false, error: message }));
       setBaselines((current) => ({ ...current, loading: false, error: message }));
       setCIRuns((current) => ({ ...current, loading: false, error: message }));
@@ -2046,6 +2079,23 @@ function ProjectPage({
     }
   }
 
+  async function startProjectFormTest(input: FormTestRunInput) {
+    if (!project) {
+      return;
+    }
+    setStarting("form-test");
+    setError("");
+    try {
+      const run = await startFormTestRun(project.id, input);
+      await refresh();
+      window.location.hash = `#/form-test-runs/${run.id}`;
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : String(startError));
+    } finally {
+      setStarting("");
+    }
+  }
+
   async function startSafeQARun(input: QARunInput) {
     if (!project) {
       return;
@@ -2135,6 +2185,7 @@ function ProjectPage({
           discoveryRuns={discoveryRuns.data}
           qualityRuns={qualityRuns.data}
           safeExplorerRuns={safeExplorerRuns.data}
+          formTestRuns={formTestRuns.data}
           qaRuns={qaRuns.data}
         />
       </section>
@@ -2188,6 +2239,33 @@ function ProjectPage({
         <div className="section-split">
           {safeExplorerRuns.error && <Notice tone="danger" message={safeExplorerRuns.error} />}
           {safeExplorerRuns.loading ? <SkeletonRows /> : <SafeExplorerRunTable runs={safeExplorerRuns.data} />}
+        </div>
+      </section>
+
+      <section id="safe-form-testing">
+        <div className="section-heading">
+          <div>
+            <h2>Safe Form Testing</h2>
+            <p>Classifies forms and exercises only simple same-origin GET search, filter, sort, and navigation forms.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <Notice
+          tone="info"
+          message="Safe Form Testing only submits same-origin GET forms classified as safe. POST, login, password, payment, transfer, delete, reset, upload, admin, and unsupported forms are skipped with reasons."
+        />
+        <FormTestRunForm
+          project={project}
+          profiles={credentialProfiles.data}
+          discoveryRuns={discoveryRuns.data}
+          disabled={starting !== ""}
+          onStart={(input) => void startProjectFormTest(input)}
+        />
+        <div className="section-split">
+          {formTestRuns.error && <Notice tone="danger" message={formTestRuns.error} />}
+          {formTestRuns.loading ? <SkeletonRows /> : <FormTestRunTable runs={formTestRuns.data} />}
         </div>
       </section>
 
@@ -3077,6 +3155,173 @@ function SafeExplorerRunTable({ runs }: { runs: SafeExplorerRun[] }) {
               <td>{formatDate(run.created_at)}</td>
               <td>
                 <a href={`#/safe-explorer-runs/${run.id}`}>Open</a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FormTestRunForm({
+  project,
+  profiles,
+  discoveryRuns,
+  disabled,
+  onStart
+}: {
+  project: Project;
+  profiles: CredentialProfile[];
+  discoveryRuns: DiscoveryRun[];
+  disabled: boolean;
+  onStart: (input: FormTestRunInput) => void;
+}) {
+  const completedDiscoveryRuns = discoveryRuns.filter((run) => run.status === "completed");
+  const [form, setForm] = useState<Required<Pick<FormTestRunInput, "target_url" | "credential_profile_id" | "discovery_run_id" | "max_forms" | "max_tests_per_form" | "safe_get_only">> & { use_latest_discovery: boolean }>({
+    target_url: project.frontend_url || "",
+    credential_profile_id: "",
+    discovery_run_id: "",
+    use_latest_discovery: completedDiscoveryRuns.length > 0,
+    max_forms: 10,
+    max_tests_per_form: 1,
+    safe_get_only: true
+  });
+
+  useEffect(() => {
+    setForm((current) => ({
+      ...current,
+      target_url: project.frontend_url || current.target_url,
+      use_latest_discovery: current.use_latest_discovery || completedDiscoveryRuns.length > 0
+    }));
+  }, [completedDiscoveryRuns.length, project.frontend_url]);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onStart({
+      target_url: form.target_url.trim() || undefined,
+      credential_profile_id: form.credential_profile_id || undefined,
+      discovery_run_id: form.discovery_run_id || undefined,
+      use_latest_discovery: form.use_latest_discovery,
+      max_forms: Number(form.max_forms || 10),
+      max_tests_per_form: Number(form.max_tests_per_form || 1),
+      safe_get_only: true
+    });
+  }
+
+  return (
+    <form className="project-form compact-form" onSubmit={submit}>
+      <label>
+        Target URL
+        <input value={form.target_url} onChange={(event) => setForm({ ...form, target_url: event.target.value })} />
+      </label>
+      <label>
+        Credential Profile
+        <select
+          value={form.credential_profile_id}
+          onChange={(event) => setForm({ ...form, credential_profile_id: event.target.value })}
+        >
+          <option value="">Unauthenticated</option>
+          {profiles.map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {credentialProfileLabel(profile)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Discovery Run
+        <select
+          value={form.discovery_run_id}
+          onChange={(event) => setForm({ ...form, discovery_run_id: event.target.value, use_latest_discovery: false })}
+        >
+          <option value="">Use target URL only</option>
+          {completedDiscoveryRuns.map((run) => (
+            <option key={run.id} value={run.id}>
+              {shortID(run.id)} · {formatDate(run.created_at)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Max Forms
+        <input
+          type="number"
+          min={1}
+          max={50}
+          value={form.max_forms}
+          onChange={(event) => setForm({ ...form, max_forms: Number(event.target.value) })}
+        />
+      </label>
+      <label>
+        Tests Per Form
+        <input
+          type="number"
+          min={1}
+          max={5}
+          value={form.max_tests_per_form}
+          onChange={(event) => setForm({ ...form, max_tests_per_form: Number(event.target.value) })}
+        />
+      </label>
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={form.use_latest_discovery}
+          disabled={completedDiscoveryRuns.length === 0}
+          onChange={(event) => setForm({ ...form, use_latest_discovery: event.target.checked, discovery_run_id: "" })}
+        />
+        Use latest completed discovery
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={form.safe_get_only} disabled readOnly />
+        Safe GET forms only
+      </label>
+      <div className="form-actions">
+        <button type="submit" disabled={disabled || !project.frontend_url}>
+          {disabled ? "Starting" : "Start Safe Form Testing"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function FormTestRunTable({ runs }: { runs: FormTestRun[] }) {
+  if (runs.length === 0) {
+    return <EmptyState title="No Safe Form Testing runs" body="Start Safe Form Testing to classify and exercise safe GET forms." />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Target</th>
+            <th>Detected</th>
+            <th>Safe</th>
+            <th>Tested</th>
+            <th>Skipped</th>
+            <th>Findings</th>
+            <th>Created</th>
+            <th>Report</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run) => (
+            <tr key={run.id}>
+              <td>
+                <StatusBadge status={run.status} />
+              </td>
+              <td>
+                <code>{run.target_url || "Project frontend"}</code>
+              </td>
+              <td>{run.total_forms_detected}</td>
+              <td>{run.total_forms_classified_safe}</td>
+              <td>{run.total_forms_tested}</td>
+              <td>{run.total_forms_skipped}</td>
+              <td>{run.total_findings}</td>
+              <td>{formatDate(run.created_at)}</td>
+              <td>
+                <a href={`#/form-test-runs/${run.id}`}>Open</a>
               </td>
             </tr>
           ))}
@@ -6949,6 +7194,195 @@ function aiBrowserRationale(step: AIBrowserControlStep): string {
   return String(step.ai_suggestion.rationale || step.ai_suggestion.expected_result || "");
 }
 
+function FormTestRunPage({ runID }: { runID: string }) {
+  const [report, setReport] = useState<FormTestReport | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const nextReport = await getFormTestReport(runID);
+      setReport(nextReport);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [runID]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!report || !isActiveRunStatus(report.run.status)) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => void refresh(), 2500);
+    return () => window.clearInterval(timer);
+  }, [refresh, report]);
+
+  if (error) {
+    return <Notice tone="danger" message={error} />;
+  }
+  if (loading && !report) {
+    return <SkeletonRows />;
+  }
+  if (!report) {
+    return <Notice tone="danger" message="Safe Form Testing report could not be loaded." />;
+  }
+
+  const tested = report.results.filter((result) => result.decision === "tested");
+  const skipped = report.results.filter((result) => result.decision === "skipped");
+
+  return (
+    <div className="grid">
+      <section>
+        <div className="section-heading">
+          <div>
+            <h2>{report.project.name}</h2>
+            <p>
+              <StatusBadge status={report.run.status} /> <span className="muted">Safe Form Testing run {report.run.id}</span>
+            </p>
+          </div>
+          <div className="button-row">
+            <a className="button secondary-link" href={`#/projects/${report.project.id}`}>
+              Project
+            </a>
+            <a className="button secondary-link" href={`${API_BASE_URL}/api/v1/form-test-runs/${report.run.id}/report`} target="_blank" rel="noreferrer">
+              JSON Report
+            </a>
+            <a className="button" href={formTestHTMLReportURL(report.run.id)} target="_blank" rel="noreferrer">
+              HTML Report
+            </a>
+          </div>
+        </div>
+        {report.run.error_message && <Notice tone="danger" message={report.run.error_message} />}
+        <div className="summary-grid">
+          <Metric label="Detected" value={report.summary.forms_detected} />
+          <Metric label="Safe" value={report.summary.forms_classified_safe} tone="ok" />
+          <Metric label="Tested" value={report.summary.forms_tested} />
+          <Metric label="Skipped" value={report.summary.forms_skipped} tone="medium" />
+          <Metric label="Findings" value={report.summary.findings} tone="critical" />
+          <Metric label="Screenshots" value={report.summary.screenshots} tone="info" />
+        </div>
+        <div className="detail-grid compact">
+          <Field label="Target URL" value={report.run.target_url || report.project.frontend_url || "Not configured"} />
+          <Field label="Discovery Run" value={report.run.discovery_run_id ? shortID(report.run.discovery_run_id) : "Not used"} />
+          <Field label="Credential Profile" value={report.run.credential_profile_id ? shortID(report.run.credential_profile_id) : "Unauthenticated"} />
+          <Field label="Max Forms" value={String(report.run.max_forms)} />
+          <Field label="Safe GET Only" value={report.run.safe_get_only ? "Yes" : "No"} />
+          <Field label="Generated" value={formatDate(report.generated_at)} />
+        </div>
+      </section>
+
+      <ReportIntelligencePanel report={report} />
+
+      <section>
+        <h2>Safety Scope</h2>
+        <Notice
+          tone="info"
+          message="Safe Form Testing submits only simple same-origin GET forms classified as search, filter, sort, or navigation. Mutating, sensitive, unsupported, external, destructive, and credential-like forms are skipped with reasons."
+        />
+      </section>
+
+      <section>
+        <h2>Tested Forms</h2>
+        <FormTestResultTable
+          results={tested}
+          emptyTitle="No forms were submitted"
+          emptyBody="No same-origin GET form matched the safe form testing policy."
+        />
+      </section>
+
+      <section>
+        <h2>Skipped Forms</h2>
+        <FormTestResultTable
+          results={skipped}
+          emptyTitle="No skipped forms"
+          emptyBody="Every detected form was eligible for safe GET testing."
+        />
+      </section>
+
+      <section>
+        <h2>Findings</h2>
+        <FindingTable findings={report.findings} />
+      </section>
+
+      <section>
+        <h2>Evidence</h2>
+        <EvidenceTable evidence={report.evidence} />
+      </section>
+
+      <section>
+        <h2>Safety Notes</h2>
+        <div className="grid two-column">
+          <AnalysisList title="Safety Notes" items={report.safety_notes} />
+          <AnalysisList title="Limitations" items={report.limitations} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FormTestResultTable({
+  results,
+  emptyTitle,
+  emptyBody
+}: {
+  results: FormTestResult[];
+  emptyTitle: string;
+  emptyBody: string;
+}) {
+  if (results.length === 0) {
+    return <EmptyState title={emptyTitle} body={emptyBody} />;
+  }
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Decision</th>
+            <th>Safety</th>
+            <th>Method</th>
+            <th>Classification</th>
+            <th>Page</th>
+            <th>Result</th>
+            <th>Signals</th>
+            <th>Screenshot</th>
+            <th>Skip Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((result) => (
+            <tr key={result.id}>
+              <td>{result.decision}</td>
+              <td>
+                <StatusBadge status={result.safety} />
+              </td>
+              <td>{result.form_method || "GET"}</td>
+              <td>{result.classification}</td>
+              <td>
+                <code>{result.page_url}</code>
+              </td>
+              <td>
+                {result.http_status ?? "n/a"} <code>{result.final_url || result.submitted_url || result.form_action || ""}</code>
+              </td>
+              <td>
+                {result.console_error_count} console, {result.failed_request_count} network
+              </td>
+              <td>{result.screenshot_evidence_id ? <a href={evidenceDownloadURL(result.screenshot_evidence_id)}>Open</a> : "None"}</td>
+              <td>{result.skip_reason || "None"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function SafeExplorerTimelineTable({ report }: { report: SafeExplorerReport }) {
   if (report.steps.length === 0) {
     return <EmptyState title="No timeline" body="The Safe Explorer worker has not recorded steps yet." />;
@@ -8364,6 +8798,9 @@ function parseHash(hash: string): Route {
   if (parts[0] === "ai-browser-control-runs" && parts[1]) {
     return { name: "ai-browser-control-run", id: parts[1] };
   }
+  if (parts[0] === "form-test-runs" && parts[1]) {
+    return { name: "form-test-run", id: parts[1] };
+  }
   if (parts[0] === "qa-runs" && parts[1]) {
     return { name: "qa-run", id: parts[1] };
   }
@@ -8404,6 +8841,8 @@ function hashForRoute(route: Route): string {
       return `/safe-explorer-runs/${route.id}`;
     case "ai-browser-control-run":
       return `/ai-browser-control-runs/${route.id}`;
+    case "form-test-run":
+      return `/form-test-runs/${route.id}`;
     case "qa-run":
       return `/qa-runs/${route.id}`;
     case "run":
@@ -8445,6 +8884,8 @@ function titleForRoute(route: Route): string {
       return "Safe Explorer Report";
     case "ai-browser-control-run":
       return "AI Browser Control Report";
+    case "form-test-run":
+      return "Safe Form Testing Report";
     case "qa-run":
       return "Safe QA Report";
     case "run":

@@ -272,7 +272,7 @@ Delivered:
 
 ## v0.21.0-alpha
 
-Current alpha scope:
+Delivered:
 
 - Policy-gated AI Browser Control for projects with `frontend_url`.
 - Project-scoped AI Browser Control runs and step traces.
@@ -284,7 +284,24 @@ Current alpha scope:
 - Deterministic fake-LLM smoke path plus an unsafe suggestion fixture that must be blocked by policy.
 - Smoke validation for safe action execution, policy blocks, reports, UI bundle text, and no secret leakage.
 
-## Phase 21: Run And Worker Hardening
+## v0.22.0-alpha
+
+Current alpha scope:
+
+- Safe Form Testing for projects with `frontend_url`.
+- Project-scoped `form_test_runs` and `form_test_results`.
+- Deterministic form classification for search, filter, sort, newsletter, contact, login, password, payment, profile update, upload, admin mutation, destructive, and unknown forms.
+- Execution only for same-origin safe GET forms with bounded deterministic non-sensitive values.
+- Skip reasons for POST/mutating, external, password/file, sensitive-field, payment, transfer, delete, reset, upload, admin/account mutation, destructive, unknown, and unsupported forms.
+- `form_observations`, `form_submission`, and screenshot evidence metadata without raw form values or browser session material.
+- JSON/HTML Safe Form Testing reports with report intelligence.
+- Web UI project card, run form, run list, report page, and report index integration.
+- AI Browser Control `submit_safe_get_form` action support gated by deterministic policy.
+- Fake LLM safe-form and unsafe-form fixtures for deterministic smoke coverage.
+- Demo web search/filter/unsafe/external form fixtures.
+- Smoke validation for safe GET execution, unsafe skips, form reports, policy-approved and policy-blocked AI form suggestions, UI bundle text, and no secret leakage.
+
+## Phase 23: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -298,14 +315,14 @@ Current alpha scope:
 - Move AI-assisted test planning to an async analyzer worker.
 - Safe QA Run integration for Safe Explorer summaries if it can remain explicit and non-autonomous.
 
-## Phase 21: Deeper API Checks
+## Phase 23: Deeper API Checks
 
 - More complete OpenAPI validation beyond the lightweight v0.20 checks.
 - Richer response schema coverage for safe methods without storing response bodies.
 - Configurable endpoint limits and path filters.
 - Authenticated API testing beyond simple configured profile injection, if it can remain explicit and read-only.
 
-## Phase 22: Quality Check Deepening
+## Phase 24: Quality Check Deepening
 
 - Optional axe-core integration or richer accessibility summaries.
 - Lighthouse/Core Web Vitals-style performance collection if it can stay safe and lightweight.

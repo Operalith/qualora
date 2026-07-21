@@ -10,7 +10,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.21.0-alpha` Docker Compose MVP working.
+- Keep the `v0.22.0-alpha` Docker Compose MVP working.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
@@ -30,6 +30,7 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Safe QA Runs that preview first and execute only approved deterministic browser DSL steps.
 - Interactive Safe Explorer for deterministic, bounded, safe navigation action exploration.
 - Policy-gated AI Browser Control where AI proposes one typed action and Qualora executes only deterministic policy-approved safe actions.
+- Safe Form Testing for deterministic classification and bounded same-origin GET search/filter/sort form execution.
 - Guided project onboarding that creates a project, optionally configures AI, credentials, and OpenAPI specs, and starts selected safe checks.
 - Dashboard, reports, and project readiness UI that make first-run workflows discoverable without hiding alpha limitations.
 - Deterministic report intelligence with severity normalization, grouped findings, deduplication metadata, affected-page summaries, noise classification, and executive summaries.
@@ -80,7 +81,11 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Safe Explorer must not use AI action choice, arbitrary clicking, arbitrary form submission, POST/mutating form execution, destructive actions, crawling external domains by default, active scanning, fuzzing, or payload execution.
 - AI Browser Control must remain policy-gated: AI may propose one strict typed JSON action, but Qualora must validate it before Playwright executes anything.
 - AI Browser Control must never become direct/free-form model control of Playwright.
-- AI Browser Control must not support arbitrary selectors, arbitrary clicking, form submission, POST/mutating form execution, destructive actions, external crawling by default, active scanning, fuzzing, payload execution, or unsafe button clicks.
+- AI Browser Control may support only policy-approved `submit_safe_get_form` actions for observed, same-origin, GET, safe-classified forms with bounded non-sensitive values.
+- AI Browser Control must not support arbitrary selectors, arbitrary clicking, arbitrary form submission, POST/mutating form execution, destructive actions, external crawling by default, active scanning, fuzzing, payload execution, or unsafe button clicks.
+- Safe Form Testing must execute only same-origin safe GET forms such as search/filter/sort/navigation forms with bounded deterministic non-sensitive values.
+- Safe Form Testing must skip POST/PUT/PATCH/DELETE forms, password/file fields, hidden sensitive fields, external actions, sensitive parameter names, login, payment, checkout, transfer, refund, delete, reset, cancel, deactivate, profile/account/admin mutation, destructive, unknown, and unsupported forms.
+- Safe Form Testing must not store raw form values, cookies, local/session storage, auth headers, tokens, request bodies, response bodies, full HTML, or credentials in reports, evidence metadata, AI inputs, CI output, or issue export previews.
 - Safe QA Runs must remain an orchestration layer over discovery, AI planning, and safe DSL execution; do not add arbitrary clicking, form submission, broad crawling, active scanning, fuzzing, or destructive actions.
 - Guided setup must orchestrate existing safe capabilities; do not add new engines, autonomous browser control, active scanning, destructive behavior, or credential leakage through onboarding.
 - Baseline comparison must stay deterministic and based on existing report intelligence fingerprints/grouped findings.
@@ -120,6 +125,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Discovery-aware AI test planning must use sanitized discovery summaries only. Do not send screenshots, full HTML, cookies, credentials, authorization headers, local/session storage, tokens, request bodies, or response bodies to AI by default.
 - AI Browser Control must send only sanitized browser observations and bounded goals to AI. Do not send credentials, cookies, local/session storage, auth headers, tokens, screenshots, full HTML, request bodies, response bodies, raw traces, provider secrets, encrypted secret payloads, or browser storage.
 - AI Browser Control policy decisions, suggestions, traces, reports, and findings must be safe to store and must not expose secrets or browser session material.
+- AI Browser Control form suggestions must send only sanitized form metadata and must still pass deterministic policy before Playwright navigates to a generated GET URL.
+- Safe Form Testing reports and evidence must include classifications, decisions, skip reasons, redacted submitted URLs, screenshots, findings, and bounded value summaries only; never raw submitted values or browser session material.
 - Safe test plan execution must skip authenticated, destructive, mutating, submit/upload/admin, exploit, SQLi, XSS, SSRF, brute-force, out-of-scope, and unsupported actions with clear reasons.
 - Safe API smoke must skip unsafe OpenAPI operations with clear reasons and must not send cookies, request bodies, response bodies, or secrets outside the configured allowed-host API target.
 - Authenticated API smoke may inject API auth only from a selected API auth profile into safe read-only requests and must redact auth headers/tokens everywhere else.

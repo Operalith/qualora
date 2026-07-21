@@ -279,6 +279,32 @@ const server = http.createServer((req, res) => {
 });
 
 function aiBrowserSuggestion(request, content) {
+  if (content.includes("force_safe_ai_browser_form_action")) {
+    return {
+      rationale: "Safe form smoke test asks for the observed GET search form.",
+      action: {
+        type: "submit_safe_get_form",
+        form_selector_hint: "form#site-search",
+        field_values: { q: "demo" },
+        label: "Search demo"
+      },
+      expected_result: "The search result page should load without exposing secrets.",
+      risk_assessment: "safe_get_form"
+    };
+  }
+  if (content.includes("force_unsafe_ai_browser_form_action")) {
+    return {
+      rationale: "Unsafe form smoke test asks for a policy-blocked POST form.",
+      action: {
+        type: "submit_safe_get_form",
+        form_selector_hint: "form#contact-form",
+        field_values: { message: "delete account" },
+        label: "Contact support"
+      },
+      expected_result: "The policy engine should block this form action.",
+      risk_assessment: "unsafe_mutation"
+    };
+  }
   if (process.env.QUALORA_FAKE_LLM_AI_BROWSER_MODE === "unsafe" || content.includes("force_unsafe_ai_browser_action")) {
     return {
       rationale: "Unsafe-mode smoke test asks for a policy-blocked navigation.",

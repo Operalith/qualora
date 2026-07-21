@@ -62,6 +62,17 @@ import {
   type AIBrowserPolicyDecision,
   type AIBrowserSuggestion
 } from "./ai_browser_control";
+import {
+  buildFormSkipFinding,
+  buildFormTestFindings,
+  buildNoSafeFormsFinding,
+  buildSubmittedFormURL,
+  classifyFormCandidate,
+  extractFormCandidates,
+  formValuesSummary,
+  type ClassifiedFormCandidate,
+  type ExtractedFormCandidate
+} from "./form_testing";
 
 type Config = {
   databaseUrl: string;
@@ -113,7 +124,12 @@ type AIBrowserControlRunJob = {
   project_id: string;
 };
 
-type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob & DiscoveryRunJob & QualityCheckRunJob & SafeExplorerRunJob & AIBrowserControlRunJob>;
+type FormTestRunJob = {
+  form_test_run_id: string;
+  project_id: string;
+};
+
+type BrowserQueueJob = Partial<BrowserRunJob & AuthorizationCheckRunJob & DiscoveryRunJob & QualityCheckRunJob & SafeExplorerRunJob & AIBrowserControlRunJob & FormTestRunJob>;
 
 type Project = {
   id: string;
@@ -237,6 +253,19 @@ type AIBrowserControlRunContext = {
   project: Project;
 };
 
+type FormTestRunContext = {
+  id: string;
+  project_id: string;
+  discovery_run_id: string;
+  credential_profile_id: string;
+  status: string;
+  target_url: string;
+  max_forms: number;
+  max_tests_per_form: number;
+  safe_get_only: boolean;
+  project: Project;
+};
+
 type AIProviderContext = {
   id: string;
   name: string;
@@ -317,6 +346,7 @@ type EvidenceOwner = {
   discoveryRunID?: string;
   safeExplorerRunID?: string;
   aiBrowserControlRunID?: string;
+  formTestRunID?: string;
 };
 
 type FindingOwner = EvidenceOwner & {
@@ -399,6 +429,11 @@ async function main(): Promise<void> {
       } else if (job.ai_browser_control_run_id) {
         await handleAIBrowserControlRunJob({
           ai_browser_control_run_id: job.ai_browser_control_run_id,
+          project_id: job.project_id ?? ""
+        });
+      } else if (job.form_test_run_id) {
+        await handleFormTestRunJob({
+          form_test_run_id: job.form_test_run_id,
           project_id: job.project_id ?? ""
         });
       } else if (job.quality_check_run_id) {
@@ -656,6 +691,35 @@ type SafeExplorerPageSnapshot = {
   actions: ExtractedSafeExplorerAction[];
 };
 
+type FormTestPageSnapshot = {
+  targetURL: string;
+  finalURL: string;
+  title: string;
+  statusCode: number | null;
+  contentType: string;
+  bodyTextLength: number | null;
+  loadDurationMS: number | null;
+  loadError: string;
+  consoleErrors: BrowserResult["consoleErrors"];
+  failedRequests: BrowserResult["failedRequests"];
+  blockedRequests: BrowserResult["blockedRequests"];
+  forms: ExtractedFormCandidate[];
+};
+
+type FormTestExecutionSnapshot = {
+  submittedURL: string;
+  finalURL: string;
+  title: string;
+  statusCode: number | null;
+  bodyTextLength: number | null;
+  durationMS: number | null;
+  loadError: string;
+  consoleErrors: BrowserResult["consoleErrors"];
+  failedRequests: BrowserResult["failedRequests"];
+  blockedRequests: BrowserResult["blockedRequests"];
+  screenshot: Buffer | null;
+};
+
 type SafeExplorerRunTotals = {
   totalSteps: number;
   totalPagesObserved: number;
@@ -672,6 +736,14 @@ type AIBrowserControlRunTotals = {
   totalActionsExecuted: number;
   totalActionsSkipped: number;
   totalPolicyBlocks: number;
+  totalFindings: number;
+};
+
+type FormTestRunTotals = {
+  totalFormsDetected: number;
+  totalFormsClassifiedSafe: number;
+  totalFormsTested: number;
+  totalFormsSkipped: number;
   totalFindings: number;
 };
 
@@ -1174,6 +1246,305 @@ async function runAIBrowserControl(run: AIBrowserControlRunContext): Promise<AIB
   }
 }
 
+async function handleFormTestRunJob(job: FormTestRunJob): Promise<void> {
+  log("form_test_run_started", { form_test_run_id: job.form_test_run_id, project_id: job.project_id });
+  try {
+    if (!job.form_test_run_id || !job.project_id) {
+      throw new Error("Safe Form Testing run job is missing required IDs");
+    }
+    const run = await getFormTestRunContext(job.form_test_run_id, job.project_id);
+    const scopeCheck = await validateTargetURL(run.target_url, run.project.allowed_hosts, run.project.allow_private_targets);
+    if (!scopeCheck.ok) {
+      throw new Error(scopeCheck.reason);
+    }
+    await markFormTestRunRunning(run.id);
+    const totals = await runFormTests(run);
+    await finishFormTestRun(run.id, "completed", "", totals);
+    log("form_test_run_completed", {
+      form_test_run_id: run.id,
+      detected: totals.totalFormsDetected,
+      safe: totals.totalFormsClassifiedSafe,
+      tested: totals.totalFormsTested,
+      skipped: totals.totalFormsSkipped,
+      findings: totals.totalFindings
+    });
+  } catch (error) {
+    const message = sanitizeText(error instanceof Error ? error.message : String(error));
+    if (job.form_test_run_id) {
+      await finishFormTestRun(job.form_test_run_id, "failed", message, emptyFormTestTotals()).catch(() => undefined);
+    }
+    log("form_test_run_failed", { form_test_run_id: job.form_test_run_id, error: message });
+  }
+}
+
+async function runFormTests(run: FormTestRunContext): Promise<FormTestRunTotals> {
+  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
+  const context = await browser.newContext({ ignoreHTTPSErrors: false, viewport: { width: 1365, height: 768 } });
+  const page = await context.newPage();
+  const signals = createBrowserSignals(page);
+  await installAllowedHostRoutes(page, run.project, signals);
+
+  const totals = emptyFormTestTotals();
+  const testedFormKeys = new Set<string>();
+  const noSafeEvidenceIDs: string[] = [];
+
+  try {
+    if (run.credential_profile_id) {
+      const profile = await getCredentialProfile(run.credential_profile_id, run.project.id);
+      const login = await executeLoginFlowOnPage(page, run.project, profile, signals, 30);
+      const loginEvidenceID = await insertEvidence({ formTestRunID: run.id }, "login_observations", "inline://form-test-login-observations", {
+        credential_profile_id: profile.id,
+        credential_profile_name: profile.name,
+        role_name: profile.role_name,
+        subject_label: profile.subject_label,
+        login_url: login.loginURL,
+        final_url: login.finalURL,
+        page_title: login.pageTitle,
+        login_status: login.success ? "passed" : "failed",
+        success: login.success,
+        duration_ms: login.durationMS,
+        failure_reason: login.failureReason,
+        console_error_count: login.consoleErrors.length,
+        failed_request_count: login.failedRequests.length,
+        blocked_request_count: login.blockedRequests.length,
+        credentials_sent_to_ai: false,
+        browser_storage_recorded: false
+      });
+      if (!login.success) {
+        await insertFinding({ formTestRunID: run.id }, {
+          title: "Safe Form Testing login failed",
+          severity: login.failureCategory === "login_selector_missing" ? "medium" : "high",
+          category: login.failureCategory === "login_selector_missing" ? "missing_selector" : "login_failure",
+          confidence: "high",
+          description: `Safe Form Testing could not complete the configured selector-based login: ${login.failureReason}`,
+          recommendation: "Verify the credential profile selectors and dedicated test account before running authenticated form tests.",
+          evidenceIds: [loginEvidenceID]
+        });
+        totals.totalFindings += 1;
+        throw new Error(login.failureReason || "Safe Form Testing login failed");
+      }
+    }
+
+    const targetURLs = await getFormTestTargetURLs(run);
+    for (const targetURL of targetURLs) {
+      if (totals.totalFormsDetected >= run.max_forms) {
+        break;
+      }
+      const allowed = await validateTargetURL(targetURL, run.project.allowed_hosts, run.project.allow_private_targets);
+      if (!allowed.ok) {
+        const evidenceID = await insertEvidence({ formTestRunID: run.id }, "form_observations", "inline://form-test-skipped-target", {
+          target_url: sanitizeURL(targetURL),
+          skipped: true,
+          skip_reason: allowed.reason,
+          safe_get_only: run.safe_get_only,
+          raw_values_stored: false
+        });
+        noSafeEvidenceIDs.push(evidenceID);
+        totals.totalFindings += 1;
+        await insertFinding({ formTestRunID: run.id }, {
+          title: "Form test target skipped outside allowed hosts",
+          severity: "info",
+          category: "form_target_out_of_scope",
+          confidence: "high",
+          description: `Safe Form Testing skipped ${sanitizeURL(targetURL)} because it was outside the project allowed hosts.`,
+          recommendation: "Add only explicitly in-scope first-party hosts to allowed_hosts.",
+          evidenceIds: [evidenceID]
+        });
+        continue;
+      }
+
+      const snapshot = await captureFormTestPage(page, targetURL, signals);
+      const pageEvidenceID = await insertEvidence({ formTestRunID: run.id }, "form_observations", "inline://form-test-page-observations", {
+        target_url: snapshot.targetURL,
+        final_url: snapshot.finalURL,
+        page_title: snapshot.title,
+        status_code: snapshot.statusCode,
+        content_type: snapshot.contentType,
+        body_text_length: snapshot.bodyTextLength,
+        load_error: snapshot.loadError,
+        forms_detected: snapshot.forms.length,
+        console_error_count: snapshot.consoleErrors.length,
+        failed_request_count: snapshot.failedRequests.length,
+        blocked_request_count: snapshot.blockedRequests.length,
+        safe_get_only: run.safe_get_only,
+        raw_values_stored: false,
+        request_or_response_bodies_stored: false
+      });
+      noSafeEvidenceIDs.push(pageEvidenceID);
+
+      for (const form of snapshot.forms) {
+        if (totals.totalFormsDetected >= run.max_forms) {
+          break;
+        }
+        const classified = classifyFormCandidate(form, {
+          sourceURL: snapshot.finalURL || snapshot.targetURL,
+          frontendURL: run.project.frontend_url,
+          allowedHosts: run.project.allowed_hosts,
+          sameOriginOnly: true,
+          safeGetOnly: run.safe_get_only
+        });
+        const formKey = `${classified.pageURL}|${classified.selectorHint}|${classified.normalizedActionURL}|${classified.classification}`;
+        if (testedFormKeys.has(formKey)) {
+          continue;
+        }
+        testedFormKeys.add(formKey);
+        totals.totalFormsDetected += 1;
+        if (classified.safety === "safe") {
+          totals.totalFormsClassifiedSafe += 1;
+        }
+
+        const formEvidenceID = await insertEvidence({ formTestRunID: run.id }, "form_observations", "inline://form-test-form-observation", {
+          page_url: classified.pageURL,
+          selector_hint: classified.selectorHint,
+          form_action: classified.normalizedActionURL || classified.actionURL,
+          form_method: classified.method,
+          classification: classified.classification,
+          safety: classified.safety,
+          decision: classified.decision,
+          skip_reason: classified.skipReason,
+          field_count: classified.fieldCount,
+          password_field_count: classified.passwordFieldCount,
+          file_field_count: classified.fileFieldCount,
+          hidden_sensitive_field_count: classified.hiddenSensitiveFieldCount,
+          fields: sanitizeFormFields(classified),
+          safe_get_only: run.safe_get_only,
+          raw_values_stored: false,
+          request_or_response_bodies_stored: false
+        });
+
+        if (classified.decision !== "test") {
+          totals.totalFormsSkipped += 1;
+          const skipFinding = buildFormSkipFinding(classified, [pageEvidenceID, formEvidenceID]);
+          const findingID = skipFinding ? await insertFinding({ formTestRunID: run.id }, skipFinding) : "";
+          if (skipFinding) {
+            totals.totalFindings += 1;
+          }
+          await insertFormTestResult(run, classified, {
+            decision: "skipped",
+            skipReason: classified.skipReason,
+            submittedURL: "",
+            finalURL: "",
+            statusCode: null,
+            pageTitle: "",
+            valuesSummary: formValuesSummary(classified),
+            screenshotEvidenceID: "",
+            consoleErrorCount: 0,
+            failedRequestCount: 0,
+            durationMS: null,
+            findingID
+          });
+          continue;
+        }
+
+        const submittedURL = buildSubmittedFormURL(classified);
+        const submittedAllowed = await validateTargetURL(submittedURL, run.project.allowed_hosts, run.project.allow_private_targets);
+        if (!submittedAllowed.ok) {
+          totals.totalFormsSkipped += 1;
+          const blocked = {
+            ...classified,
+            decision: "skip" as const,
+            safety: "unsafe" as const,
+            skipReason: submittedAllowed.reason || "submitted_url_out_of_scope"
+          };
+          const blockedFinding = buildFormSkipFinding(blocked, [pageEvidenceID, formEvidenceID]);
+          const findingID = blockedFinding ? await insertFinding({ formTestRunID: run.id }, blockedFinding) : "";
+          if (blockedFinding) {
+            totals.totalFindings += 1;
+          }
+          await insertFormTestResult(run, blocked, {
+            decision: "skipped",
+            skipReason: blocked.skipReason,
+            submittedURL: "",
+            finalURL: "",
+            statusCode: null,
+            pageTitle: "",
+            valuesSummary: formValuesSummary(blocked),
+            screenshotEvidenceID: "",
+            consoleErrorCount: 0,
+            failedRequestCount: 0,
+            durationMS: null,
+            findingID
+          });
+          continue;
+        }
+
+        const execution = await executeSafeGetForm(page, submittedURL, signals);
+        const evidenceIDs = [pageEvidenceID, formEvidenceID];
+        let screenshotEvidenceID = "";
+        if (execution.screenshot) {
+          screenshotEvidenceID = await insertFormTestScreenshotEvidence(run, classified, execution);
+          evidenceIDs.push(screenshotEvidenceID);
+        }
+        const submissionEvidenceID = await insertEvidence({ formTestRunID: run.id }, "form_submission", "inline://form-test-form-submission", {
+          page_url: classified.pageURL,
+          form_action: classified.normalizedActionURL,
+          form_method: classified.method,
+          submitted_url: execution.submittedURL,
+          final_url: execution.finalURL,
+          page_title: execution.title,
+          status_code: execution.statusCode,
+          body_text_length: execution.bodyTextLength,
+          load_error: execution.loadError,
+          duration_ms: execution.durationMS,
+          console_error_count: execution.consoleErrors.length,
+          failed_request_count: execution.failedRequests.length,
+          blocked_request_count: execution.blockedRequests.length,
+          test_values: formValuesSummary(classified),
+          safe_get_only: true,
+          raw_values_stored: false,
+          request_or_response_bodies_stored: false
+        });
+        evidenceIDs.push(submissionEvidenceID);
+
+        let firstFindingID = "";
+        for (const finding of buildFormTestFindings({
+          result: classified,
+          submittedURL: execution.submittedURL,
+          finalURL: execution.finalURL,
+          statusCode: execution.statusCode,
+          loadError: execution.loadError,
+          bodyTextLength: execution.bodyTextLength,
+          consoleErrorCount: execution.consoleErrors.length,
+          failedRequestCount: execution.failedRequests.length,
+          evidenceIds: evidenceIDs
+        })) {
+          const findingID = await insertFinding({ formTestRunID: run.id }, finding);
+          if (!firstFindingID) {
+            firstFindingID = findingID;
+          }
+          totals.totalFindings += 1;
+        }
+
+        totals.totalFormsTested += 1;
+        await insertFormTestResult(run, classified, {
+          decision: "tested",
+          skipReason: "",
+          submittedURL: execution.submittedURL,
+          finalURL: execution.finalURL,
+          statusCode: execution.statusCode,
+          pageTitle: execution.title,
+          valuesSummary: formValuesSummary(classified),
+          screenshotEvidenceID,
+          consoleErrorCount: execution.consoleErrors.length,
+          failedRequestCount: execution.failedRequests.length,
+          durationMS: execution.durationMS,
+          findingID: firstFindingID
+        });
+      }
+    }
+
+    if (totals.totalFormsClassifiedSafe === 0) {
+      const evidenceIDs = noSafeEvidenceIDs.slice(0, 10);
+      const findingID = await insertFinding({ formTestRunID: run.id }, buildNoSafeFormsFinding(run.target_url, evidenceIDs));
+      totals.totalFindings += 1;
+      void findingID;
+    }
+    return totals;
+  } finally {
+    await browser.close();
+  }
+}
+
 async function handleDiscoveryRunJob(job: DiscoveryRunJob): Promise<void> {
   log("discovery_run_started", { discovery_run_id: job.discovery_run_id, project_id: job.project_id });
 
@@ -1641,6 +2012,93 @@ async function captureSafeExplorerPage(page: Page, targetURL: string, signals: B
   };
 }
 
+async function captureFormTestPage(page: Page, targetURL: string, signals: BrowserSignals): Promise<FormTestPageSnapshot> {
+  const startedAt = Date.now();
+  const consoleStart = signals.consoleErrors.length;
+  const failedStart = signals.failedRequests.length;
+  const blockedStart = signals.blockedRequests.length;
+  let statusCode: number | null = null;
+  let contentType = "";
+  let finalURL = targetURL;
+  let title = "";
+  let bodyTextLength: number | null = null;
+  let loadError = "";
+
+  try {
+    const response = await page.goto(targetURL, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000
+    });
+    statusCode = response ? response.status() : null;
+    contentType = sanitizeText(response?.headers()["content-type"] ?? "");
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+  } catch (error) {
+    loadError = sanitizeText(error instanceof Error ? error.message : String(error));
+  }
+
+  const currentURL = page.url();
+  finalURL = sanitizeURL(currentURL.startsWith("http://") || currentURL.startsWith("https://") ? currentURL : targetURL);
+  title = sanitizeText(await page.title().catch(() => ""));
+  bodyTextLength = await page
+    .evaluate(() => (document.body?.innerText ?? "").trim().length)
+    .catch(() => null);
+  const forms = isLikelyHTML(contentType) && !loadError ? await extractFormCandidates(page).catch(() => []) : [];
+  return {
+    targetURL: sanitizeURL(targetURL),
+    finalURL,
+    title,
+    statusCode,
+    contentType,
+    bodyTextLength,
+    loadDurationMS: Date.now() - startedAt,
+    loadError,
+    consoleErrors: signals.consoleErrors.slice(consoleStart, consoleStart + 50),
+    failedRequests: signals.failedRequests.slice(failedStart, failedStart + 50),
+    blockedRequests: signals.blockedRequests.slice(blockedStart, blockedStart + 50),
+    forms
+  };
+}
+
+async function executeSafeGetForm(page: Page, submittedURL: string, signals: BrowserSignals): Promise<FormTestExecutionSnapshot> {
+  const startedAt = Date.now();
+  const consoleStart = signals.consoleErrors.length;
+  const failedStart = signals.failedRequests.length;
+  const blockedStart = signals.blockedRequests.length;
+  let statusCode: number | null = null;
+  let finalURL = submittedURL;
+  let title = "";
+  let bodyTextLength: number | null = null;
+  let loadError = "";
+
+  try {
+    const response = await page.goto(submittedURL, { waitUntil: "domcontentloaded", timeout: 30000 });
+    statusCode = response ? response.status() : null;
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+  } catch (error) {
+    loadError = sanitizeText(error instanceof Error ? error.message : String(error));
+  }
+
+  const currentURL = page.url();
+  finalURL = sanitizeFormSubmissionURL(currentURL.startsWith("http://") || currentURL.startsWith("https://") ? currentURL : submittedURL);
+  title = sanitizeText(await page.title().catch(() => ""));
+  bodyTextLength = await page
+    .evaluate(() => (document.body?.innerText ?? "").trim().length)
+    .catch(() => null);
+  return {
+    submittedURL: sanitizeFormSubmissionURL(submittedURL),
+    finalURL,
+    title,
+    statusCode,
+    bodyTextLength,
+    durationMS: Date.now() - startedAt,
+    loadError,
+    consoleErrors: signals.consoleErrors.slice(consoleStart, consoleStart + 50),
+    failedRequests: signals.failedRequests.slice(failedStart, failedStart + 50),
+    blockedRequests: signals.blockedRequests.slice(blockedStart, blockedStart + 50),
+    screenshot: await captureScreenshot(page)
+  };
+}
+
 async function extractSafeExplorerActions(page: Page): Promise<ExtractedSafeExplorerAction[]> {
   return page.evaluate(() => {
     const clean = (value: string | null | undefined, max = 240) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -1778,22 +2236,9 @@ async function buildAIBrowserObservation(
         .map((heading) => clean(heading.textContent, 180))
         .filter(Boolean)
         .slice(0, 12);
-      const forms = Array.from(document.querySelectorAll("form"))
-        .map((form) => {
-          const fields = Array.from(form.querySelectorAll("input,select,textarea"));
-          const passwordCount = fields.filter((field) => clean(field.getAttribute("type"), 40).toLowerCase() === "password").length;
-          const method = clean(form.getAttribute("method") || "GET", 16).toUpperCase();
-          return {
-            method,
-            field_count: fields.length,
-            password_field_count: passwordCount,
-            classification: method === "GET" && passwordCount === 0 ? "metadata_only" : "unsafe_or_unsupported"
-          };
-        })
-        .slice(0, 12);
-      return { snippets, headings, forms };
+      return { snippets, headings };
     })
-    .catch(() => ({ snippets: [], headings: [], forms: [] }));
+    .catch(() => ({ snippets: [], headings: [] }));
 
   const policy: SafeExplorerPolicy = {
     sourceURL: snapshot.finalURL || snapshot.targetURL,
@@ -1825,6 +2270,34 @@ async function buildAIBrowserObservation(
       safety: action.safety,
       selector_hint: redactObservationValue(action.selectorHint)
     }));
+  const formCandidates = await extractFormCandidates(page).catch(() => []);
+  const classifiedForms = formCandidates
+    .map((form) =>
+      classifyFormCandidate(form, {
+        sourceURL: snapshot.finalURL || snapshot.targetURL,
+        frontendURL: run.project.frontend_url,
+        allowedHosts: run.project.allowed_hosts,
+        sameOriginOnly: run.same_origin_only,
+        safeGetOnly: true
+      })
+    )
+    .slice(0, 12)
+    .map((form) => ({
+      method: form.method.toUpperCase(),
+      field_count: form.fieldCount,
+      password_field_count: form.passwordFieldCount,
+      classification: form.classification,
+      safety: form.safety,
+      selector_hint: redactObservationValue(form.selectorHint),
+      action_url: redactObservationValue(form.normalizedActionURL || form.actionURL),
+      fields: form.fields
+        .map((field) => ({
+          name: redactObservationValue(field.name),
+          type: redactObservationValue(field.type),
+          label: redactObservationValue(field.label)
+        }))
+        .slice(0, 12)
+    }));
   const current = new URL(snapshot.normalizedURL || snapshot.finalURL || snapshot.targetURL);
   return {
     project_name: redactObservationValue(run.project.id),
@@ -1836,7 +2309,7 @@ async function buildAIBrowserObservation(
     headings: dom.headings.map(redactObservationValue),
     safe_candidate_links: links,
     candidate_buttons: buttons,
-    forms: dom.forms,
+    forms: classifiedForms,
     console_error_count: snapshot.consoleErrors.length,
     failed_request_count: snapshot.failedRequests.length,
     previous_steps: previousSteps.slice(-6)
@@ -1860,8 +2333,9 @@ async function requestAIBrowserSuggestion(provider: AIProviderContext, observati
           "Propose exactly one next action as strict JSON.",
           "Use only the sanitized observation. Do not invent pages, selectors, form values, cookies, tokens, auth headers, storage, HTML, screenshots, request bodies, or response bodies.",
           "Prefer safe same-origin navigation from safe_candidate_links.",
-          "Never submit forms, click destructive or mutating actions, attempt exploitation, fuzzing, payloads, bypasses, external navigation, uploads, logout, delete, payment, transfer, or password changes.",
-          "Return JSON: {\"rationale\":\"...\",\"action\":{\"type\":\"click_link|goto|click_safe_navigation|assert_text_visible|assert_url_contains|assert_title_contains|capture_screenshot|collect_browser_signals|stop\",...},\"expected_result\":\"...\",\"risk_assessment\":\"safe_navigation\"}."
+          "You may propose submit_safe_get_form only for an observed form with safety safe, method GET, a matching form_selector_hint, and bounded benign field_values for observed non-sensitive field names.",
+          "Never submit mutating forms, unsafe forms, unobserved forms, login forms, contact/support forms, destructive or mutating actions, exploitation, fuzzing, payloads, bypasses, external navigation, uploads, logout, delete, payment, transfer, or password changes.",
+          "Return JSON: {\"rationale\":\"...\",\"action\":{\"type\":\"click_link|goto|click_safe_navigation|submit_safe_get_form|assert_text_visible|assert_url_contains|assert_title_contains|capture_screenshot|collect_browser_signals|stop\",...},\"expected_result\":\"...\",\"risk_assessment\":\"safe_navigation\"}."
         ].join(" ")
       },
       {
@@ -1934,6 +2408,14 @@ async function executeAIBrowserAction(
         return found
           ? { status: "executed", finalURL: page.url(), error: "" }
           : { status: "failed", finalURL: page.url(), error: `visible text did not contain expected text ${expected}` };
+      }
+      case "submit_safe_get_form": {
+        if (!decision.targetURL) {
+          return { status: "skipped", finalURL: page.url(), error: "approved navigation action had no target URL" };
+        }
+        await page.goto(decision.targetURL, { waitUntil: "domcontentloaded", timeout: 30000 });
+        await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+        return { status: "executed", finalURL: sanitizeFormSubmissionURL(page.url() || decision.targetURL), error: "" };
       }
       case "goto":
       case "click_link":
@@ -2261,6 +2743,16 @@ function sanitizeQualityEvidence(value: unknown): unknown {
   return value;
 }
 
+function sanitizeFormFields(form: ClassifiedFormCandidate): Array<Record<string, unknown>> {
+  return form.fields.slice(0, 20).map((field) => ({
+    name: sanitizeText(field.name),
+    type: sanitizeText(field.type),
+    label: sanitizeText(field.label),
+    required: field.required,
+    hidden: field.hidden
+  }));
+}
+
 function isLikelyHTML(contentType: string): boolean {
   if (!contentType) {
     return true;
@@ -2414,6 +2906,33 @@ async function insertAIBrowserScreenshotEvidence(run: AIBrowserControlRunContext
   });
 }
 
+async function insertFormTestScreenshotEvidence(
+  run: FormTestRunContext,
+  form: ClassifiedFormCandidate,
+  execution: FormTestExecutionSnapshot
+): Promise<string> {
+  if (!execution.screenshot) {
+    return "";
+  }
+  const object = await storeScreenshot("form-test-runs", run.id, execution.screenshot);
+  return insertEvidence({ formTestRunID: run.id }, "screenshot", object.uri, {
+    filename: object.filename,
+    key: object.key,
+    content_type: object.contentType,
+    size_bytes: object.sizeBytes,
+    created_at: object.createdAt,
+    storage: object.storage,
+    page_url: form.pageURL,
+    form_action: form.normalizedActionURL,
+    submitted_url: execution.submittedURL,
+    final_url: execution.finalURL,
+    page_title: execution.title,
+    status_code: execution.statusCode,
+    raw_values_stored: false,
+    request_or_response_bodies_stored: false
+  });
+}
+
 type SafeExplorerStepInsert = {
   stepIndex: number;
   pageURL: string;
@@ -2453,6 +2972,21 @@ type AIBrowserControlStepInsert = {
   consoleErrorCount: number;
   failedRequestCount: number;
   durationMS: number | null;
+};
+
+type FormTestResultInsert = {
+  decision: "tested" | "skipped";
+  skipReason: string;
+  submittedURL: string;
+  finalURL: string;
+  statusCode: number | null;
+  pageTitle: string;
+  valuesSummary: Record<string, unknown>;
+  screenshotEvidenceID: string;
+  consoleErrorCount: number;
+  failedRequestCount: number;
+  durationMS: number | null;
+  findingID: string;
 };
 
 async function insertSafeExplorerStep(run: SafeExplorerRunContext, step: SafeExplorerStepInsert): Promise<string> {
@@ -2540,6 +3074,9 @@ async function updateSafeExplorerActionDecision(actionID: string, action: Classi
 
 async function insertAIBrowserControlStep(run: AIBrowserControlRunContext, step: AIBrowserControlStepInsert): Promise<string> {
   const id = randomUUID();
+  const isSafeFormAction = step.decision.action?.type === "submit_safe_get_form";
+  const actionTargetURL = isSafeFormAction ? sanitizeFormSubmissionURL(step.decision.targetURL) : sanitizeURL(step.decision.targetURL);
+  const finalURL = isSafeFormAction ? sanitizeFormSubmissionURL(step.finalURL) : sanitizeURL(step.finalURL);
   await pool.query(
     `INSERT INTO ai_browser_control_steps (
        id, run_id, project_id, step_index, page_url, normalized_url, page_title, depth,
@@ -2565,17 +3102,61 @@ async function insertAIBrowserControlStep(run: AIBrowserControlRunContext, step:
       Object.keys(step.aiSuggestion).length > 0 ? JSON.stringify(step.aiSuggestion) : null,
       sanitizeText(step.decision.action?.type || ""),
       sanitizeText(step.decision.label),
-      sanitizeURL(step.decision.targetURL),
+      actionTargetURL,
       sanitizeText(step.decision.selectorHint),
       step.decision.decision,
       sanitizeText(step.decision.reason),
       step.executionStatus,
-      sanitizeURL(step.finalURL),
+      finalURL,
       step.httpStatus,
       step.screenshotEvidenceID,
       step.consoleErrorCount,
       step.failedRequestCount,
       step.durationMS
+    ]
+  );
+  return id;
+}
+
+async function insertFormTestResult(
+  run: FormTestRunContext,
+  form: ClassifiedFormCandidate,
+  result: FormTestResultInsert
+): Promise<string> {
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO form_test_results (
+       id, run_id, project_id, page_url, form_action, form_method, classification,
+       safety, decision, skip_reason, submitted_url, final_url, http_status, page_title,
+       test_values_summary, screenshot_evidence_id, console_error_count,
+       failed_request_count, duration_ms, finding_id
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6, $7,
+       $8, $9, $10, $11, $12, $13, $14,
+       $15, NULLIF($16, '')::uuid, $17,
+       $18, $19, NULLIF($20, '')::uuid
+     )`,
+    [
+      id,
+      run.id,
+      run.project_id,
+      sanitizeURL(form.pageURL),
+      sanitizeURL(form.normalizedActionURL || form.actionURL),
+      sanitizeText(form.method.toLowerCase()),
+      sanitizeText(form.classification),
+      form.safety,
+      result.decision,
+      sanitizeText(result.skipReason),
+      sanitizeFormSubmissionURL(result.submittedURL),
+      sanitizeFormSubmissionURL(result.finalURL),
+      result.statusCode,
+      sanitizeText(result.pageTitle),
+      JSON.stringify(result.valuesSummary),
+      result.screenshotEvidenceID,
+      result.consoleErrorCount,
+      result.failedRequestCount,
+      result.durationMS,
+      result.findingID
     ]
   );
   return id;
@@ -2675,6 +3256,73 @@ async function getAIBrowserControlRunContext(runID: string, projectID: string): 
   };
 }
 
+async function getFormTestRunContext(runID: string, projectID: string): Promise<FormTestRunContext> {
+  const result = await pool.query(
+    `SELECT r.id, r.project_id, r.discovery_run_id::text, r.credential_profile_id::text, r.status,
+            r.target_url, r.max_forms, r.max_tests_per_form, r.safe_get_only,
+            p.frontend_url, p.allowed_hosts, p.allow_private_targets
+     FROM form_test_runs r
+     JOIN projects p ON p.id = r.project_id
+     WHERE r.id = $1 AND p.id = $2`,
+    [runID, projectID]
+  );
+  if (result.rowCount !== 1) {
+    throw new Error("Safe Form Testing run was not found");
+  }
+  const row = result.rows[0] as {
+    id: string;
+    project_id: string;
+    discovery_run_id: string | null;
+    credential_profile_id: string | null;
+    status: string;
+    target_url: string;
+    max_forms: number;
+    max_tests_per_form: number;
+    safe_get_only: boolean;
+    frontend_url: string;
+    allowed_hosts: string[] | string;
+    allow_private_targets: boolean;
+  };
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    discovery_run_id: row.discovery_run_id ?? "",
+    credential_profile_id: row.credential_profile_id ?? "",
+    status: row.status,
+    target_url: row.target_url,
+    max_forms: Number(row.max_forms || 10),
+    max_tests_per_form: Number(row.max_tests_per_form || 1),
+    safe_get_only: row.safe_get_only,
+    project: {
+      id: row.project_id,
+      frontend_url: row.frontend_url,
+      allowed_hosts: Array.isArray(row.allowed_hosts) ? row.allowed_hosts : JSON.parse(row.allowed_hosts),
+      allow_private_targets: row.allow_private_targets
+    }
+  };
+}
+
+async function getFormTestTargetURLs(run: FormTestRunContext): Promise<string[]> {
+  if (!run.discovery_run_id) {
+    return [run.target_url];
+  }
+  const result = await pool.query(
+    `SELECT p.normalized_url, min(p.created_at) AS first_seen
+     FROM discovered_forms f
+     JOIN discovered_pages p ON p.id = f.page_id
+     WHERE f.discovery_run_id = $1
+     GROUP BY p.normalized_url
+     ORDER BY first_seen ASC
+     LIMIT $2`,
+    [run.discovery_run_id, Math.max(1, run.max_forms)]
+  );
+  const urls = result.rows.map((row: { normalized_url: string }) => sanitizeURL(row.normalized_url)).filter(Boolean);
+  if (urls.length === 0) {
+    urls.push(run.target_url);
+  }
+  return urls;
+}
+
 async function getAIProviderContext(providerID: string): Promise<AIProviderContext> {
   const result = await pool.query(
     `SELECT id, name, type, base_url, model, api_key_encrypted, extra_headers_encrypted,
@@ -2713,6 +3361,15 @@ async function markSafeExplorerRunRunning(runID: string): Promise<void> {
 async function markAIBrowserControlRunRunning(runID: string): Promise<void> {
   await pool.query(
     `UPDATE ai_browser_control_runs
+     SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
+     WHERE id = $1`,
+    [runID]
+  );
+}
+
+async function markFormTestRunRunning(runID: string): Promise<void> {
+  await pool.query(
+    `UPDATE form_test_runs
      SET status = 'running', started_at = COALESCE(started_at, now()), updated_at = now()
      WHERE id = $1`,
     [runID]
@@ -2782,6 +3439,37 @@ async function finishAIBrowserControlRun(
   );
 }
 
+async function finishFormTestRun(
+  runID: string,
+  status: "completed" | "failed" | "error",
+  errorMessage: string,
+  totals: FormTestRunTotals
+): Promise<void> {
+  await pool.query(
+    `UPDATE form_test_runs
+     SET status = $2,
+         error_message = $3,
+         completed_at = now(),
+         total_forms_detected = $4,
+         total_forms_classified_safe = $5,
+         total_forms_tested = $6,
+         total_forms_skipped = $7,
+         total_findings = $8,
+         updated_at = now()
+     WHERE id = $1`,
+    [
+      runID,
+      status,
+      errorMessage,
+      totals.totalFormsDetected,
+      totals.totalFormsClassifiedSafe,
+      totals.totalFormsTested,
+      totals.totalFormsSkipped,
+      totals.totalFindings
+    ]
+  );
+}
+
 function emptySafeExplorerTotals(): SafeExplorerRunTotals {
   return {
     totalSteps: 0,
@@ -2801,6 +3489,16 @@ function emptyAIBrowserControlTotals(): AIBrowserControlRunTotals {
     totalActionsExecuted: 0,
     totalActionsSkipped: 0,
     totalPolicyBlocks: 0,
+    totalFindings: 0
+  };
+}
+
+function emptyFormTestTotals(): FormTestRunTotals {
+  return {
+    totalFormsDetected: 0,
+    totalFormsClassifiedSafe: 0,
+    totalFormsTested: 0,
+    totalFormsSkipped: 0,
     totalFindings: 0
   };
 }
@@ -4810,8 +5508,11 @@ async function captureScreenshot(page: Page): Promise<Buffer | null> {
 async function insertEvidence(owner: EvidenceOwner, type: string, uri: string, metadata: Record<string, unknown>): Promise<string> {
   const id = randomUUID();
   await pool.query(
-    `INSERT INTO evidence (id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, safe_explorer_run_id, ai_browser_control_run_id, type, uri, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    `INSERT INTO evidence (
+       id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id,
+       safe_explorer_run_id, ai_browser_control_run_id, form_test_run_id, type, uri, metadata
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       id,
       owner.runID ?? null,
@@ -4820,6 +5521,7 @@ async function insertEvidence(owner: EvidenceOwner, type: string, uri: string, m
       owner.discoveryRunID ?? null,
       owner.safeExplorerRunID ?? null,
       owner.aiBrowserControlRunID ?? null,
+      owner.formTestRunID ?? null,
       type,
       uri,
       JSON.stringify(metadata)
@@ -4832,10 +5534,11 @@ async function insertFinding(owner: FindingOwner, finding: FindingInput): Promis
   const id = randomUUID();
   await pool.query(
     `INSERT INTO findings (
-       id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id, safe_explorer_run_id, ai_browser_control_run_id, scenario_execution_id, step_execution_id,
+       id, run_id, test_plan_execution_id, authorization_check_run_id, discovery_run_id,
+       safe_explorer_run_id, ai_browser_control_run_id, form_test_run_id, scenario_execution_id, step_execution_id,
        title, severity, category, confidence, description, recommendation, evidence_ids
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
     [
       id,
       owner.runID ?? null,
@@ -4844,6 +5547,7 @@ async function insertFinding(owner: FindingOwner, finding: FindingInput): Promis
       owner.discoveryRunID ?? null,
       owner.safeExplorerRunID ?? null,
       owner.aiBrowserControlRunID ?? null,
+      owner.formTestRunID ?? null,
       owner.scenarioExecutionID ?? null,
       owner.stepExecutionID ?? null,
       finding.title,
@@ -4871,7 +5575,14 @@ async function ensureS3Bucket(): Promise<void> {
 }
 
 async function storeScreenshot(
-  ownerKind: "runs" | "test-plan-executions" | "authorization-check-runs" | "discovery-runs" | "safe-explorer-runs" | "ai-browser-control-runs",
+  ownerKind:
+    | "runs"
+    | "test-plan-executions"
+    | "authorization-check-runs"
+    | "discovery-runs"
+    | "safe-explorer-runs"
+    | "ai-browser-control-runs"
+    | "form-test-runs",
   ownerID: string,
   screenshot: Buffer
 ): Promise<StoredEvidenceObject> {
@@ -5072,6 +5783,56 @@ function sanitizeURL(raw: string): string {
   } catch {
     return sanitizeText(raw);
   }
+}
+
+function sanitizeFormSubmissionURL(raw: string): string {
+  if (!raw) {
+    return "";
+  }
+  try {
+    const parsed = new URL(raw);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.hash = "";
+    for (const [name, value] of Array.from(parsed.searchParams.entries())) {
+      const cleanedName = sanitizeText(name).slice(0, 120);
+      const cleanedValue = sanitizeText(value).slice(0, 120);
+      if (isSensitiveQueryName(cleanedName) || isSensitiveQueryName(cleanedValue)) {
+        parsed.searchParams.set(name, "[REDACTED]");
+      } else if (cleanedName !== name || cleanedValue !== value) {
+        parsed.searchParams.delete(name);
+        parsed.searchParams.append(cleanedName, cleanedValue);
+      }
+    }
+    parsed.searchParams.sort();
+    return parsed.toString().slice(0, 1000);
+  } catch {
+    return sanitizeText(raw);
+  }
+}
+
+function isSensitiveQueryName(value: string): boolean {
+  const normalized = value.toLowerCase().trim();
+  if (!normalized) {
+    return false;
+  }
+  if (["auth", "key", "otp", "pass"].includes(normalized)) {
+    return true;
+  }
+  return [
+    "authorization",
+    "api_key",
+    "apikey",
+    "bearer",
+    "cookie",
+    "csrf",
+    "jwt",
+    "password",
+    "passwd",
+    "secret",
+    "session",
+    "token"
+  ].some((marker) => normalized === marker || normalized.includes(marker));
 }
 
 function jsonArray<T>(value: unknown): T[] {

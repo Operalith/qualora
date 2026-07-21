@@ -37,6 +37,28 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (url.pathname === "/search") {
+    const query = String(url.searchParams.get("q") || "").slice(0, 80);
+    writePage(
+      response,
+      "Qualora Demo Search",
+      query ? `Search results for ${query}` : "Search results",
+      query ? `Found deterministic demo result for ${query}.` : "Enter a query to see deterministic demo results."
+    );
+    return;
+  }
+
+  if (url.pathname === "/products") {
+    const category = String(url.searchParams.get("category") || "all").slice(0, 80);
+    writePage(
+      response,
+      "Qualora Demo Products",
+      `Products filtered by ${category}`,
+      `Deterministic product filter result for ${category}.`
+    );
+    return;
+  }
+
   if (url.pathname === "/about") {
     writePage(response, "About Qualora Demo Web", "About Qualora", "This page gives the safe test plan executor stable public text to verify.");
     return;
@@ -240,19 +262,48 @@ function writePage(response, title, heading, body, options = {}) {
     <p>${escapeHTML(body)}</p>
     ${options.qualityIssues ? '<img src="/quality-pixel.svg">' : ""}
     ${options.qualityIssues ? '<button type="button" aria-hidden="true"></button>' : ""}
-    <form method="get" action="/status" aria-label="Newsletter signup">
+    <form id="site-search" method="get" action="/search" aria-label="Site search">
+      <label>
+        Search
+        <input id="search-query" name="q" type="search" placeholder="Search demo">
+      </label>
+      <button type="submit">Search</button>
+    </form>
+    <form id="product-filter" method="get" action="/products" aria-label="Product filter">
+      <label>
+        Category
+        <select id="product-category" name="category">
+          <option value="all">All</option>
+          <option value="books">Books</option>
+          <option value="tools">Tools</option>
+        </select>
+      </label>
+      <button type="submit">Filter</button>
+    </form>
+    <form id="newsletter-form" method="get" action="/status" aria-label="Newsletter signup">
       <label>
         Newsletter email
         <input id="newsletter-email" name="newsletter_email" type="email" placeholder="person@example.test" required>
       </label>
       <button type="submit">Subscribe</button>
     </form>
-    <form method="post" action="/contact" aria-label="Contact support">
+    <form id="contact-form" method="post" action="/contact" aria-label="Contact support">
       <label>
         Message
         <input id="contact-message" name="message" type="text" placeholder="Hello">
       </label>
       <button type="submit">Send message</button>
+    </form>
+    <form id="dangerous-delete-form" method="post" action="/delete-account" aria-label="Delete account form">
+      <input type="hidden" name="csrf_token" value="demo-token">
+      <button type="submit">Delete account</button>
+    </form>
+    <form id="external-search" method="get" action="https://example.com/search" aria-label="External search">
+      <label>
+        Query
+        <input name="q" type="search" placeholder="External">
+      </label>
+      <button type="submit">External search</button>
     </form>
     <button type="button" id="open-help">Open help panel</button>
     <button type="button" id="danger-delete">Delete workspace</button>

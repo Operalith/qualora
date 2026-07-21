@@ -819,6 +819,8 @@ func friendlyReportType(reportType string) string {
 		return "Safe Explorer"
 	case RunTypeAIBrowserControl:
 		return "AI Browser Control"
+	case RunTypeFormTest:
+		return "Safe Form Testing"
 	case "authorization_check":
 		return "Authorization check"
 	case "test_plan_execution":
@@ -843,6 +845,8 @@ func defaultWhatWasTested(reportType string, project *Project) []string {
 		return []string{"Classified safe navigation actions", "Observed page metadata, skip reasons, screenshots, console errors, and failed network requests"}
 	case RunTypeAIBrowserControl:
 		return []string{"Sanitized page observations", "AI-proposed typed actions", "Deterministic policy decisions", "Policy-approved safe browser actions", "Screenshots, console error counts, and failed request counts"}
+	case RunTypeFormTest:
+		return []string{"Deterministic form classification", "Simple same-origin GET search/filter/navigation forms", "Bounded benign field values", "Screenshots, console error counts, and failed request counts"}
 	case "safe_qa_run":
 		return []string{"Discovery, optional quality checks, AI-assisted test planning, and approved safe browser DSL execution"}
 	case "authorization_check":
@@ -883,6 +887,8 @@ func defaultWhatWasNotTested(reportType string) []string {
 		return append(common, "Arbitrary form submission", "Unsafe clicks and mutating actions", "External-domain crawling by default")
 	case RunTypeAIBrowserControl:
 		return []string{"Destructive actions", "Active exploitation or fuzzing", "Direct AI browser control", "Arbitrary form submission", "Unsafe clicks and mutating actions", "External-domain crawling by default", "Payload attacks"}
+	case RunTypeFormTest:
+		return []string{"Mutating forms", "Sensitive forms", "Login/password/reset/payment/upload/admin forms", "Payload attacks", "Fuzzing", "Active security scanning"}
 	case "authorization_check":
 		return append(common, "API authorization checks with credentials", "Broad access-control crawling")
 	case "safe_qa_run":

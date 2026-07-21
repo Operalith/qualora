@@ -44,6 +44,10 @@ func NormalizeReportType(value string) (string, error) {
 		return ReportTypeBrowserSmoke, nil
 	case ReportTypeAuthorization, "authorization_check":
 		return ReportTypeAuthorization, nil
+	case ReportTypeAIBrowserControl, "ai_browser", "ai_browser_control_run":
+		return ReportTypeAIBrowserControl, nil
+	case ReportTypeFormTest, "safe_form", "safe_forms", "form_testing", "form_test_run":
+		return ReportTypeFormTest, nil
 	default:
 		return "", fmt.Errorf("unsupported report_type %q", value)
 	}

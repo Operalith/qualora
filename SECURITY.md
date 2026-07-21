@@ -8,6 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
+| v0.22.0-alpha | Best-effort alpha support |
 | v0.21.0-alpha | Best-effort alpha support |
 | v0.18.0-alpha | Best-effort alpha support |
 | v0.17.0-alpha | Best-effort alpha support |
@@ -44,7 +45,7 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.21.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
+The v0.22.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
 
 Report intelligence, baseline comparison, quality gates, CI run summaries, and issue export previews are deterministic and computed from already stored findings, safe result rows, grouped finding fingerprints, and metadata. They must not include credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, provider secrets, encrypted secret payloads, or raw AI prompts. Sensitive query values are redacted before URLs are used for grouping, fingerprints, or issue content.
 
@@ -74,6 +75,10 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - CI run output must not print local admin passwords, tracker tokens, provider secrets, credential profile secrets, cookies, or CSRF/session tokens.
 - Issue export config tokens must be encrypted at rest and never returned raw or encrypted by API responses.
 - Issue export must use grouped sanitized findings only and must not send screenshots, raw logs, full HTML, request bodies, response bodies, cookies, browser storage, auth headers, tokens, credentials, or provider secrets to trackers.
+- Safe Form Testing may execute only same-origin safe GET forms classified as search, filter, sort, or navigation-like forms.
+- Safe Form Testing must skip POST/PUT/PATCH/DELETE forms, password/file fields, hidden sensitive fields, external actions, sensitive field names, login, payment, checkout, transfer, refund, delete, reset, cancel, deactivate, profile/account/admin mutation, destructive, unknown, and unsupported forms.
+- Safe Form Testing must use bounded deterministic non-sensitive values and must not fuzz, generate payloads, run active scans, or attempt exploit input.
+- Safe Form Testing reports and evidence must not store raw form values, request bodies, response bodies, cookies, browser storage, auth headers, tokens, credentials, full HTML, or provider secrets.
 - Role-aware authorization checks must be explicit, deterministic, read-only, same-origin or allowed-host enforced, and limited to one configured target navigation after selector-based login.
 - Authorization reports and AI input must not include passwords, raw usernames, cookies, session storage, local storage, authorization headers, tokens, screenshots, raw HTML, or browser storage contents by default.
 - Application discovery must remain bounded, deterministic, same-origin by default, and allowed-host enforced.
@@ -86,7 +91,8 @@ See [docs/security-model.md](docs/security-model.md) for the current alpha safet
 - Interactive Safe Explorer reports and AI inputs must not include credentials, cookies, local/session storage, auth headers, tokens, full HTML, request bodies, or response bodies.
 - AI Browser Control must remain policy-gated: AI proposes one typed JSON action and Qualora executes only deterministic policy-approved safe actions.
 - AI Browser Control must not send credentials, cookies, local/session storage, auth headers, tokens, screenshots, full HTML, request bodies, response bodies, raw traces, or browser storage to AI.
-- AI Browser Control must block unsupported actions, arbitrary selectors, form submission, unsafe buttons, external navigation by default, destructive or mutating paths, active scanning, payloads, fuzzing, and looped targets.
+- AI Browser Control may execute `submit_safe_get_form` only for observed same-origin safe GET forms with bounded non-sensitive values after deterministic policy approval.
+- AI Browser Control must block unsupported actions, arbitrary selectors, arbitrary form submission, POST/mutating form submission, unsafe buttons, external navigation by default, destructive or mutating paths, active scanning, payloads, fuzzing, and looped targets.
 - Passive quality checks must remain read-only metadata checks. They must not submit forms, click arbitrary buttons, guess sensitive paths, run payloads, fuzz inputs, perform active scanning, perform destructive actions, or use autonomous AI browser control.
 - Quality check reports and AI inputs must not include cookie values, browser storage, auth headers, tokens, credentials, full HTML, request bodies, or response bodies.
 - Safe QA Runs must remain discovery-aware orchestration only: reviewable AI plans, deterministic preview, and explicit safe DSL execution without AI browser control, arbitrary clicks, form submission, active scanning, fuzzing, or destructive actions.

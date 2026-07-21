@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.21.0-alpha
-  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, policy-gated AI Browser Control, importing OpenAPI specs, managing encrypted API auth profiles, running safe authenticated read-only API smoke and lightweight OpenAPI contract checks, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, managing deterministic report baselines, comparing reports, evaluating CI-friendly quality gates, orchestrating native CI runs, managing optional sanitized GitHub/GitLab issue export, and downloading protected stored evidence objects.
+  version: 0.22.0-alpha
+  description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, safe form testing for same-origin GET forms, policy-gated AI Browser Control, importing OpenAPI specs, managing encrypted API auth profiles, running safe authenticated read-only API smoke and lightweight OpenAPI contract checks, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, managing deterministic report baselines, comparing reports, evaluating CI-friendly quality gates, orchestrating native CI runs, managing optional sanitized GitHub/GitLab issue export, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
 security:
@@ -980,6 +980,93 @@ paths:
       responses:
         "200":
           description: HTML AI Browser Control report
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{project_id}/form-test-runs:
+    get:
+      summary: List Safe Form Testing runs for a project
+      description: Lists deterministic safe form testing runs. Run records include form counts and status only, not credentials, cookies, browser storage, auth headers, request bodies, or response bodies.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Safe Form Testing run list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [form_test_runs]
+                properties:
+                  form_test_runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FormTestRun"
+        "404":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Start a Safe Form Testing run
+      description: Starts deterministic form classification and safe GET form testing. Only simple same-origin GET forms with non-sensitive fields are eligible; mutating, sensitive, unsupported, external, and destructive forms are skipped.
+      parameters:
+        - $ref: "#/components/parameters/ProjectID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FormTestRunRequest"
+      responses:
+        "201":
+          description: Created Safe Form Testing run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FormTestRun"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/v1/form-test-runs/{form_test_run_id}:
+    get:
+      summary: Get a Safe Form Testing run
+      parameters:
+        - $ref: "#/components/parameters/FormTestRunID"
+      responses:
+        "200":
+          description: Safe Form Testing run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FormTestRun"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/form-test-runs/{form_test_run_id}/report:
+    get:
+      summary: Get Safe Form Testing JSON report
+      parameters:
+        - $ref: "#/components/parameters/FormTestRunID"
+      responses:
+        "200":
+          description: Safe Form Testing report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FormTestReport"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/form-test-runs/{form_test_run_id}/report.html:
+    get:
+      summary: Get a self-contained HTML Safe Form Testing report
+      parameters:
+        - $ref: "#/components/parameters/FormTestRunID"
+      responses:
+        "200":
+          description: HTML Safe Form Testing report
           content:
             text/html:
               schema:
@@ -2184,6 +2271,13 @@ components:
       schema:
         type: string
         format: uuid
+    FormTestRunID:
+      name: form_test_run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     QARunID:
       name: qa_run_id
       in: path
@@ -2218,7 +2312,7 @@ components:
       required: true
       schema:
         type: string
-        enum: [safe_qa, quality_check, discovery, safe_explorer, api_smoke, browser_smoke, authorization]
+        enum: [safe_qa, quality_check, discovery, safe_explorer, ai_browser_control, form_test, api_smoke, browser_smoke, authorization]
     ReportID:
       name: report_id
       in: path
@@ -2270,7 +2364,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.21.0-alpha
+          example: 0.22.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -3813,7 +3907,7 @@ components:
           type: boolean
         policy_version:
           type: string
-          example: v0.21.0-alpha
+          example: v0.22.0-alpha
         execution_mode:
           type: string
           example: policy_gated
@@ -3964,6 +4058,209 @@ components:
             settings:
               type: object
               additionalProperties: true
+            safety_notes:
+              type: array
+              items:
+                type: string
+            limitations:
+              type: array
+              items:
+                type: string
+            metadata:
+              type: object
+              additionalProperties: true
+    FormTestRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        discovery_run_id:
+          type: string
+          format: uuid
+          description: Optional completed discovery run to reuse form source pages.
+        use_latest_discovery:
+          type: boolean
+          default: false
+        credential_profile_id:
+          type: string
+          format: uuid
+          description: Optional selector-based login profile. Credentials are never stored in reports or sent to AI.
+        target_url:
+          type: string
+          format: uri
+          description: Optional same-origin frontend URL. Defaults to project frontend_url.
+        max_forms:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+        max_tests_per_form:
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 1
+        safe_get_only:
+          type: boolean
+          default: true
+          description: Alpha implementation only submits safe same-origin GET forms.
+    FormTestRun:
+      type: object
+      required: [id, project_id, status, max_forms, max_tests_per_form, safe_get_only, total_forms_detected, total_forms_classified_safe, total_forms_tested, total_forms_skipped, total_findings, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        discovery_run_id:
+          type: string
+          format: uuid
+        credential_profile_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, completed, failed, error]
+        target_url:
+          type: string
+        max_forms:
+          type: integer
+        max_tests_per_form:
+          type: integer
+        safe_get_only:
+          type: boolean
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        total_forms_detected:
+          type: integer
+        total_forms_classified_safe:
+          type: integer
+        total_forms_tested:
+          type: integer
+        total_forms_skipped:
+          type: integer
+        total_findings:
+          type: integer
+        error_message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    FormTestResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        page_url:
+          type: string
+        form_action:
+          type: string
+        form_method:
+          type: string
+          example: get
+        classification:
+          type: string
+          enum: [search, filter, sort, navigation, newsletter, contact, login, password, payment, profile_update, upload, admin_mutation, destructive, unknown]
+        safety:
+          type: string
+          enum: [safe, unsafe, unsupported, unknown]
+        decision:
+          type: string
+          enum: [tested, skipped]
+        skip_reason:
+          type: string
+        submitted_url:
+          type: string
+        final_url:
+          type: string
+        http_status:
+          type: integer
+        page_title:
+          type: string
+        test_values_summary:
+          type: object
+          additionalProperties: true
+          description: Synthetic value metadata only; raw field values are not stored.
+        screenshot_evidence_id:
+          type: string
+          format: uuid
+        console_error_count:
+          type: integer
+        failed_request_count:
+          type: integer
+        duration_ms:
+          type: integer
+        finding_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+    FormTestSummary:
+      type: object
+      properties:
+        forms_detected:
+          type: integer
+        forms_classified_safe:
+          type: integer
+        forms_tested:
+          type: integer
+        forms_skipped:
+          type: integer
+        findings:
+          type: integer
+        screenshots:
+          type: integer
+        console_errors:
+          type: integer
+        failed_requests:
+          type: integer
+    FormTestReport:
+      allOf:
+        - $ref: "#/components/schemas/ReportIntelligence"
+        - type: object
+          required: [generated_at, run, project, summary, results, findings, evidence]
+          properties:
+            generated_at:
+              type: string
+              format: date-time
+            run:
+              $ref: "#/components/schemas/FormTestRun"
+            project:
+              $ref: "#/components/schemas/Project"
+            discovery_run:
+              $ref: "#/components/schemas/DiscoveryRun"
+            settings:
+              type: object
+              additionalProperties: true
+            summary:
+              $ref: "#/components/schemas/FormTestSummary"
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/FormTestResult"
+            findings:
+              type: array
+              items:
+                $ref: "#/components/schemas/Finding"
+            evidence:
+              type: array
+              items:
+                $ref: "#/components/schemas/Evidence"
             safety_notes:
               type: array
               items:
@@ -5599,6 +5896,10 @@ components:
           type: string
           format: uuid
           nullable: true
+        form_test_run_id:
+          type: string
+          format: uuid
+          nullable: true
         title:
           type: string
         severity:
@@ -5656,9 +5957,13 @@ components:
           type: string
           format: uuid
           nullable: true
+        form_test_run_id:
+          type: string
+          format: uuid
+          nullable: true
         type:
           type: string
-          enum: [screenshot, browser_observations, login_observations, authorization_observations, ai_browser_observation, api_observations, openapi_summary, api_request]
+          enum: [screenshot, browser_observations, login_observations, authorization_observations, ai_browser_observation, form_observations, form_submission, api_observations, openapi_summary, api_request]
         uri:
           type: string
         metadata:

@@ -69,6 +69,32 @@ func (s *Store) GetReportSnapshot(ctx context.Context, reportType string, report
 			Status:       report.Run.Status,
 			Intelligence: report.ReportIntelligence,
 		}, nil
+	case ReportTypeAIBrowserControl:
+		report, err := s.GetAIBrowserControlReport(ctx, reportID)
+		if err != nil {
+			return ReportSnapshot{}, err
+		}
+		return ReportSnapshot{
+			ProjectID:    report.Project.ID,
+			ReportType:   ReportTypeAIBrowserControl,
+			ReportID:     report.Run.ID,
+			SourceRunID:  report.Run.ID,
+			Status:       report.Run.Status,
+			Intelligence: report.ReportIntelligence,
+		}, nil
+	case ReportTypeFormTest:
+		report, err := s.GetFormTestReport(ctx, reportID)
+		if err != nil {
+			return ReportSnapshot{}, err
+		}
+		return ReportSnapshot{
+			ProjectID:    report.Project.ID,
+			ReportType:   ReportTypeFormTest,
+			ReportID:     report.Run.ID,
+			SourceRunID:  report.Run.ID,
+			Status:       report.Run.Status,
+			Intelligence: report.ReportIntelligence,
+		}, nil
 	case ReportTypeAuthorization:
 		report, err := s.GetAuthorizationCheckReport(ctx, reportID)
 		if err != nil {

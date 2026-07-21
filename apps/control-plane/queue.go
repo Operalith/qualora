@@ -46,6 +46,11 @@ type AIBrowserControlRunJob struct {
 	ProjectID             string `json:"project_id"`
 }
 
+type FormTestRunJob struct {
+	FormTestRunID string `json:"form_test_run_id"`
+	ProjectID     string `json:"project_id"`
+}
+
 type APIRunJob struct {
 	JobID     string `json:"job_id"`
 	RunID     string `json:"run_id"`
@@ -138,6 +143,17 @@ func (q *Queue) EnqueueAIBrowserControlRun(ctx context.Context, job AIBrowserCon
 	}
 	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
 		return fmt.Errorf("enqueue AI Browser Control run: %w", err)
+	}
+	return nil
+}
+
+func (q *Queue) EnqueueFormTestRun(ctx context.Context, job FormTestRunJob) error {
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("marshal form test run job: %w", err)
+	}
+	if err := q.client.RPush(ctx, q.browserQueue, payload).Err(); err != nil {
+		return fmt.Errorf("enqueue form test run: %w", err)
 	}
 	return nil
 }

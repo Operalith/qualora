@@ -354,6 +354,10 @@ func reportURLForSnapshot(snapshot ReportSnapshot) string {
 		return "/api/v1/discovery-runs/" + snapshot.ReportID + "/report"
 	case ReportTypeSafeExplorer:
 		return "/api/v1/safe-explorer-runs/" + snapshot.ReportID + "/report"
+	case ReportTypeAIBrowserControl:
+		return "/api/v1/ai-browser-control-runs/" + snapshot.ReportID + "/report"
+	case ReportTypeFormTest:
+		return "/api/v1/form-test-runs/" + snapshot.ReportID + "/report"
 	case ReportTypeAuthorization:
 		return "/api/v1/authorization-check-runs/" + snapshot.ReportID + "/report"
 	default:

@@ -150,6 +150,7 @@ export type Finding = {
   discovery_run_id?: string;
   safe_explorer_run_id?: string;
   ai_browser_control_run_id?: string;
+  form_test_run_id?: string;
   scenario_execution_id?: string;
   step_execution_id?: string;
   title: string;
@@ -170,6 +171,7 @@ export type Evidence = {
   discovery_run_id?: string;
   safe_explorer_run_id?: string;
   ai_browser_control_run_id?: string;
+  form_test_run_id?: string;
   type: string;
   uri: string;
   metadata: Record<string, unknown>;
@@ -686,6 +688,88 @@ export type AIBrowserControlTrace = {
 export type AIBrowserControlReport = AIBrowserControlTrace & ReportIntelligenceFields & {
   generated_at: string;
   settings: Record<string, unknown>;
+  safety_notes: string[];
+  limitations: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type FormTestRunInput = {
+  discovery_run_id?: string;
+  use_latest_discovery?: boolean;
+  credential_profile_id?: string;
+  target_url?: string;
+  max_forms?: number;
+  max_tests_per_form?: number;
+  safe_get_only?: boolean;
+};
+
+export type FormTestRun = {
+  id: string;
+  project_id: string;
+  discovery_run_id?: string;
+  credential_profile_id?: string;
+  status: "queued" | "running" | "completed" | "failed" | "error" | string;
+  target_url?: string;
+  max_forms: number;
+  max_tests_per_form: number;
+  safe_get_only: boolean;
+  started_at?: string;
+  completed_at?: string;
+  total_forms_detected: number;
+  total_forms_classified_safe: number;
+  total_forms_tested: number;
+  total_forms_skipped: number;
+  total_findings: number;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FormTestResult = {
+  id: string;
+  run_id: string;
+  project_id: string;
+  page_url: string;
+  form_action?: string;
+  form_method?: string;
+  classification: string;
+  safety: "safe" | "unsafe" | "unsupported" | "unknown" | string;
+  decision: "tested" | "skipped" | string;
+  skip_reason?: string;
+  submitted_url?: string;
+  final_url?: string;
+  http_status?: number;
+  page_title?: string;
+  test_values_summary?: Record<string, unknown>;
+  screenshot_evidence_id?: string;
+  console_error_count: number;
+  failed_request_count: number;
+  duration_ms?: number;
+  finding_id?: string;
+  created_at: string;
+};
+
+export type FormTestSummary = {
+  forms_detected: number;
+  forms_classified_safe: number;
+  forms_tested: number;
+  forms_skipped: number;
+  findings: number;
+  screenshots: number;
+  console_errors: number;
+  failed_requests: number;
+};
+
+export type FormTestReport = ReportIntelligenceFields & {
+  generated_at: string;
+  run: FormTestRun;
+  project: Project;
+  discovery_run?: DiscoveryRun;
+  settings: Record<string, unknown>;
+  summary: FormTestSummary;
+  results: FormTestResult[];
+  findings: Finding[];
+  evidence: Evidence[];
   safety_notes: string[];
   limitations: string[];
   metadata: Record<string, unknown>;

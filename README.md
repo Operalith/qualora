@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.21.0-alpha` adds policy-gated AI Browser Control. A logged-in self-hosted user can ask a configured OpenAI-compatible provider for one typed browser action at a time, let Qualora validate it through deterministic safe-navigation policy, execute only approved Playwright actions, and review JSON/HTML reports with AI suggestions, policy decisions, sanitized observations, findings, and evidence metadata.
+`v0.22.0-alpha` adds Safe Form Testing. A logged-in self-hosted user can classify forms, execute only bounded same-origin GET forms such as search/filter/sort forms, review skipped unsafe forms with reasons, and let AI Browser Control suggest a safe GET form action only when Qualora's deterministic policy approves it.
 
 ## Current Alpha Capabilities
 
@@ -17,7 +17,7 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Create projects through a guided setup wizard that can optionally configure AI, credentials, OpenAPI import, and selected first checks.
 - Run a local demo workflow against `demo-web`, `demo-api`, and `fake-llm`.
 - View dashboard quick-start cards, recent Safe QA runs, recent projects, status indicators, and a project readiness checklist.
-- View a reports landing page for recent browser, API, discovery, Safe Explorer, quality, and Safe QA reports with recent severity and grouped-finding counts.
+- View a reports landing page for recent browser, API, discovery, Safe Explorer, AI Browser Control, Safe Form Testing, quality, and Safe QA reports with recent severity and grouped-finding counts.
 - Start runs that can include browser and API jobs.
 - Start a browser-only smoke run for a project with `frontend_url`.
 - Store project-scoped credential profiles encrypted at rest for deterministic test-account login.
@@ -38,9 +38,14 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - View Safe Explorer timelines, actions, findings, screenshot evidence, JSON reports, and self-contained HTML reports in the web UI.
 - Start policy-gated AI Browser Control runs for projects with `frontend_url`.
 - Send only sanitized browser observations and bounded goals to an OpenAI-compatible provider.
-- Require the model to return exactly one typed action such as `click_link`, `goto`, `assert_text_visible`, `capture_screenshot`, `collect_browser_signals`, or `stop`.
+- Require the model to return exactly one typed action such as `click_link`, `goto`, `submit_safe_get_form`, `assert_text_visible`, `capture_screenshot`, `collect_browser_signals`, or `stop`.
 - Validate each AI suggestion with Qualora's deterministic browser policy before Playwright executes anything.
 - Record AI suggestions, policy decisions, execution outcomes, screenshot evidence, sanitized observation evidence, findings, JSON reports, and self-contained HTML reports.
+- Start Safe Form Testing runs for projects with `frontend_url`.
+- Classify forms as search, filter, sort, newsletter, contact, login, password, payment, profile update, upload, admin mutation, destructive, or unknown.
+- Execute only policy-approved same-origin safe GET forms with bounded deterministic values such as `demo`, first safe select options, small numbers, or stable dates.
+- Skip POST/mutating, password, file upload, external action, payment, checkout, transfer, delete, reset, account/profile/admin mutation, sensitive-field, and unsupported forms with recorded reasons.
+- View Safe Form Testing JSON/HTML reports with tested forms, skipped forms, findings, screenshot/evidence metadata, report intelligence, safety notes, and limitations.
 - Start passive quality check runs for project frontends.
 - Reuse latest or selected discovery runs as quality-check page lists.
 - Run safe passive security header/cookie/form checks, basic accessibility heuristics, and simple performance/resource observations.
@@ -100,7 +105,7 @@ API client / smoke script / web UI
         |
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, api_auth_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines, ci_runs, issue_export_configs
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, api_auth_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, ai_browser_control_runs, ai_browser_control_steps, form_test_runs, form_test_results, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines, ci_runs, issue_export_configs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence download proxy
         +--> Optional OpenAI-compatible AI provider for analysis and test planning
@@ -113,6 +118,8 @@ qualora-api
         |       +--> Authenticated browser smoke test
         |       +--> Safe deterministic application discovery
         |       +--> Interactive Safe Explorer
+        |       +--> Safe Form Testing
+        |       +--> Policy-gated AI Browser Control
         |       +--> Passive quality checks
         |       +--> Explicit role-aware authorization checks
         |       +--> Approved safe test plan execution steps
@@ -173,6 +180,8 @@ The smoke target includes:
 - Role credential profile creation plus explicit authorization checks against demo `/admin` and customer invoice routes.
 - Application discovery against `demo-web`, including discovered pages/forms, skipped unsafe/external links, screenshots, JSON report, and HTML report.
 - Interactive Safe Explorer against `demo-web`, including observed pages/actions, executed safe navigation, skipped unsafe/external/POST/unsupported actions, screenshots, JSON report, and HTML report.
+- Safe Form Testing against `demo-web`, including safe GET search/filter execution, skipped unsafe/external/mutating forms, screenshots, JSON report, HTML report, report intelligence, and no raw test values in reports.
+- AI Browser Control safe-form and unsafe-form policy fixtures against `fake-llm`.
 - Passive quality checks against `demo-web`, including security, accessibility, and performance findings plus JSON/HTML quality reports.
 - OpenAPI import and safe API smoke against a local `demo-api` service started by the Makefile.
 - AI provider smoke against a local fake OpenAI-compatible provider.
@@ -835,7 +844,7 @@ curl -s -X POST "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/execute" \
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.21.0-alpha`:
+Supported provider type in `v0.22.0-alpha`:
 
 - `openai-compatible`
 
@@ -859,11 +868,12 @@ AI prompt safety defaults:
 
 AI Browser Control is alpha and conservative. The AI provider never drives Playwright directly. Qualora captures a sanitized observation, asks the provider for one typed JSON action, validates that action against allowed hosts, same-origin policy, depth limits, observed safe candidates, sensitive-query checks, and destructive-label/path checks, then executes only approved safe actions.
 
-Supported action types in `v0.21.0-alpha`:
+Supported action types in `v0.22.0-alpha`:
 
 - `goto`
 - `click_link`
 - `click_safe_navigation`
+- `submit_safe_get_form`
 - `assert_text_visible`
 - `assert_url_contains`
 - `assert_title_contains`
@@ -871,13 +881,21 @@ Supported action types in `v0.21.0-alpha`:
 - `collect_browser_signals`
 - `stop`
 
-AI Browser Control does not submit forms, click arbitrary unsafe buttons, execute payloads, fuzz inputs, perform active security scanning, crawl external domains by default, or perform destructive actions. It does not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, or response bodies to AI.
+AI Browser Control can execute `submit_safe_get_form` only for observed, same-origin, GET, safe-classified forms with non-sensitive bounded values after policy approval. It does not submit POST/mutating forms, arbitrary forms, unsafe buttons, payloads, fuzz inputs, active security scans, external crawls by default, or destructive actions. It does not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, or response bodies to AI.
 
-AI-assisted test plans are reviewable suggestions. In `v0.21.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, guided onboarding, report intelligence, baseline comparison, quality gates, CI runs, and issue export previews are deterministic paths. AI Browser Control is AI-suggested but still policy-gated and never gives the model direct Playwright control.
+AI-assisted test plans are reviewable suggestions. In `v0.22.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, Safe Form Testing, guided onboarding, report intelligence, baseline comparison, quality gates, CI runs, and issue export previews are deterministic paths. AI Browser Control is AI-suggested but still policy-gated and never gives the model direct Playwright control.
+
+## Safe Form Testing
+
+Safe Form Testing is a standalone alpha workflow at `POST /api/v1/projects/{project_id}/form-test-runs`. It can reuse the latest completed discovery run or visit a target URL, classify visible forms, execute only safe same-origin GET forms, and produce JSON/HTML reports at `/api/v1/form-test-runs/{form_test_run_id}/report` and `/api/v1/form-test-runs/{form_test_run_id}/report.html`.
+
+Safe in this release means search, filter, sort, or navigation-like GET forms with same-origin actions, no password/file fields, no hidden sensitive fields, no sensitive parameter names, no destructive labels or paths, and safely bounded values. Qualora uses deterministic values such as `demo` for query/search fields, the first safe select option for filter/sort fields, small numbers, or stable dates.
+
+Forms are skipped when they are POST/PUT/PATCH/DELETE, external, login/password, payment/checkout/transfer/refund, delete/reset/deactivate/cancel, profile/account/admin mutation, upload, sensitive-field, or unsupported forms. Reports store metadata, redacted submitted URLs, screenshots, findings, and skip reasons; they do not store raw form values, request bodies, response bodies, cookies, browser storage, auth headers, tokens, credentials, or full HTML.
 
 ## Report Intelligence
 
-Every primary JSON and HTML report includes deterministic report intelligence in `v0.21.0-alpha`:
+Every primary JSON and HTML report includes deterministic report intelligence in `v0.22.0-alpha`:
 
 - `executive_summary` with pass/warning/fail/unknown status, what was tested, what was not tested, recommended next actions, and safety limitations.
 - `severity_counts` normalized to `critical`, `high`, `medium`, `low`, and `info`.
@@ -902,7 +920,7 @@ Quality gates are designed for CI and release checks. Defaults fail on new criti
 
 ## CI Mode And Issue Export
 
-`v0.21.0-alpha` includes a native CI run endpoint at `POST /api/v1/projects/{project_id}/ci-runs`. It can start a Safe QA run, wait for completion, compare with a selected/default Safe QA baseline, evaluate a quality gate, persist a `ci_runs` record, and return `exit_code` `0` for passed/warning or `1` for failed/error. CI gate evaluation and issue export do not require AI.
+`v0.22.0-alpha` includes a native CI run endpoint at `POST /api/v1/projects/{project_id}/ci-runs`. It can start a Safe QA run, wait for completion, compare with a selected/default Safe QA baseline, evaluate a quality gate, persist a `ci_runs` record, and return `exit_code` `0` for passed/warning or `1` for failed/error. CI gate evaluation and issue export do not require AI.
 
 `scripts/qualora-ci-gate.sh` evaluates an existing report. `scripts/qualora-ci-run.sh` starts the workflow and evaluates the gate. Both scripts log in with `QUALORA_EMAIL` and `QUALORA_PASSWORD`, avoid printing secrets, and exit with the Qualora CI exit code.
 
@@ -999,6 +1017,7 @@ The alpha is safe by default:
 - `allow_private_targets: true` may be used for local/private systems you control.
 - Authenticated browser smoke is limited to configured credential profiles and deterministic selectors.
 - Authenticated API smoke is limited to configured API auth profiles and safe read-only imported OpenAPI operations.
+- Safe Form Testing executes only safe same-origin GET forms by default and skips POST/mutating, external, sensitive, upload, payment, account/profile/admin, and destructive forms.
 - Login automation is not autonomous and never uses AI browser control.
 - Secrets, credentials, cookies, and authorization headers must not be logged.
 - Screenshots and reports should be treated as sensitive evidence artifacts.
@@ -1038,7 +1057,7 @@ See [docs/security-model.md](docs/security-model.md) and [SECURITY.md](SECURITY.
 - Quality checks are alpha heuristics, not full security, accessibility, performance, Lighthouse, Core Web Vitals, or WCAG coverage.
 - Authenticated API testing is alpha and limited to configured API auth profiles plus safe read-only OpenAPI operations.
 - Authenticated browser smoke supports one configured login form and one same-origin target path per run.
-- No arbitrary form submission, multi-step authenticated journeys, MFA, role switching, or session export.
+- Safe Form Testing is alpha and limited to deterministic same-origin GET form coverage. No arbitrary form submission, POST/mutating form submission, multi-step authenticated journeys, MFA, role switching, session export, fuzzing, or payload generation.
 - No active security scanning.
 - No destructive API testing by default.
 - OpenAPI contract validation is lightweight; no full OpenAPI validator, request-body validation, response-body storage, schema fuzzing, or payload generation is implemented.

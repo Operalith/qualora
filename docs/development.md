@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.21.0-alpha.
+This document covers local development for Qualora v0.22.0-alpha.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ Command behavior:
 - `make compose-up`: runs `docker compose up -d --build`.
 - `make compose-down`: runs `docker compose down`.
 - `make logs`: tails API, web, browser worker, and API worker logs.
-- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, API auth profiles, and role-aware authorization checks; imports the demo OpenAPI spec; exercises guided project setup; starts browser, login check, authenticated browser smoke, application discovery, Interactive Safe Explorer, passive quality, authorization, Safe QA, unauthenticated API smoke, and authenticated API smoke plus contract validation runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; creates a Safe QA baseline; compares a second Safe QA report; evaluates a quality gate and CI compact response; runs the native CI run endpoint; runs `scripts/qualora-ci-gate.sh` and `scripts/qualora-ci-run.sh`; configures fake issue export metadata; dry-runs grouped finding issue export; prints JSON/HTML report, discovery map, Safe Explorer trace, API spec, credential profile, API auth profile, quality, authorization, test-plan, execution, Safe QA Run, CI run, project setup, and report index URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates Safe Explorer executed/skipped action reasons; validates quality finding counts; validates credential and API token redaction; validates test-plan export; validates issue preview redaction; and validates screenshot evidence download.
+- `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, API auth profiles, and role-aware authorization checks; imports the demo OpenAPI spec; exercises guided project setup; starts browser, login check, authenticated browser smoke, application discovery, Interactive Safe Explorer, Safe Form Testing, passive quality, authorization, Safe QA, unauthenticated API smoke, and authenticated API smoke plus contract validation runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; creates a Safe QA baseline; compares a second Safe QA report; evaluates a quality gate and CI compact response; runs the native CI run endpoint; runs `scripts/qualora-ci-gate.sh` and `scripts/qualora-ci-run.sh`; configures fake issue export metadata; dry-runs grouped finding issue export; exercises policy-approved and policy-blocked AI Browser Control form suggestions; prints JSON/HTML report, discovery map, Safe Explorer trace, Safe Form Testing report, API spec, credential profile, API auth profile, quality, authorization, test-plan, execution, Safe QA Run, CI run, project setup, and report index URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates Safe Explorer executed/skipped action reasons; validates Safe Form Testing tested/skipped form reasons; validates quality finding counts; validates credential and API token redaction; validates test-plan export; validates issue preview redaction; and validates screenshot evidence download.
 
 ## Start The Stack
 
@@ -108,6 +108,8 @@ The smoke script runs:
 - Deterministic login check against local `demo-web`.
 - Authenticated browser smoke against local `demo-web` `/dashboard`.
 - Application discovery against local `demo-web`, including pages, links, forms, skipped unsafe/external links, screenshots, JSON report, and HTML report.
+- Safe Form Testing against local `demo-web`, including safe same-origin GET form execution, skipped unsafe/external/mutating forms, screenshot evidence, JSON report, HTML report, report intelligence, and no raw test-value storage.
+- AI Browser Control safe-form and unsafe-form policy fixtures through local `fake-llm`.
 - Passive quality checks against local `demo-web`, including deterministic security, accessibility, and performance/front-end findings plus JSON/HTML reports.
 - Role credential profile creation and explicit authorization checks against local `demo-web` `/admin` and customer invoice routes.
 - Password and raw username redaction checks for credential, report, and AI paths.
@@ -273,7 +275,7 @@ Relevant files:
 
 ## AI Browser Control Development
 
-`v0.21.0-alpha` adds policy-gated AI Browser Control through the browser worker. The control plane creates `ai_browser_control_runs`, queues a Redis browser job, and serves run detail, trace, JSON report, and self-contained HTML report endpoints. The browser worker captures sanitized observations, asks the selected OpenAI-compatible provider for one strict JSON action, validates it through deterministic policy, and executes only approved safe Playwright actions.
+`v0.22.0-alpha` keeps policy-gated AI Browser Control in the browser worker and adds a policy-approved safe GET form action. The control plane creates `ai_browser_control_runs`, queues a Redis browser job, and serves run detail, trace, JSON report, and self-contained HTML report endpoints. The browser worker captures sanitized observations, asks the selected OpenAI-compatible provider for one strict JSON action, validates it through deterministic policy, and executes only approved safe Playwright actions.
 
 Important files:
 
@@ -287,19 +289,41 @@ Important files:
 - `scripts/fake-llm/server.js`
 - `scripts/smoke.py`
 
-Use the fake LLM for deterministic local testing. Its default AI Browser Control path navigates `/`, `/about`, `/status`, `/pricing`, captures a screenshot once, then stops. A goal containing `force_unsafe_ai_browser_action` makes the fake provider propose `/delete-account`, which the policy engine should block.
+Use the fake LLM for deterministic local testing. Its default AI Browser Control path navigates `/`, `/about`, `/status`, `/pricing`, captures a screenshot once, then stops. A goal containing `force_unsafe_ai_browser_action` makes the fake provider propose `/delete-account`, which the policy engine should block. A goal containing `force_safe_ai_browser_form_action` makes it propose `submit_safe_get_form` for the demo search form, while `force_unsafe_ai_browser_form_action` proposes an unsafe form action that policy must block.
 
-AI Browser Control must not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, or response bodies to AI. Do not add arbitrary selectors, form submission, active scanning, fuzzing, payload execution, external crawling, destructive actions, or direct model control of Playwright.
+AI Browser Control must not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, response bodies, or raw form values to AI. Do not add arbitrary selectors, arbitrary form submission, POST/mutating form submission, active scanning, fuzzing, payload execution, external crawling, destructive actions, or direct model control of Playwright.
+
+## Safe Form Testing Development
+
+`v0.22.0-alpha` adds standalone Safe Form Testing through the browser worker. The control plane creates `form_test_runs`, queues a Redis browser job, persists `form_test_results`, and serves run detail plus JSON/HTML report endpoints.
+
+Important files:
+
+- `apps/control-plane/form_test.go`
+- `apps/control-plane/form_test_http.go`
+- `apps/control-plane/form_test_store.go`
+- `apps/control-plane/form_test_report_html.go`
+- `apps/control-plane/migrations/019_form_tests.sql`
+- `workers/browser/src/form_testing.ts`
+- `workers/browser/src/form_testing.test.ts`
+- `workers/browser/src/index.ts`
+- `scripts/demo-web/server.js`
+- `scripts/fake-llm/server.js`
+- `scripts/smoke.py`
+
+Safe Form Testing executes only same-origin GET forms classified as safe search/filter/sort/navigation-style forms. It uses bounded deterministic values and records classifications, tested/skipped decisions, skip reasons, redacted submitted URLs, screenshots, findings, and safe value summaries.
+
+Do not add POST/PUT/PATCH/DELETE submission, arbitrary form filling, fuzzing, payload generation, login/password/payment/upload/admin/account mutation flows, external form execution, or AI-controlled form execution. Reports, evidence, AI inputs, CI output, and issue export previews must never contain raw form values, credentials, cookies, browser storage, auth headers, tokens, request bodies, response bodies, or full HTML.
 
 ## Report Intelligence Development
 
-`v0.21.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
+`v0.22.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
 
 When adding new finding sources, provide stable categories, titles, recommendations, evidence IDs, and safe URL metadata where practical. Do not add secrets, cookies, local/session storage, auth headers, request bodies, response bodies, full HTML, or screenshot bytes to report intelligence inputs.
 
 ## Baseline And Quality Gate Development
 
-The v0.21 baseline, CI, and quality gate paths are control-plane only:
+The v0.22 baseline, CI, and quality gate paths are control-plane only:
 
 - `POST /api/v1/projects/{project_id}/report-baselines` stores normalized grouped finding fingerprints and summary metadata from a known report.
 - `GET /api/v1/projects/{project_id}/report-baselines?report_type=safe_qa` lists baselines for the project.

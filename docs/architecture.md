@@ -1,6 +1,6 @@
 # Architecture
 
-Qualora v0.21.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, native CI run orchestration, optional sanitized GitHub/GitLab issue export, safe deterministic application discovery, Interactive Safe Explorer, policy-gated AI Browser Control, passive front-end quality checks, project-scoped credential profiles, project-scoped API auth profiles, deterministic selector-based login checks, authenticated browser smoke runs, authenticated read-only API smoke runs, lightweight OpenAPI contract validation, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
+Qualora v0.22.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, native CI run orchestration, optional sanitized GitHub/GitLab issue export, safe deterministic application discovery, Interactive Safe Explorer, policy-gated AI Browser Control, Safe Form Testing, passive front-end quality checks, project-scoped credential profiles, project-scoped API auth profiles, deterministic selector-based login checks, authenticated browser smoke runs, authenticated read-only API smoke runs, lightweight OpenAPI contract validation, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
 
 ## Runtime Components
 
@@ -10,7 +10,7 @@ API client / smoke script / qualora-web
         v
 qualora-api
         |
-        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, api_auth_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, ai_browser_control_runs, ai_browser_control_steps, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines, ci_runs, issue_export_configs
+        +--> PostgreSQL: local_users, user_sessions, projects, credential_profiles, api_auth_profiles, discovery_runs, discovered_pages, discovered_links, discovered_forms, safe_explorer_runs, safe_explorer_steps, safe_explorer_actions, ai_browser_control_runs, ai_browser_control_steps, form_test_runs, form_test_results, quality_check_runs, quality_check_results, authorization_checks, authorization_check_runs, authorization_check_results, test_runs, run_jobs, findings, evidence, api_specs, api_operations, api_check_results, ai_providers, ai_analyses, test_plans, test_plan_executions, qa_runs, report_baselines, ci_runs, issue_export_configs
         +--> Redis: browser, API, and test plan execution queues
         +--> MinIO/S3 evidence objects by evidence ID
         +--> Optional OpenAI-compatible AI provider
@@ -27,6 +27,7 @@ qualora-api
         |       +--> Safe deterministic application discovery
         |       +--> Interactive Safe Explorer
         |       +--> Policy-gated AI Browser Control
+        |       +--> Safe Form Testing
         |       +--> Passive quality checks
         |       +--> Explicit role-aware authorization checks
         |       +--> Approved safe test plan execution
@@ -51,9 +52,9 @@ The Go control plane exposes the HTTP API, validates project scope, persists met
 
 Report generation includes a deterministic intelligence layer. It normalizes finding severities, computes stable fingerprints, groups repeated findings, classifies noisy/repeated signals, summarizes affected pages, and produces executive summaries at report read/render time without changing stored finding schemas. The raw findings, evidence metadata, quality result rows, discovery maps, Safe Explorer traces, authorization results, and API result rows remain available.
 
-The v0.21 baseline layer stores grouped finding fingerprints and summary metadata from known reports in `report_baselines`. Comparisons are computed deterministically from baseline fingerprints and the current report intelligence. Quality gate evaluation uses comparison summaries and current severity counts; it does not require AI and does not execute any new testing engine.
+The v0.22 baseline layer stores grouped finding fingerprints and summary metadata from known reports in `report_baselines`. Comparisons are computed deterministically from baseline fingerprints and the current report intelligence. Quality gate evaluation uses comparison summaries and current severity counts; it does not require AI and does not execute any new testing engine.
 
-The v0.21 CI layer stores pipeline-friendly run summaries in `ci_runs`. A CI run can reuse the latest completed Safe QA report or start the existing Safe QA workflow, then compare against a selected/default baseline, evaluate a quality gate, and return a deterministic exit code. Optional issue export configs are stored in `issue_export_configs` with encrypted tracker tokens. Issue export uses grouped sanitized findings only.
+The v0.22 CI layer stores pipeline-friendly run summaries in `ci_runs`. A CI run can reuse the latest completed Safe QA report or start the existing Safe QA workflow, then compare against a selected/default baseline, evaluate a quality gate, and return a deterministic exit code. Optional issue export configs are stored in `issue_export_configs` with encrypted tracker tokens. Issue export uses grouped sanitized findings only.
 
 Current endpoints:
 
@@ -116,6 +117,11 @@ Current endpoints:
 - `GET /api/v1/ai-browser-control-runs/{ai_browser_control_run_id}/trace`
 - `GET /api/v1/ai-browser-control-runs/{ai_browser_control_run_id}/report`
 - `GET /api/v1/ai-browser-control-runs/{ai_browser_control_run_id}/report.html`
+- `GET /api/v1/projects/{project_id}/form-test-runs`
+- `POST /api/v1/projects/{project_id}/form-test-runs`
+- `GET /api/v1/form-test-runs/{form_test_run_id}`
+- `GET /api/v1/form-test-runs/{form_test_run_id}/report`
+- `GET /api/v1/form-test-runs/{form_test_run_id}/report.html`
 - `GET /api/v1/projects/{project_id}/qa-runs`
 - `POST /api/v1/projects/{project_id}/qa-runs`
 - `GET /api/v1/qa-runs/{qa_run_id}`
@@ -236,7 +242,9 @@ For application discovery runs, the worker performs bounded deterministic naviga
 
 For Interactive Safe Explorer runs, the worker logs in only through an optional configured credential profile, starts from the project frontend or requested start URL, observes visible links/buttons/forms/inputs, classifies actions with a deterministic safety policy, and executes only safe same-origin navigation actions. It records a step timeline, action metadata, screenshots, findings, and skip reasons for unsafe, external, unsupported, duplicate, sensitive-query, and policy-blocked actions. It does not let AI choose actions, does not submit POST forms, does not click arbitrary buttons, does not expose cookies/storage/auth headers/tokens, and does not store full HTML or response bodies.
 
-For AI Browser Control runs, the worker captures sanitized observations, asks the selected OpenAI-compatible provider for exactly one typed JSON action, validates the suggestion through Qualora's deterministic policy, and executes only approved safe Playwright actions. It records steps with sanitized observations, AI suggestions, policy decisions, execution status, screenshots, findings, and trace/report metadata. It does not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, or response bodies to AI; it does not submit forms, click arbitrary unsafe buttons, execute payloads, fuzz inputs, perform active scans, or perform destructive actions.
+For AI Browser Control runs, the worker captures sanitized observations, asks the selected OpenAI-compatible provider for exactly one typed JSON action, validates the suggestion through Qualora's deterministic policy, and executes only approved safe Playwright actions. It records steps with sanitized observations, AI suggestions, policy decisions, execution status, screenshots, findings, and trace/report metadata. It does not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, or response bodies to AI. It may execute a `submit_safe_get_form` suggestion only when the observed form is same-origin, GET, safe-classified, and has bounded non-sensitive values; arbitrary, POST/mutating, sensitive, destructive, payload, fuzzing, active scan, and unsafe button actions are blocked.
+
+For Safe Form Testing runs, the worker optionally logs in with a deterministic credential profile, visits a target URL or pages from the selected/latest discovery run, observes forms, classifies them, executes only same-origin safe GET forms with bounded deterministic values, and persists `form_test_results`, `form_observations`, `form_submission` evidence, screenshots, and findings. It skips POST/mutating, external, password/file, hidden sensitive, payment, checkout, transfer, delete, reset, profile/account/admin mutation, destructive, unknown, and unsupported forms with explicit reasons. It does not store raw form values, request bodies, response bodies, full HTML, cookies, browser storage, auth headers, tokens, or credentials.
 
 For quality check runs, the worker visits only the project frontend origin or pages from a completed discovery run. It can optionally perform the same deterministic selector-based credential-profile login before checking pages. It collects safe metadata for passive security checks, accessibility heuristics, and performance/front-end observations. Quality evidence stores metadata only; it must not contain cookie values, browser storage, auth headers, tokens, credentials, request bodies, response bodies, or full HTML. Quality checks never submit forms, click arbitrary buttons, guess sensitive paths, run payloads, fuzz inputs, perform active scans, perform destructive actions, or use autonomous AI browser control.
 
@@ -269,9 +277,11 @@ It currently captures:
 - Blocked out-of-scope browser requests.
 - Safe Explorer observed pages, executed actions, skipped actions, selector hints, skip reasons, action safety decisions, and screenshots.
 - AI Browser Control sanitized observations, AI suggestions, policy decisions, execution status, screenshot IDs, and policy-blocked/invalid/unsupported action metadata.
+- Safe Form Testing classifications, decisions, skip reasons, redacted submitted URLs, screenshot IDs, bounded value summaries, console/error counts, and form submission metadata.
 - Basic findings for obvious load, timeout, non-success status, console, request, empty page, and scope issues.
 - Login findings for failed login, missing selectors, timeouts, console errors, failed requests, and authenticated navigation failures.
 - AI Browser Control findings for policy blocks, invalid or unsupported model actions, navigation/assertion failures, console errors, failed requests, loops, and incomplete goals.
+- Safe Form Testing findings for safe GET passes, skipped unsafe forms, external action blocks, sensitive fields, POST skips, missing labels, submission failures, console errors, network failures, and empty result observations.
 - Quality findings for missing security headers, cookie flag observations, mixed content, sensitive query names, source maps, password/form issues, basic accessibility issues, slow loads, console errors, failed resources, request-count issues, large JavaScript resources, and image dimension issues.
 
 Login evidence is stored as `login_observations` metadata plus screenshots when configured. JSON and HTML run reports include a `login_summary` for login checks and authenticated browser smoke runs.
@@ -322,7 +332,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.21.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.22.0-alpha`.
 
 ### PostgreSQL
 
@@ -402,7 +412,7 @@ The safe AI input builder includes only sanitized report data such as run status
 
 AI-assisted test plans use sanitized project configuration, optional product context, selected focus areas, optional latest/run-specific report metadata, optional discovery map summaries, and optional AI analysis summaries. The strict plan parser accepts only a reviewable JSON structure with assumptions, coverage goals, scenarios, steps, assertions, test data needs, instrumentation suggestions, limitations, and optional deterministic safe DSL candidates.
 
-AI Browser Control uses sanitized page observations only: current URL/path, title, bounded visible text snippets, headings, safe candidate links, safe button metadata, form counts/classification, console/network counts, previous step summaries, and the bounded goal. It does not send screenshots, full HTML, credentials, cookies, local/session storage, auth headers, tokens, request bodies, or response bodies to the provider. The model output is parsed as a strict action object and rejected if it is unsupported, unsafe, destructive-looking, out of scope, too deep, or looped.
+AI Browser Control uses sanitized page observations only: current URL/path, title, bounded visible text snippets, headings, safe candidate links, safe button metadata, sanitized form candidates, form counts/classification, console/network counts, previous step summaries, and the bounded goal. It does not send screenshots, full HTML, credentials, cookies, local/session storage, auth headers, tokens, request bodies, response bodies, or raw form values to the provider. The model output is parsed as a strict action object and rejected if it is unsupported, unsafe, destructive-looking, out of scope, too deep, looped, or an unsafe form action.
 
 Generated plans are not executed automatically. A user can explicitly preview and start safe execution. The deterministic mapper only queues scenarios marked `automation_candidate=true`, `destructive=false`, and `requires_authentication=false`; skips unsafe terms such as login, payment, submit, upload, mutation, admin, SQLi, XSS, SSRF, brute force, and destructive actions; and maps only the supported browser DSL. Unsupported or ambiguous steps are persisted as skipped with reasons.
 
@@ -416,7 +426,7 @@ Safe QA Runs combine the existing safe pieces into a single alpha workflow:
 4. Stop at review by default, or execute the approved safe DSL path when the user explicitly requests it.
 5. Serve a Safe QA Run JSON/HTML report linking the discovery run, generated plan, preview coverage, optional execution report, and safety notes.
 
-The workflow is orchestration, not free-form autonomy. It does not give an LLM browser control, does not execute model text, and does not allow arbitrary clicking, form submission, crawling, payloads, or destructive actions.
+The workflow is orchestration, not free-form autonomy. It does not give an LLM browser control, does not execute model text, and does not allow arbitrary clicking, arbitrary form submission, crawling, payloads, or destructive actions.
 
 ## Run Lifecycle
 

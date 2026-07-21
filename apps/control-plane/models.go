@@ -44,17 +44,20 @@ const (
 	RunTypeQualityCheck              = "quality_check"
 	RunTypeSafeExplorer              = "safe_explorer"
 	RunTypeAIBrowserControl          = "ai_browser_control"
+	RunTypeFormTest                  = "form_test"
 )
 
 const (
-	ReportTypeSafeQA        = "safe_qa"
-	ReportTypeQualityCheck  = "quality_check"
-	ReportTypeDiscovery     = "discovery"
-	ReportTypeSafeExplorer  = "safe_explorer"
-	ReportTypeAPISmoke      = "api_smoke"
-	ReportTypeBrowserSmoke  = "browser_smoke"
-	ReportTypeAuthorization = "authorization"
-	ReportTypeAIBrowser     = "ai_browser_control"
+	ReportTypeSafeQA           = "safe_qa"
+	ReportTypeQualityCheck     = "quality_check"
+	ReportTypeDiscovery        = "discovery"
+	ReportTypeSafeExplorer     = "safe_explorer"
+	ReportTypeAPISmoke         = "api_smoke"
+	ReportTypeBrowserSmoke     = "browser_smoke"
+	ReportTypeAuthorization    = "authorization"
+	ReportTypeAIBrowser        = "ai_browser_control"
+	ReportTypeAIBrowserControl = ReportTypeAIBrowser
+	ReportTypeFormTest         = "form_test"
 )
 
 const (
@@ -260,6 +263,7 @@ type Finding struct {
 	DiscoveryRunID        string    `json:"discovery_run_id,omitempty"`
 	SafeExplorerRunID     string    `json:"safe_explorer_run_id,omitempty"`
 	AIBrowserControlRunID string    `json:"ai_browser_control_run_id,omitempty"`
+	FormTestRunID         string    `json:"form_test_run_id,omitempty"`
 	ScenarioExecutionID   string    `json:"scenario_execution_id,omitempty"`
 	StepExecutionID       string    `json:"step_execution_id,omitempty"`
 	Title                 string    `json:"title"`
@@ -280,6 +284,7 @@ type Evidence struct {
 	DiscoveryRunID        string         `json:"discovery_run_id,omitempty"`
 	SafeExplorerRunID     string         `json:"safe_explorer_run_id,omitempty"`
 	AIBrowserControlRunID string         `json:"ai_browser_control_run_id,omitempty"`
+	FormTestRunID         string         `json:"form_test_run_id,omitempty"`
 	Type                  string         `json:"type"`
 	URI                   string         `json:"uri"`
 	Metadata              map[string]any `json:"metadata"`
@@ -939,6 +944,89 @@ type AIBrowserControlReport struct {
 	SafetyNotes []string                `json:"safety_notes"`
 	Limitations []string                `json:"limitations"`
 	Metadata    map[string]any          `json:"metadata"`
+	ReportIntelligence
+}
+
+type FormTestRunRequest struct {
+	DiscoveryRunID      string `json:"discovery_run_id,omitempty"`
+	UseLatestDiscovery  bool   `json:"use_latest_discovery,omitempty"`
+	CredentialProfileID string `json:"credential_profile_id,omitempty"`
+	TargetURL           string `json:"target_url,omitempty"`
+	MaxForms            int    `json:"max_forms,omitempty"`
+	MaxTestsPerForm     int    `json:"max_tests_per_form,omitempty"`
+	SafeGetOnly         *bool  `json:"safe_get_only,omitempty"`
+}
+
+type FormTestRun struct {
+	ID                       string     `json:"id"`
+	ProjectID                string     `json:"project_id"`
+	DiscoveryRunID           string     `json:"discovery_run_id,omitempty"`
+	CredentialProfileID      string     `json:"credential_profile_id,omitempty"`
+	Status                   string     `json:"status"`
+	TargetURL                string     `json:"target_url,omitempty"`
+	MaxForms                 int        `json:"max_forms"`
+	MaxTestsPerForm          int        `json:"max_tests_per_form"`
+	SafeGetOnly              bool       `json:"safe_get_only"`
+	StartedAt                *time.Time `json:"started_at,omitempty"`
+	CompletedAt              *time.Time `json:"completed_at,omitempty"`
+	TotalFormsDetected       int        `json:"total_forms_detected"`
+	TotalFormsClassifiedSafe int        `json:"total_forms_classified_safe"`
+	TotalFormsTested         int        `json:"total_forms_tested"`
+	TotalFormsSkipped        int        `json:"total_forms_skipped"`
+	TotalFindings            int        `json:"total_findings"`
+	ErrorMessage             string     `json:"error_message,omitempty"`
+	CreatedAt                time.Time  `json:"created_at"`
+	UpdatedAt                time.Time  `json:"updated_at"`
+}
+
+type FormTestResult struct {
+	ID                   string         `json:"id"`
+	RunID                string         `json:"run_id"`
+	ProjectID            string         `json:"project_id"`
+	PageURL              string         `json:"page_url"`
+	FormAction           string         `json:"form_action"`
+	FormMethod           string         `json:"form_method"`
+	Classification       string         `json:"classification"`
+	Safety               string         `json:"safety"`
+	Decision             string         `json:"decision"`
+	SkipReason           string         `json:"skip_reason,omitempty"`
+	SubmittedURL         string         `json:"submitted_url,omitempty"`
+	FinalURL             string         `json:"final_url,omitempty"`
+	HTTPStatus           *int           `json:"http_status,omitempty"`
+	PageTitle            string         `json:"page_title,omitempty"`
+	TestValuesSummary    map[string]any `json:"test_values_summary,omitempty"`
+	ScreenshotEvidenceID string         `json:"screenshot_evidence_id,omitempty"`
+	ConsoleErrorCount    int            `json:"console_error_count"`
+	FailedRequestCount   int            `json:"failed_request_count"`
+	DurationMS           *int           `json:"duration_ms,omitempty"`
+	FindingID            string         `json:"finding_id,omitempty"`
+	CreatedAt            time.Time      `json:"created_at"`
+}
+
+type FormTestSummary struct {
+	FormsDetected       int `json:"forms_detected"`
+	FormsClassifiedSafe int `json:"forms_classified_safe"`
+	FormsTested         int `json:"forms_tested"`
+	FormsSkipped        int `json:"forms_skipped"`
+	Findings            int `json:"findings"`
+	Screenshots         int `json:"screenshots"`
+	ConsoleErrors       int `json:"console_errors"`
+	FailedRequests      int `json:"failed_requests"`
+}
+
+type FormTestReport struct {
+	GeneratedAt  time.Time        `json:"generated_at"`
+	Run          FormTestRun      `json:"run"`
+	Project      Project          `json:"project"`
+	DiscoveryRun *DiscoveryRun    `json:"discovery_run,omitempty"`
+	Settings     map[string]any   `json:"settings"`
+	Summary      FormTestSummary  `json:"summary"`
+	Results      []FormTestResult `json:"results"`
+	Findings     []Finding        `json:"findings"`
+	Evidence     []Evidence       `json:"evidence"`
+	SafetyNotes  []string         `json:"safety_notes"`
+	Limitations  []string         `json:"limitations"`
+	Metadata     map[string]any   `json:"metadata"`
 	ReportIntelligence
 }
 

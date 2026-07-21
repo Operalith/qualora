@@ -36,6 +36,9 @@ import type {
   DiscoveryReport,
   DiscoveryRun,
   DiscoveryRunInput,
+  FormTestReport,
+  FormTestRun,
+  FormTestRunInput,
   IssueExportConfig,
   IssueExportConfigInput,
   IssueExportConfigTestResult,
@@ -124,6 +127,10 @@ export function safeExplorerHTMLReportURL(runID: string): string {
 
 export function aiBrowserControlHTMLReportURL(runID: string): string {
   return `${API_BASE_URL}/api/v1/ai-browser-control-runs/${runID}/report.html`;
+}
+
+export function formTestHTMLReportURL(runID: string): string {
+  return `${API_BASE_URL}/api/v1/form-test-runs/${runID}/report.html`;
 }
 
 export async function getSetupStatus(): Promise<SetupStatus> {
@@ -384,6 +391,26 @@ export async function getAIBrowserControlTrace(runID: string): Promise<AIBrowser
 
 export async function getAIBrowserControlReport(runID: string): Promise<AIBrowserControlReport> {
   return request<AIBrowserControlReport>(`/api/v1/ai-browser-control-runs/${runID}/report`);
+}
+
+export async function listFormTestRuns(projectID: string): Promise<FormTestRun[]> {
+  const response = await request<{ form_test_runs: FormTestRun[] }>(`/api/v1/projects/${projectID}/form-test-runs`);
+  return response.form_test_runs;
+}
+
+export async function startFormTestRun(projectID: string, input: FormTestRunInput): Promise<FormTestRun> {
+  return request<FormTestRun>(`/api/v1/projects/${projectID}/form-test-runs`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function getFormTestRun(runID: string): Promise<FormTestRun> {
+  return request<FormTestRun>(`/api/v1/form-test-runs/${runID}`);
+}
+
+export async function getFormTestReport(runID: string): Promise<FormTestReport> {
+  return request<FormTestReport>(`/api/v1/form-test-runs/${runID}/report`);
 }
 
 export async function listQualityCheckRuns(projectID: string): Promise<QualityCheckRun[]> {

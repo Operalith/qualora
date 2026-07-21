@@ -142,7 +142,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.21.0-alpha" not in status.get("version", ""):
+    if "0.22.0-alpha" not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -1082,6 +1082,126 @@ def run_ai_browser_control(project, provider, profile=None, unsafe=False):
     return report
 
 
+def run_ai_browser_form_control(project, provider, unsafe=False):
+    label = "AI Browser Control unsafe form policy" if unsafe else "AI Browser Control safe form policy"
+    payload = {
+        "provider_id": provider["id"],
+        "goal": "force_unsafe_ai_browser_form_action" if unsafe else "force_safe_ai_browser_form_action",
+        "start_url": BROWSER_TARGET_URL,
+        "max_steps": 3,
+        "max_depth": 2,
+        "same_origin_only": True,
+    }
+    run = request("POST", f"/api/v1/projects/{project['id']}/ai-browser-control-runs", payload)
+    run_id = run["id"]
+    print(f"started {label} run: {run_id}")
+
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/ai-browser-control-runs/{run_id}")
+        status = current["status"]
+        print(f"{label} status: {status}")
+        if status in ("completed", "failed", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"{label} run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    report = request("GET", f"/api/v1/ai-browser-control-runs/{run_id}/report")
+    assert_no_demo_secret(report, f"{label} JSON report")
+    if report["run"]["status"] != "completed":
+        raise RuntimeError(f"{label} did not complete: {report['run']}")
+    steps = report.get("steps") or []
+    if unsafe:
+        if not any(step.get("action_type") == "submit_safe_get_form" and step.get("policy_decision") == "blocked" for step in steps):
+            raise RuntimeError(f"{label} did not block unsafe form proposal: {steps}")
+    else:
+        if not any(step.get("action_type") == "submit_safe_get_form" and step.get("policy_decision") == "approved" for step in steps):
+            raise RuntimeError(f"{label} did not approve safe form proposal: {steps}")
+        if not any("/search?q=demo" in (step.get("final_url") or step.get("action_target_url") or "") for step in steps):
+            raise RuntimeError(f"{label} did not execute the safe demo search form: {steps}")
+    assert_report_intelligence(report, f"{label} JSON report")
+    html = fetch_text(f"/api/v1/ai-browser-control-runs/{run_id}/report.html")
+    assert_no_demo_secret(html, f"{label} HTML report")
+    assert_report_intelligence_html(html, label)
+    print(f"{label} JSON report: {API_URL}/api/v1/ai-browser-control-runs/{run_id}/report")
+    print(f"{label} HTML report: {API_URL}/api/v1/ai-browser-control-runs/{run_id}/report.html")
+    return report
+
+
+def run_safe_form_testing(project, discovery_report, profile=None):
+    payload = {
+        "use_latest_discovery": True,
+        "target_url": BROWSER_TARGET_URL,
+        "max_forms": 12,
+        "max_tests_per_form": 1,
+        "safe_get_only": True,
+    }
+    if profile:
+        payload["credential_profile_id"] = profile["id"]
+    run = request("POST", f"/api/v1/projects/{project['id']}/form-test-runs", payload)
+    run_id = run["id"]
+    print(f"started Safe Form Testing run: {run_id}")
+    assert_no_demo_secret(run, "Safe Form Testing start response")
+
+    deadline = time.time() + TIMEOUT_SECONDS
+    while time.time() < deadline:
+        current = request("GET", f"/api/v1/form-test-runs/{run_id}")
+        status = current["status"]
+        print(f"Safe Form Testing status: {status}")
+        if status in ("completed", "failed", "error"):
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError(f"Safe Form Testing run {run_id} did not finish within {TIMEOUT_SECONDS} seconds")
+
+    report = request("GET", f"/api/v1/form-test-runs/{run_id}/report")
+    print(f"Safe Form Testing report: {json.dumps(report, indent=2)}")
+    assert_no_demo_secret(report, "Safe Form Testing JSON report")
+    if report["run"]["status"] != "completed":
+        raise RuntimeError(f"Safe Form Testing did not complete: {report['run']}")
+    if report["run"].get("discovery_run_id") != discovery_report["run"]["id"]:
+        raise RuntimeError(f"Safe Form Testing did not use latest discovery run: {report['run']}")
+    summary = report.get("summary") or {}
+    if int(summary.get("forms_detected") or 0) < 3:
+        raise RuntimeError(f"Safe Form Testing detected too few forms: {summary}")
+    if int(summary.get("forms_classified_safe") or 0) < 1:
+        raise RuntimeError(f"Safe Form Testing did not classify a safe form: {summary}")
+    if int(summary.get("forms_tested") or 0) < 1:
+        raise RuntimeError(f"Safe Form Testing did not submit a safe GET form: {summary}")
+    if int(summary.get("forms_skipped") or 0) < 1:
+        raise RuntimeError(f"Safe Form Testing did not skip unsafe forms: {summary}")
+    results = report.get("results") or []
+    if not any(result.get("decision") == "tested" and "/search?q=demo" in (result.get("submitted_url") or result.get("final_url") or "") for result in results):
+        raise RuntimeError(f"Safe Form Testing did not record the demo search submission: {results}")
+    if not any(result.get("decision") == "skipped" and result.get("safety") in ("unsafe", "unsupported") for result in results):
+        raise RuntimeError(f"Safe Form Testing did not record skipped unsafe/unsupported forms: {results}")
+    evidence_types = {item.get("type") for item in report.get("evidence", [])}
+    if not {"form_observations", "form_submission", "screenshot"}.issubset(evidence_types):
+        raise RuntimeError(f"Safe Form Testing missed expected evidence types: {evidence_types}")
+    screenshot = next(item for item in report.get("evidence", []) if item.get("type") == "screenshot")
+    headers, body = fetch_binary(f"/api/v1/evidence/{screenshot['id']}")
+    if "image/png" not in headers.get("content-type", "") or not body.startswith(b"\x89PNG"):
+        raise RuntimeError("Safe Form Testing screenshot evidence was not downloadable PNG data")
+    if any("raw_values_stored\": true" in json.dumps(item) for item in report.get("evidence", [])):
+        raise RuntimeError("Safe Form Testing evidence claimed raw values were stored")
+    assert_report_intelligence(report, "Safe Form Testing JSON report")
+
+    html = fetch_text(f"/api/v1/form-test-runs/{run_id}/report.html")
+    assert_no_demo_secret(html, "Safe Form Testing HTML report")
+    assert_report_intelligence_html(html, "Safe Form Testing")
+    if "Qualora safe form report" not in html or "Form Results" not in html:
+        raise RuntimeError("Safe Form Testing HTML report did not include expected content")
+    listed = request("GET", f"/api/v1/projects/{project['id']}/form-test-runs").get("form_test_runs", [])
+    if not any(item.get("id") == run_id for item in listed):
+        raise RuntimeError("project Safe Form Testing list did not include completed run")
+
+    print(f"Safe Form Testing JSON report: {API_URL}/api/v1/form-test-runs/{run_id}/report")
+    print(f"Safe Form Testing HTML report: {API_URL}/api/v1/form-test-runs/{run_id}/report.html")
+    print(f"Web Safe Form Testing report: {WEB_URL}/#/form-test-runs/{run_id}")
+    return report
+
+
 def run_quality_check(project, discovery_report, profile=None):
     payload = {
         "use_latest_discovery": True,
@@ -1190,10 +1310,15 @@ def assert_quality_ui_bundle():
         "AI Browser Control Report",
         "Policy Decision",
         "AI Suggestion",
+        "Safe Form Testing",
+        "Start Safe Form Testing",
+        "Safe Form Testing Report",
+        "Tested Forms",
+        "Skipped Forms",
     ):
         if expected not in bundle_text:
-            raise RuntimeError(f"web UI bundle did not include expected v0.21 UI text: {expected}")
-    print("web UI bundle includes guided onboarding, report intelligence, baselines, CI runs, issue export, quality gates, API authentication, authenticated API smoke, Quality Checks, Safe Explorer, and AI Browser Control screens")
+            raise RuntimeError(f"web UI bundle did not include expected v0.22 UI text: {expected}")
+    print("web UI bundle includes guided onboarding, report intelligence, baselines, CI runs, issue export, quality gates, API authentication, authenticated API smoke, Quality Checks, Safe Explorer, AI Browser Control, and Safe Form Testing screens")
 
 
 def wait_for_discovery_report(run_id, label):
@@ -1874,6 +1999,9 @@ def main():
     run_safe_explorer(browser_project, credential_profile)
     run_ai_browser_control(browser_project, provider)
     run_ai_browser_control(browser_project, provider, unsafe=True)
+    run_ai_browser_form_control(browser_project, provider)
+    run_ai_browser_form_control(browser_project, provider, unsafe=True)
+    run_safe_form_testing(browser_project, discovery_report, credential_profile)
     run_quality_check(browser_project, discovery_report, credential_profile)
     discovery_plan = generate_discovery_ai_test_plan(browser_project, discovery_report, provider)
     preview_test_plan_execution(discovery_plan)

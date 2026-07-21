@@ -4,6 +4,45 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.22.0-alpha] - 2026-07-21
+
+### Added
+
+- Safe Form Testing runs for projects with `frontend_url`.
+- `form_test_runs` and `form_test_results` persistence with settings, run totals, classifications, decisions, skip reasons, redacted submitted URLs, screenshot evidence links, and finding links.
+- Control-plane endpoints to create/list Safe Form Testing runs and view run detail, JSON report, and self-contained HTML report.
+- Browser worker form classification and safe same-origin GET form execution for search/filter/sort/navigation-like forms with bounded deterministic values.
+- `form_observations` and `form_submission` evidence types plus Safe Form Testing report intelligence support.
+- Deterministic form findings for safe GET passes, skipped unsafe forms, external action blocks, sensitive fields, POST skips, missing labels, submission failures, console errors, network failures, and empty result observations.
+- AI Browser Control `submit_safe_get_form` action support gated by deterministic form policy.
+- Demo web safe search/filter forms plus unsafe POST, dangerous, and external form fixtures.
+- Fake LLM safe-form and unsafe-form suggestion fixtures.
+- Web UI Safe Form Testing project card, run form, run table, report page, and reports landing integration.
+- Smoke coverage for Safe Form Testing, AI Browser Control safe/unsafe form suggestions, reports, HTML/UI text, screenshot evidence, and no secret leakage.
+- Release notes for `v0.22.0-alpha`.
+
+### Changed
+
+- Package metadata has been updated to `0.22.0-alpha`.
+- AI Browser Control sanitized observations now include safe form candidate metadata for policy-gated form suggestions.
+- Report intelligence recognizes Safe Form Testing findings as their own report source.
+- The demo web fixture now includes deterministic search and product filter result pages.
+
+### Security
+
+- Safe Form Testing executes only same-origin safe GET forms by default.
+- POST/PUT/PATCH/DELETE, password, file upload, external, sensitive-field, login, payment, checkout, transfer, refund, delete, reset, cancel, deactivate, profile/account/admin mutation, destructive, unknown, and unsupported forms are skipped with reasons.
+- Safe Form Testing uses bounded deterministic non-sensitive values and does not fuzz inputs, generate payloads, perform active scans, or execute destructive behavior.
+- Reports, evidence, AI inputs, CI output, and issue export previews must not contain raw form values, cookies, browser storage, auth headers, tokens, credentials, request bodies, response bodies, full HTML, or provider secrets.
+- AI may suggest one `submit_safe_get_form` action, but Qualora policy remains the final gate and Playwright executes only approved safe GET submissions.
+
+### Known Limitations
+
+- Safe Form Testing is alpha and limited to deterministic same-origin GET form coverage.
+- Safe QA integration is standalone for this release; Safe Form Testing reports are separate from Safe QA Runs.
+- No arbitrary form submission, POST/mutating form submission, fuzzing, payload attacks, active security scanning, destructive testing, or full form workflow coverage was added.
+- AI Browser Control form support is policy-gated and does not provide direct or free-form AI browser control.
+
 ## [v0.21.0-alpha] - 2026-07-20
 
 ### Added

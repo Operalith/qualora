@@ -76,7 +76,7 @@ func safeExplorerLimitations() []string {
 		"Buttons without deterministic safe navigation targets are observed but not clicked.",
 		"Client-side flows that require arbitrary form submission, drag-and-drop, uploads, or custom widgets are not executed.",
 		"Only metadata, screenshots, actions, skip reasons, and findings are recorded; full page HTML is not stored.",
-		"Safe QA Run integration for Safe Explorer summaries is planned for a later release; v0.21.0-alpha exposes Safe Explorer as a standalone workflow.",
+		"Safe QA Run integration for Safe Explorer summaries is planned for a later release; v0.22.0-alpha exposes Safe Explorer as a standalone workflow.",
 	}
 }
 

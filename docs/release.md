@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.21.0-alpha is the twenty-first public alpha release. It adds policy-gated AI Browser Control while keeping local auth, browser/API smoke, credential profiles, API auth profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, report intelligence, baselines, quality gates, CI runs, issue export, AI analysis, Safe QA Runs, authenticated read-only API smoke, lightweight API contract validation, and approved safe plan execution intact.
+Qualora v0.22.0-alpha is the twenty-second public alpha release. It adds Safe Form Testing and policy-approved safe GET form actions for AI Browser Control while keeping local auth, browser/API smoke, credential profiles, API auth profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, report intelligence, baselines, quality gates, CI runs, issue export, AI analysis, Safe QA Runs, authenticated read-only API smoke, lightweight API contract validation, and approved safe plan execution intact.
 
 ## Pre-Release Checklist
 
@@ -24,7 +24,7 @@ Confirm:
 - The web UI is reachable at `http://localhost:3000`.
 - A fresh database requires first-run admin setup before project data is visible.
 - Setup, login, logout, `/auth/me`, CSRF, and protected route checks pass.
-- The dashboard shows the `v0.21.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
+- The dashboard shows the `v0.22.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
 - The guided setup route `#/setup-project` renders the project basics, AI, login, OpenAPI, workflow, and results steps.
 - `POST /api/v1/onboarding/project-setup` can create a project, optionally configure a demo AI provider, optionally create a credential profile, optionally import a demo OpenAPI spec, and start selected safe checks.
 - The guided demo flow starts browser smoke, authenticated browser smoke, discovery, quality checks, Safe QA, and API smoke when all demo dependencies are configured.
@@ -36,8 +36,14 @@ Confirm:
 - Safe Explorer JSON/HTML reports and trace endpoints work and do not expose demo passwords, cookies, browser storage, auth headers, or tokens.
 - AI Browser Control runs complete against `demo-web` using `fake-llm`, execute approved safe actions, record AI suggestions, policy decisions, sanitized observations, screenshot evidence, trace data, JSON reports, and HTML reports.
 - The unsafe AI Browser Control smoke goal makes `fake-llm` propose a destructive route and Qualora records a policy block instead of executing it.
+- The AI Browser Control safe-form smoke goal makes `fake-llm` propose `submit_safe_get_form` for the demo search form and Qualora executes only the policy-approved same-origin GET URL.
+- The AI Browser Control unsafe-form smoke goal makes `fake-llm` propose an unsafe form action and Qualora records a policy block instead of submitting it.
 - AI Browser Control reports do not expose demo passwords, cookies, browser storage, auth headers, tokens, screenshots to AI, full HTML, request bodies, or response bodies.
-- The reports landing page lists recent browser, API, discovery, Safe Explorer, AI Browser Control, quality, and Safe QA reports with status, high/medium counts, grouped counts, raw counts, and report links for recent reports.
+- Project detail pages show the Safe Form Testing card, run form, run list, and warning text.
+- Safe Form Testing runs complete against `demo-web`, test safe same-origin GET search/filter forms, skip POST, login/password, dangerous, external, sensitive, and unsupported forms with reasons, and produce screenshot evidence.
+- Safe Form Testing JSON/HTML reports include summary, classifications, tested forms, skipped forms, findings, evidence, report intelligence, safety notes, and limitations.
+- Safe Form Testing reports and evidence do not contain demo passwords, raw form values, cookies, browser storage, auth headers, tokens, full HTML, request bodies, or response bodies.
+- The reports landing page lists recent browser, API, discovery, Safe Explorer, AI Browser Control, Safe Form Testing, quality, and Safe QA reports with status, high/medium counts, grouped counts, raw counts, and report links for recent reports.
 - JSON reports include `executive_summary`, `severity_counts`, `grouped_findings`, `top_findings`, `top_affected_pages`, `noise_summary`, `raw_findings_count`, `deduplication_summary`, and `safety_limitations`.
 - HTML reports include Executive Summary, Grouped Findings, Affected Pages, Noise / Repeated Findings, and the existing raw details.
 - A completed Safe QA report can be marked as the default `safe_qa` baseline.
@@ -72,10 +78,10 @@ Confirm:
 ```bash
 git status --short
 git add .
-git commit -m "feat: add policy-gated AI browser control for v0.21.0-alpha"
-git tag -a v0.21.0-alpha -m "v0.21.0-alpha"
+git commit -m "feat: add safe form testing for v0.22.0-alpha"
+git tag -a v0.22.0-alpha -m "v0.22.0-alpha"
 git push origin main
-git push origin v0.21.0-alpha
+git push origin v0.22.0-alpha
 ```
 
 ## GitHub Release
@@ -83,7 +89,7 @@ git push origin v0.21.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.21.0-alpha
+Qualora v0.22.0-alpha
 ```
 
-Use [release-notes/v0.21.0-alpha.md](release-notes/v0.21.0-alpha.md) as the release body.
+Use [release-notes/v0.22.0-alpha.md](release-notes/v0.22.0-alpha.md) as the release body.
