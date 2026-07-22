@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.22.0-alpha is the twenty-second public alpha release. It adds Safe Form Testing and policy-approved safe GET form actions for AI Browser Control while keeping local auth, browser/API smoke, credential profiles, API auth profiles, authorization checks, application discovery, passive quality checks, Safe Explorer, guided onboarding, report intelligence, baselines, quality gates, CI runs, issue export, AI analysis, Safe QA Runs, authenticated read-only API smoke, lightweight API contract validation, and approved safe plan execution intact.
+Qualora v0.23.0-alpha is the twenty-third public alpha release. It adds the dedicated Qualora Demo Lab showcase target and comprehensive end-to-end validation while keeping the existing product engines and safety policies intact.
 
 ## Pre-Release Checklist
 
@@ -12,6 +12,7 @@ make lint
 docker compose config
 docker compose up -d --build
 make smoke
+make showcase-smoke
 curl -fsS http://localhost:3000/healthz
 curl -fsS http://localhost:8080/healthz
 git diff --check
@@ -24,7 +25,11 @@ Confirm:
 - The web UI is reachable at `http://localhost:3000`.
 - A fresh database requires first-run admin setup before project data is visible.
 - Setup, login, logout, `/auth/me`, CSRF, and protected route checks pass.
-- The dashboard shows the `v0.22.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
+- The dashboard shows the `v0.23.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
+- The dashboard and guided setup expose Demo Lab showcase copy and Demo Lab target defaults.
+- `demo-lab-web`, `demo-lab-api`, and `fake-llm` become healthy under the `demo-lab` profile.
+- `make showcase-smoke` validates the full browser, API, auth, discovery, quality, form, AI, authorization, Safe QA, baseline, CI gate, and issue-export-preview workflow against Demo Lab.
+- Demo Lab reports, CI output, issue previews, and logs do not expose fake passwords, bearer tokens, cookies, browser storage, auth headers, or session material.
 - The guided setup route `#/setup-project` renders the project basics, AI, login, OpenAPI, workflow, and results steps.
 - `POST /api/v1/onboarding/project-setup` can create a project, optionally configure a demo AI provider, optionally create a credential profile, optionally import a demo OpenAPI spec, and start selected safe checks.
 - The guided demo flow starts browser smoke, authenticated browser smoke, discovery, quality checks, Safe QA, and API smoke when all demo dependencies are configured.
@@ -78,10 +83,10 @@ Confirm:
 ```bash
 git status --short
 git add .
-git commit -m "feat: add safe form testing for v0.22.0-alpha"
-git tag -a v0.22.0-alpha -m "v0.22.0-alpha"
+git commit -m "feat: add demo lab showcase target for v0.23.0-alpha"
+git tag -a v0.23.0-alpha -m "v0.23.0-alpha"
 git push origin main
-git push origin v0.22.0-alpha
+git push origin v0.23.0-alpha
 ```
 
 ## GitHub Release
@@ -89,7 +94,7 @@ git push origin v0.22.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.22.0-alpha
+Qualora v0.23.0-alpha
 ```
 
-Use [release-notes/v0.22.0-alpha.md](release-notes/v0.22.0-alpha.md) as the release body.
+Use [release-notes/v0.23.0-alpha.md](release-notes/v0.23.0-alpha.md) as the release body.

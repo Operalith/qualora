@@ -1,6 +1,6 @@
 # Qualora Web
 
-Minimal React/Vite web UI for Qualora v0.22.0-alpha.
+Minimal React/Vite web UI for Qualora v0.23.0-alpha.
 
 The UI supports:
 

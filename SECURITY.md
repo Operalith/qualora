@@ -8,7 +8,7 @@ Qualora is pre-release. No stable versions are supported yet.
 
 | Version | Supported |
 | --- | --- |
-| v0.22.0-alpha | Best-effort alpha support |
+| v0.23.0-alpha | Best-effort alpha support |
 | v0.21.0-alpha | Best-effort alpha support |
 | v0.18.0-alpha | Best-effort alpha support |
 | v0.17.0-alpha | Best-effort alpha support |
@@ -45,7 +45,9 @@ Only test systems you own or are explicitly authorized to test.
 
 Qualora must respect project-level allowed hosts. Browser automation, API checks, passive security checks, artifact collection, and future integrations must all enforce that boundary.
 
-The v0.22.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
+The v0.23.0-alpha API and web UI include local first-run admin authentication. This is intentionally minimal alpha authentication with one admin role, no password reset, no SSO/OIDC/SAML, no login rate limiting, and no audit log yet. Expose Qualora only in trusted local or self-hosted environments, or put it behind additional network access controls.
+
+The `demo-lab` Compose profile is intentionally vulnerable-looking test infrastructure. Its accounts, bearer tokens, missing headers, console errors, broken assets, contract mismatches, and server errors are deterministic local fixtures, not production examples. Demo Lab mutation routes return `405` and persist no user data. Never reuse its documented credentials or tokens outside this repository, and do not expose Demo Lab to untrusted networks.
 
 Report intelligence, baseline comparison, quality gates, CI run summaries, and issue export previews are deterministic and computed from already stored findings, safe result rows, grouped finding fingerprints, and metadata. They must not include credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, provider secrets, encrypted secret payloads, or raw AI prompts. Sensitive query values are redacted before URLs are used for grouping, fingerprints, or issue content.
 

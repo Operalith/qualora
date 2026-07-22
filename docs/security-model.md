@@ -1,6 +1,8 @@
 # Security Model
 
-Qualora is security-adjacent automation. The v0.22.0-alpha safety model is intentionally conservative.
+Qualora is security-adjacent automation. The v0.23.0-alpha safety model is intentionally conservative.
+
+Qualora Demo Lab does not broaden that model. Its unsafe-looking links, POST forms, missing headers, broken assets, errors, and contract mismatches are inert local fixtures. Mutation handlers return `405`, no real data is stored, no external services are called, and existing allowlist and policy gates remain authoritative. The documented Demo Lab passwords and tokens are fake and must never be reused.
 
 ## Scope Rule
 
@@ -256,7 +258,7 @@ Guided onboarding must keep these boundaries:
 
 ## Web UI Exposure
 
-The v0.22.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, API auth profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, discovery reports, Safe Explorer reports, Safe Form Testing reports, authorization reports, CI runs, and issue export configs require a valid local session.
+The v0.23.0-alpha web UI and control-plane API require local authentication after first-run setup. On a fresh database, `POST /api/v1/setup/admin` creates the single local admin account. The setup route is rejected after a user exists. After setup, project data, credential profiles, API auth profiles, AI provider configuration, reports, evidence, runs, API specs, test plans, discovery reports, Safe Explorer reports, Safe Form Testing reports, authorization reports, CI runs, and issue export configs require a valid local session.
 
 Sessions use an HTTP-only `qualora_session` cookie. Mutating protected API requests must include a CSRF token from the `qualora_csrf` cookie in the `X-Qualora-CSRF` header. Health, setup status, first-run admin setup, login, logout, and session introspection endpoints are intentionally public.
 
@@ -308,27 +310,27 @@ Redaction is enabled by default and masks common bearer/basic auth values, API k
 
 ## Report Intelligence Safety
 
-Report intelligence in `v0.22.0-alpha` is deterministic and computed inside the control plane from already persisted finding, result, and safe evidence metadata. It normalizes severity, groups repeated findings, classifies noisy repeated signals, summarizes affected pages, and creates executive summaries without sending data to an AI provider.
+Report intelligence in `v0.23.0-alpha` is deterministic and computed inside the control plane from already persisted finding, result, and safe evidence metadata. It normalizes severity, groups repeated findings, classifies noisy repeated signals, summarizes affected pages, and creates executive summaries without sending data to an AI provider.
 
 Report intelligence must not include credentials, cookies, local storage, session storage, authorization headers, tokens, full HTML, screenshots, request bodies, response bodies, provider secrets, or encrypted secret payloads. URLs used for grouping are redacted for sensitive query names before fingerprints or report fields are produced. Raw findings remain available, so grouping must never be treated as deletion or suppression of evidence.
 
 ## Baselines, Comparisons, And Quality Gates
 
-Baselines in `v0.22.0-alpha` are deterministic report snapshots. A baseline stores grouped finding fingerprints, severity counts, grouped finding counts, raw finding counts, and source report metadata for a known project report. It must not store credentials, cookies, local/session storage, authorization headers, tokens, screenshots, full HTML, request bodies, response bodies, provider secrets, encrypted secret payloads, or raw AI prompts.
+Baselines in `v0.23.0-alpha` are deterministic report snapshots. A baseline stores grouped finding fingerprints, severity counts, grouped finding counts, raw finding counts, and source report metadata for a known project report. It must not store credentials, cookies, local/session storage, authorization headers, tokens, screenshots, full HTML, request bodies, response bodies, provider secrets, encrypted secret payloads, or raw AI prompts.
 
 Comparison is a read-only control-plane operation. It compares fingerprints from the baseline with fingerprints from the current report and classifies new, fixed, unchanged, severity-changed, and affected-scope-changed findings. It does not start a browser worker, API worker, security scan, AI call, payload, crawl, fuzzing run, or destructive action.
 
 Quality gates evaluate comparison summaries and current severity counts. They are intended as alpha CI/release signals and do not replace human review. Gate evaluation must not hide raw findings, mutate project data, send data to AI, or execute new tests.
 
-CI runs in `v0.22.0-alpha` orchestrate existing Safe QA, baseline comparison, and quality gate behavior. CI output must stay compact and sanitized. Scripts must not print `QUALORA_PASSWORD`, local admin session cookies, CSRF tokens, tracker tokens, provider secrets, credential profile secrets, cookies, browser storage, authorization headers, or raw target application credentials.
+CI runs in `v0.23.0-alpha` orchestrate existing Safe QA, baseline comparison, and quality gate behavior. CI output must stay compact and sanitized. Scripts must not print `QUALORA_PASSWORD`, local admin session cookies, CSRF tokens, tracker tokens, provider secrets, credential profile secrets, cookies, browser storage, authorization headers, or raw target application credentials.
 
-Issue export in `v0.22.0-alpha` is optional and uses grouped sanitized findings. Issue export configs store GitHub/GitLab tokens encrypted with `QUALORA_ENCRYPTION_KEY`; API/UI responses expose only `token_configured`. Issue titles and bodies must not contain credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, raw logs, provider secrets, encrypted secret payloads, or raw AI prompts. Dry-run is the default and should be used before actual tracker issue creation.
+Issue export in `v0.23.0-alpha` is optional and uses grouped sanitized findings. Issue export configs store GitHub/GitLab tokens encrypted with `QUALORA_ENCRYPTION_KEY`; API/UI responses expose only `token_configured`. Issue titles and bodies must not contain credentials, cookies, local/session storage, auth headers, tokens, full HTML, screenshots, request bodies, response bodies, raw logs, provider secrets, encrypted secret payloads, or raw AI prompts. Dry-run is the default and should be used before actual tracker issue creation.
 
 AI-assisted test planning uses the same sanitized input path, plus optional user-provided product context. Do not put secrets, test credentials, cookies, API keys, or customer data in product context. Generated plans are stored as reviewable suggestions and are not executed automatically by Qualora. The v0.22 safe execution path can run only the approved deterministic browser DSL after explicit user action; it must not control the browser through free-form model text, call mutating APIs, submit forms, or perform unsupported generated steps. Authorization execution, application discovery, Interactive Safe Explorer, Safe Form Testing, guided login setup, report intelligence, baselines, CI runs, and issue export previews are deterministic and user-configured, not AI-generated.
 
 ## Policy-Gated AI Browser Control
 
-AI Browser Control in `v0.22.0-alpha` is AI-suggested but not direct AI browser control. The browser worker captures a sanitized observation, sends that observation plus the bounded user goal to an OpenAI-compatible provider, parses one strict JSON action, and runs the deterministic policy engine before Playwright can execute anything.
+AI Browser Control in `v0.23.0-alpha` is AI-suggested but not direct AI browser control. The browser worker captures a sanitized observation, sends that observation plus the bounded user goal to an OpenAI-compatible provider, parses one strict JSON action, and runs the deterministic policy engine before Playwright can execute anything.
 
 Allowed action types are limited to safe navigation, policy-approved safe GET form submission, assertions, metadata collection, screenshot capture, and `stop`: `goto`, `click_link`, `click_safe_navigation`, `submit_safe_get_form`, `assert_text_visible`, `assert_url_contains`, `assert_title_contains`, `capture_screenshot`, `collect_browser_signals`, and `stop`.
 

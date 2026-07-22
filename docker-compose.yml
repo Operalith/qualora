@@ -113,7 +113,7 @@ services:
     ports:
       - "${MOCK_API_PORT:-18081}:8080"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -154,9 +154,44 @@ services:
       context: .
       dockerfile: scripts/fake-llm/Dockerfile
     container_name: qualora-fake-llm
-    profiles: ["smoke"]
+    profiles: ["smoke", "demo-lab"]
     ports:
       - "${FAKE_LLM_PORT:-18083}:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  demo-lab-web:
+    build:
+      context: .
+      dockerfile: scripts/demo-lab/web/Dockerfile
+    container_name: qualora-demo-lab-web
+    profiles: ["demo-lab"]
+    environment:
+      DEMO_LAB_MODE: ${DEMO_LAB_MODE:-baseline}
+      DEMO_LAB_SLOW_MS: ${DEMO_LAB_SLOW_MS:-1200}
+    ports:
+      - "${DEMO_LAB_WEB_PORT:-18085}:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  demo-lab-api:
+    build:
+      context: .
+      dockerfile: scripts/demo-lab/api/Dockerfile
+    container_name: qualora-demo-lab-api
+    profiles: ["demo-lab"]
+    environment:
+      DEMO_LAB_MODE: ${DEMO_LAB_MODE:-baseline}
+    ports:
+      - "${DEMO_LAB_API_PORT:-18086}:8080"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s

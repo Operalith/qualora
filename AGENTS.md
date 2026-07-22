@@ -10,7 +10,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.22.0-alpha` Docker Compose MVP working.
+- Keep the `v0.23.0-alpha` Docker Compose MVP working.
+- Keep the dedicated `demo-lab` profile and `make showcase-smoke` deterministic, local-only, and free of real secrets or state-changing fixtures.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.

@@ -206,7 +206,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.22.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.23.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -624,7 +624,7 @@ function Dashboard({
             <h2>Qualora version badge: {formatVersionBadge(version)}</h2>
             <p>Configure a real project, optional AI, optional login, optional OpenAPI, and start the first safe workflow.</p>
           </div>
-          <span className="pill">Qualora v0.22.0-alpha</span>
+          <span className="pill">Qualora v0.23.0-alpha</span>
         </div>
         <div className="quick-grid">
           <a className="quick-card" href="#/setup-project">
@@ -635,6 +635,10 @@ function Dashboard({
             <strong>{demoBusy ? "Starting demo workflow" : "Run demo workflow"}</strong>
             <span>Use demo-web, demo-api, and fake-llm for deterministic local verification.</span>
           </button>
+          <a className="quick-card" href="#/setup-project">
+            <strong>Try Qualora Demo Lab</strong>
+            <span>Load the dedicated showcase target defaults for browser, API, auth, quality, and safe form workflows.</span>
+          </a>
         </div>
       </section>
 
@@ -838,6 +842,49 @@ function ProjectSetupWizard({ onCompleted }: { onCompleted: (response: ProjectSe
     setError("");
   }
 
+  function loadDemoLabDefaults() {
+    setProjectForm({
+      name: "Qualora Demo Lab",
+      frontend_url: "http://demo-lab-web:8080",
+      api_base_url: "http://demo-lab-api:8080",
+      allowed_hosts: "demo-lab-web, demo-lab-api",
+      allow_private_targets: true
+    });
+    setAIMode("demo");
+    setCredentialMode("create");
+    setCredentialForm({
+      ...wizardCredentialDefaults(),
+      name: "Demo Lab Admin",
+      username: "admin@example.com",
+      password: "admin-password",
+      login_url: "http://demo-lab-web:8080/login",
+      username_selector: 'input[name="email"]',
+      password_selector: 'input[name="password"]',
+      submit_selector: 'button[type="submit"]',
+      success_url_contains: "/dashboard",
+      success_text_contains: "Welcome to Demo Lab",
+      failure_text_contains: "Invalid credentials"
+    });
+    setAPISpecMode("url");
+    setAPISpecForm({
+      name: "Qualora Demo Lab API",
+      source_url: "http://demo-lab-api:8080/openapi.yaml",
+      raw_spec: ""
+    });
+    setWorkflow({
+      browser_smoke: true,
+      discovery: true,
+      quality_checks: true,
+      safe_qa_run: true,
+      execute_safe_qa: false,
+      api_smoke: true,
+      authenticated_smoke: true
+    });
+    setStep(5);
+    setResult(undefined);
+    setError("");
+  }
+
   async function submit() {
     setSubmitting(true);
     setError("");
@@ -864,9 +911,14 @@ function ProjectSetupWizard({ onCompleted }: { onCompleted: (response: ProjectSe
             <h2>Create a project and run first checks</h2>
             <p>Configure only what you need. AI, login, and OpenAPI are optional.</p>
           </div>
-          <button type="button" className="secondary" onClick={loadDemoDefaults}>
-            Load demo workflow
-          </button>
+          <div className="actions">
+            <button type="button" className="secondary" onClick={loadDemoDefaults}>
+              Load demo workflow
+            </button>
+            <button type="button" className="secondary" onClick={loadDemoLabDefaults}>
+              Load Demo Lab defaults
+            </button>
+          </div>
         </div>
         <div className="wizard-steps">
           {["Basics", "AI", "Login", "OpenAPI", "Workflow", "Results"].map((label, index) => (

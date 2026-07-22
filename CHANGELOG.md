@@ -4,6 +4,35 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.23.0-alpha] - 2026-07-22
+
+### Added
+
+- Dedicated `demo-lab-web` showcase target with stable public, authenticated, role-aware, safe-form, unsafe-action, and passive quality fixtures.
+- Dedicated `demo-lab-api` OpenAPI target with public/authenticated safe reads, skipped mutating and unresolved-parameter operations, an intentional contract mismatch, and deterministic server errors.
+- `demo-lab` Docker Compose profile with baseline/regressed fixture modes and host ports for manual demonstrations.
+- `scripts/run-demo-lab.sh`, `make showcase-smoke`, and comprehensive end-to-end validation against Demo Lab.
+- Dashboard `Try Qualora Demo Lab` copy and guided setup Demo Lab defaults.
+- Demo Lab documentation and release notes.
+
+### Changed
+
+- Package and app metadata have been updated to `0.23.0-alpha`.
+- Smoke login selectors and success text can be configured per deterministic target while preserving existing smoke behavior.
+- Fake LLM discovery planning includes stable safe search and product-filter scenarios suitable for both original demo and Demo Lab targets.
+
+### Security
+
+- Demo Lab mutation handlers are inert and return `405`; no real data or external service is used.
+- Existing allowlist, same-origin, safe-method, deterministic form, and AI browser policy gates remain unchanged.
+- Showcase smoke validates that fake passwords, tokens, cookies, browser storage, authorization headers, and session material do not appear in reports or CI/issue-preview output.
+
+### Known Limitations
+
+- Demo Lab is deterministic local showcase infrastructure, not a production application.
+- Regression mode requires explicit service recreation and does not replace human review or real target validation.
+- No destructive testing, active scanning, payload attacks, or fuzzing was added.
+
 ## [v0.22.0-alpha] - 2026-07-21
 
 ### Added

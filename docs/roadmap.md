@@ -301,7 +301,20 @@ Current alpha scope:
 - Demo web search/filter/unsafe/external form fixtures.
 - Smoke validation for safe GET execution, unsafe skips, form reports, policy-approved and policy-blocked AI form suggestions, UI bundle text, and no secret leakage.
 
-## Phase 23: Run And Worker Hardening
+## v0.23.0-alpha
+
+Current alpha scope:
+
+- Dedicated `demo-lab-web` and `demo-lab-api` local showcase services.
+- Stable public, authenticated, role-aware, safe-form, unsafe-action, and passive quality fixtures.
+- Public and authenticated OpenAPI fixtures with safe skipped operations, contract mismatch, and deterministic errors.
+- Baseline and opt-in regressed fixture modes for local comparison demonstrations.
+- Fake LLM compatibility for Demo Lab discovery plans, safe navigation, safe GET forms, and unsafe policy-block suggestions.
+- `scripts/run-demo-lab.sh` and `make showcase-smoke` for comprehensive end-to-end validation.
+- Dashboard and guided setup Demo Lab copy/defaults.
+- Demo Lab operator documentation, release notes, and secret-redaction validation.
+
+## Phase 24: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -315,14 +328,14 @@ Current alpha scope:
 - Move AI-assisted test planning to an async analyzer worker.
 - Safe QA Run integration for Safe Explorer summaries if it can remain explicit and non-autonomous.
 
-## Phase 23: Deeper API Checks
+## Phase 24: Deeper API Checks
 
 - More complete OpenAPI validation beyond the lightweight v0.20 checks.
 - Richer response schema coverage for safe methods without storing response bodies.
 - Configurable endpoint limits and path filters.
 - Authenticated API testing beyond simple configured profile injection, if it can remain explicit and read-only.
 
-## Phase 24: Quality Check Deepening
+## Phase 25: Quality Check Deepening
 
 - Optional axe-core integration or richer accessibility summaries.
 - Lighthouse/Core Web Vitals-style performance collection if it can stay safe and lightweight.

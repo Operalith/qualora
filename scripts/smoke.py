@@ -20,6 +20,11 @@ BROWSER_ALLOWED_HOST = os.environ.get(
 DEMO_USERNAME = os.environ.get("QUALORA_DEMO_USERNAME", "demo@example.com")
 DEMO_PASSWORD = os.environ.get("QUALORA_DEMO_PASSWORD", "demo-password")
 DEMO_API_TOKEN = os.environ.get("QUALORA_DEMO_API_TOKEN", "demo-api-token")
+LOGIN_USERNAME_SELECTOR = os.environ.get("QUALORA_LOGIN_USERNAME_SELECTOR", "#username")
+LOGIN_PASSWORD_SELECTOR = os.environ.get("QUALORA_LOGIN_PASSWORD_SELECTOR", "#password")
+LOGIN_SUBMIT_SELECTOR = os.environ.get("QUALORA_LOGIN_SUBMIT_SELECTOR", "#login-submit")
+LOGIN_SUCCESS_TEXT = os.environ.get("QUALORA_LOGIN_SUCCESS_TEXT", "Authenticated area")
+EXPECTED_VERSION = os.environ.get("QUALORA_EXPECTED_VERSION", "0.23.0-alpha")
 ROLE_CREDENTIALS = [
     ("Qualora Demo Admin", "admin@example.com", "admin-password", "admin", "Demo Admin"),
     ("Qualora Demo Readonly", "readonly@example.com", "readonly-password", "readonly", "Demo Readonly"),
@@ -142,7 +147,7 @@ def login_admin():
 def setup_and_login():
     status = public_request("GET", "/api/v1/setup/status")
     print(f"setup status: {json.dumps(status, indent=2)}")
-    if "0.22.0-alpha" not in status.get("version", ""):
+    if EXPECTED_VERSION not in status.get("version", ""):
         raise RuntimeError(f"unexpected setup status version: {status}")
     expect_http_error("GET", "/api/v1/projects", 401)
     print("protected endpoint rejects unauthenticated requests")
@@ -262,11 +267,11 @@ def create_credential_profile(project):
             "username": DEMO_USERNAME,
             "password": DEMO_PASSWORD,
             "login_url": login_url,
-            "username_selector": "#username",
-            "password_selector": "#password",
-            "submit_selector": "#login-submit",
+            "username_selector": LOGIN_USERNAME_SELECTOR,
+            "password_selector": LOGIN_PASSWORD_SELECTOR,
+            "submit_selector": LOGIN_SUBMIT_SELECTOR,
             "success_url_contains": "/dashboard",
-            "success_text_contains": "Authenticated area",
+            "success_text_contains": LOGIN_SUCCESS_TEXT,
             "failure_text_contains": "Invalid credentials",
             "post_login_wait_ms": 100,
             "is_default": True,
@@ -305,11 +310,11 @@ def create_role_credential_profile(project, name, username, password, role_name,
             "username": username,
             "password": password,
             "login_url": login_url,
-            "username_selector": "#username",
-            "password_selector": "#password",
-            "submit_selector": "#login-submit",
+            "username_selector": LOGIN_USERNAME_SELECTOR,
+            "password_selector": LOGIN_PASSWORD_SELECTOR,
+            "submit_selector": LOGIN_SUBMIT_SELECTOR,
             "success_url_contains": "/dashboard",
-            "success_text_contains": "Authenticated area",
+            "success_text_contains": LOGIN_SUCCESS_TEXT,
             "failure_text_contains": "Invalid credentials",
             "post_login_wait_ms": 100,
             "is_default": is_default,
@@ -1315,10 +1320,13 @@ def assert_quality_ui_bundle():
         "Safe Form Testing Report",
         "Tested Forms",
         "Skipped Forms",
+        "Try Qualora Demo Lab",
+        "Load Demo Lab defaults",
+        "Qualora v0.23.0-alpha",
     ):
         if expected not in bundle_text:
-            raise RuntimeError(f"web UI bundle did not include expected v0.22 UI text: {expected}")
-    print("web UI bundle includes guided onboarding, report intelligence, baselines, CI runs, issue export, quality gates, API authentication, authenticated API smoke, Quality Checks, Safe Explorer, AI Browser Control, and Safe Form Testing screens")
+            raise RuntimeError(f"web UI bundle did not include expected v0.23 UI text: {expected}")
+    print("web UI bundle includes Demo Lab showcase copy, guided onboarding, report intelligence, baselines, CI runs, issue export, quality gates, API authentication, authenticated API smoke, Quality Checks, Safe Explorer, AI Browser Control, and Safe Form Testing screens")
 
 
 def wait_for_discovery_report(run_id, label):
@@ -1400,11 +1408,11 @@ def run_guided_project_setup(provider):
                     "username": DEMO_USERNAME,
                     "password": DEMO_PASSWORD,
                     "login_url": f"{BROWSER_TARGET_URL.rstrip('/')}/login",
-                    "username_selector": "#username",
-                    "password_selector": "#password",
-                    "submit_selector": "#login-submit",
+                    "username_selector": LOGIN_USERNAME_SELECTOR,
+                    "password_selector": LOGIN_PASSWORD_SELECTOR,
+                    "submit_selector": LOGIN_SUBMIT_SELECTOR,
                     "success_url_contains": "/dashboard",
-                    "success_text_contains": "Authenticated area",
+                    "success_text_contains": LOGIN_SUCCESS_TEXT,
                     "failure_text_contains": "Invalid credentials",
                     "post_login_wait_ms": 100,
                     "is_default": True,

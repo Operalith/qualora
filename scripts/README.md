@@ -13,3 +13,8 @@ Current scripts:
 - `mock-api/server.js`: older deterministic local API retained for compatibility with earlier alpha API worker checks.
 - `demo-web/server.js`: deterministic local frontend used by browser, login, authenticated smoke, application discovery, passive quality, authorization, Safe QA, and safe test plan smoke tests.
 - `fake-llm/server.js`: deterministic OpenAI-compatible chat completions provider used by `make smoke`.
+- `demo-lab/web`: dedicated showcase web target with authentication, roles, safe/unsafe forms, discovery actions, and passive quality fixtures.
+- `demo-lab/api`: dedicated showcase OpenAPI target with public/authenticated safe reads, contract mismatch, server-error, and skipped mutation fixtures.
+- `run-demo-lab.sh`: starts the `demo-lab` profile and runs the comprehensive end-to-end showcase without printing configured secrets.
+
+Use `make showcase-smoke` to run the existing smoke assertions against Demo Lab, or `scripts/run-demo-lab.sh` to start the complete stack and validate it in one command.

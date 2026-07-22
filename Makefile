@@ -1,4 +1,4 @@
-.PHONY: dev test lint compose-up compose-down logs smoke
+.PHONY: dev test lint compose-up compose-down logs smoke showcase-smoke demo-lab
 
 dev: compose-up
 
@@ -27,3 +27,21 @@ logs:
 smoke:
 	docker compose --profile smoke up -d --build --force-recreate demo-api demo-web fake-llm
 	python3 scripts/smoke.py
+
+showcase-smoke:
+	docker compose --profile demo-lab up -d --build demo-lab-web demo-lab-api fake-llm
+	@QUALORA_TARGET_URL=http://demo-lab-web:8080 \
+	QUALORA_ALLOWED_HOST=demo-lab-web \
+	QUALORA_DEMO_USERNAME=admin@example.com \
+	QUALORA_DEMO_PASSWORD=admin-password \
+	QUALORA_LOGIN_USERNAME_SELECTOR='input[name="email"]' \
+	QUALORA_LOGIN_SUCCESS_TEXT='Welcome to Demo Lab' \
+	DEMO_WEB_HEALTH_URL=http://localhost:$${DEMO_LAB_WEB_PORT:-18085}/health \
+	QUALORA_API_SMOKE_URL=http://demo-lab-api:8080 \
+	QUALORA_API_SMOKE_OPENAPI_URL=http://demo-lab-api:8080/openapi.yaml \
+	QUALORA_API_SMOKE_ALLOWED_HOST=demo-lab-api \
+	DEMO_API_HEALTH_URL=http://localhost:$${DEMO_LAB_API_PORT:-18086}/health \
+	python3 scripts/smoke.py
+
+demo-lab:
+	scripts/run-demo-lab.sh

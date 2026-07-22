@@ -44,7 +44,7 @@ const testPlan = {
         {
           order: 2,
           action: "assert_title_contains",
-          target: "Qualora Demo Web",
+          target: "Qualora Demo",
           data: "",
           expected_result: "The page title identifies the demo web target."
         },
@@ -186,7 +186,7 @@ const discoveryTestPlan = {
       preconditions: ["A completed Qualora discovery map includes the public home route."],
       steps: [
         { order: 1, action: "goto", target: "/", data: "", expected_result: "The discovered home route loads." },
-        { order: 2, action: "assert_title_contains", target: "Qualora Demo Web", data: "", expected_result: "The title matches the discovered demo application." },
+        { order: 2, action: "assert_title_contains", target: "Qualora Demo", data: "", expected_result: "The title matches the discovered demo application." },
         { order: 3, action: "assert_text_visible", target: "Self-hosted QA automation demo", data: "", expected_result: "The discovered page text is visible." },
         { order: 4, action: "collect_browser_signals", target: "", data: "", expected_result: "Console and network observations are collected." }
       ],
@@ -221,6 +221,29 @@ const discoveryTestPlan = {
       requires_authentication: false,
       related_findings: [],
       tags: ["generated_from_discovery", "safe_executable_candidate", "regression"]
+    },
+    {
+      id: "discovery-search-and-filter",
+      name: "Discovered search and product filter routes",
+      type: "functional",
+      priority: "medium",
+      risk: "low",
+      description: "Verify deterministic Demo Lab GET search and filter result routes with read-only navigation.",
+      preconditions: ["The discovery map includes the public search and product routes."],
+      steps: [
+        { order: 1, action: "goto", target: "/search?q=demo", data: "", expected_result: "The safe search route loads." },
+        { order: 2, action: "assert_text_visible", target: "Search results for demo", data: "", expected_result: "The deterministic search result is visible." },
+        { order: 3, action: "goto", target: "/products?category=books", data: "", expected_result: "The safe product filter route loads." },
+        { order: 4, action: "assert_text_visible", target: "Products", data: "", expected_result: "The deterministic product filter result is visible." },
+        { order: 5, action: "capture_screenshot", target: "", data: "", expected_result: "Screenshot evidence is captured." }
+      ],
+      assertions: ["Search and filter routes stay same-origin and read-only."],
+      test_data_needed: [],
+      automation_candidate: true,
+      destructive: false,
+      requires_authentication: false,
+      related_findings: [],
+      tags: ["generated_from_discovery", "safe_executable_candidate", "read_only", "demo_lab"]
     }
   ],
   suggested_next_instrumentation: [

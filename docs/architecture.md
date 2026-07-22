@@ -1,6 +1,8 @@
 # Architecture
 
-Qualora v0.22.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, native CI run orchestration, optional sanitized GitHub/GitLab issue export, safe deterministic application discovery, Interactive Safe Explorer, policy-gated AI Browser Control, Safe Form Testing, passive front-end quality checks, project-scoped credential profiles, project-scoped API auth profiles, deterministic selector-based login checks, authenticated browser smoke runs, authenticated read-only API smoke runs, lightweight OpenAPI contract validation, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
+Qualora v0.23.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, native CI run orchestration, optional sanitized GitHub/GitLab issue export, safe deterministic application discovery, Interactive Safe Explorer, policy-gated AI Browser Control, Safe Form Testing, passive front-end quality checks, project-scoped credential profiles, project-scoped API auth profiles, deterministic selector-based login checks, authenticated browser smoke runs, authenticated read-only API smoke runs, lightweight OpenAPI contract validation, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
+
+The `demo-lab` Compose profile is release validation infrastructure rather than a new testing engine. It provides a deterministic target application and API that exercise the existing control-plane, browser-worker, API, report, baseline, gate, and UI paths end to end.
 
 ## Runtime Components
 
@@ -332,7 +334,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.22.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.23.0-alpha`.
 
 ### PostgreSQL
 
@@ -392,6 +394,10 @@ The `mock-api` Compose service is profile-gated for smoke tests. It is not part 
 ### `fake-llm`
 
 The `fake-llm` Compose service is profile-gated for smoke tests. It implements the OpenAI-compatible `/v1/chat/completions` shape and returns deterministic JSON analysis or deterministic JSON test plans so tests never call an external LLM provider.
+
+### `demo-lab-web` and `demo-lab-api`
+
+The `demo-lab` profile adds two local-only target services. `demo-lab-web` exposes stable public, authenticated, role-aware, safe-form, unsafe-action, and passive quality fixtures. `demo-lab-api` exposes an OpenAPI 3.0 document, public and bearer-authenticated safe reads, skipped mutating operations, an intentional contract mismatch, and deterministic server errors. Neither service persists user data or calls external services.
 
 ## Optional AI Features
 

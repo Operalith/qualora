@@ -125,7 +125,7 @@ func formTestLimitations() []string {
 		"Safe Form Testing is alpha coverage and is not a full form, workflow, accessibility, security, or contract test suite.",
 		"Only simple GET search/filter/sort/navigation forms are submitted by default.",
 		"Forms requiring JavaScript-only custom widgets, POST requests, authentication secrets, file uploads, CAPTCHAs, payments, or mutating workflows are skipped.",
-		"Safe QA Run aggregation for form-test summaries is planned for a later release; v0.22.0-alpha exposes Safe Form Testing as a standalone workflow.",
+		"Safe QA Run aggregation for form-test summaries is planned for a later release; v0.23.0-alpha exposes Safe Form Testing as a standalone workflow.",
 	}
 }
 
