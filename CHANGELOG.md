@@ -4,6 +4,38 @@ All notable changes to Qualora will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic versioning once stable releases begin.
 
+## [v0.24.0-alpha] - 2026-07-23
+
+### Added
+
+- Simplified dashboard with Demo Lab, real project, reports, and compact workspace status actions.
+- Project Cockpit with common QA actions up front and existing specialized features preserved under Advanced Tools.
+- Reusable near-live/replay Run Viewer for AI Browser Control and Safe Explorer.
+- Run Viewer step timelines with screenshot evidence, action metadata, sanitized observations, AI suggestions, policy decisions, execution outcomes, and blocked/skipped reasons.
+- Optional `scripts/run-demo-lab-real-llm.sh` and `make demo-lab-real-llm` workflow for OpenAI-compatible providers.
+- Real-provider setup guide and safe missing-environment/API-key-output validation.
+- Project-grouped report highlights and Demo Lab Fake LLM versus configured real-provider selection.
+
+### Changed
+
+- Browser evidence metadata now consistently records step index, page URL, action type, action label, and run type where practical.
+- AI Browser Control captures screenshot evidence after an executed action and keeps pre-action evidence for blocked or skipped suggestions.
+- Package and app metadata have been updated to `0.24.0-alpha`.
+- Smoke and showcase coverage validate Run Viewer copy, evidence metadata, screenshot access, and secret redaction.
+
+### Security
+
+- Fake LLM remains the deterministic smoke and CI default; real provider use is opt-in and may incur provider cost.
+- Run Viewer uses existing authenticated report/evidence endpoints and never sends screenshots to AI.
+- Real-provider scripts validate configuration without printing API keys or secret extra-header values.
+- Existing allowlist, same-origin, safe-method, deterministic form, and policy-gated browser controls remain unchanged.
+
+### Known Limitations
+
+- Run Viewer is near-live polling and replay, not video streaming, and initially covers AI Browser Control and Safe Explorer.
+- Real LLM mode supports OpenAI-compatible chat completions only and is excluded from deterministic smoke.
+- No arbitrary form submission, destructive testing, active scanning, payload attacks, or fuzzing was added.
+
 ## [v0.23.0-alpha] - 2026-07-22
 
 ### Added

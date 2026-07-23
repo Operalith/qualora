@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Qualora Control Plane API
-  version: 0.23.0-alpha
+  version: 0.24.0-alpha
   description: API for first-run local admin setup, local session authentication, guided project onboarding, creating QA projects, running safe application discovery, passive quality checks, safe form testing for same-origin GET forms, policy-gated AI Browser Control, importing OpenAPI specs, managing encrypted API auth profiles, running safe authenticated read-only API smoke and lightweight OpenAPI contract checks, starting browser/API smoke runs, managing project-scoped credential profiles, running deterministic login checks and authenticated browser smoke tests, managing explicit role-aware authorization checks, managing optional OpenAI-compatible AI providers, generating reviewable AI test plans, executing approved safe test plan steps, reading protected reports with deterministic report intelligence, managing deterministic report baselines, comparing reports, evaluating CI-friendly quality gates, orchestrating native CI runs, managing optional sanitized GitHub/GitLab issue export, and downloading protected stored evidence objects.
 servers:
   - url: http://localhost:8080
@@ -2364,7 +2364,7 @@ components:
           type: boolean
         version:
           type: string
-          example: 0.23.0-alpha
+          example: 0.24.0-alpha
     SetupAdminRequest:
       type: object
       additionalProperties: false
@@ -3907,7 +3907,7 @@ components:
           type: boolean
         policy_version:
           type: string
-          example: v0.23.0-alpha
+          example: v0.24.0-alpha
         execution_mode:
           type: string
           example: policy_gated

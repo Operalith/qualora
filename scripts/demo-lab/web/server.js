@@ -32,7 +32,11 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === "GET" && url.pathname === "/health") {
-    writeJSON(response, 200, { status: "ok", service: "demo-lab-web", mode });
+    response.writeHead(200, pageHeaders(url.pathname, {
+      "content-type": "application/json; charset=utf-8",
+      "access-control-allow-origin": "*"
+    }));
+    response.end(JSON.stringify({ status: "ok", service: "demo-lab-web", mode }));
     return;
   }
 

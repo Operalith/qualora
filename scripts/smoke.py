@@ -24,7 +24,7 @@ LOGIN_USERNAME_SELECTOR = os.environ.get("QUALORA_LOGIN_USERNAME_SELECTOR", "#us
 LOGIN_PASSWORD_SELECTOR = os.environ.get("QUALORA_LOGIN_PASSWORD_SELECTOR", "#password")
 LOGIN_SUBMIT_SELECTOR = os.environ.get("QUALORA_LOGIN_SUBMIT_SELECTOR", "#login-submit")
 LOGIN_SUCCESS_TEXT = os.environ.get("QUALORA_LOGIN_SUCCESS_TEXT", "Authenticated area")
-EXPECTED_VERSION = os.environ.get("QUALORA_EXPECTED_VERSION", "0.23.0-alpha")
+EXPECTED_VERSION = os.environ.get("QUALORA_EXPECTED_VERSION", "0.24.0-alpha")
 ROLE_CREDENTIALS = [
     ("Qualora Demo Admin", "admin@example.com", "admin-password", "admin", "Demo Admin"),
     ("Qualora Demo Readonly", "readonly@example.com", "readonly-password", "readonly", "Demo Readonly"),
@@ -975,6 +975,12 @@ def run_safe_explorer(project, profile=None):
     if "screenshot" not in {item.get("type") for item in evidence}:
         raise RuntimeError("Safe Explorer report did not include screenshot evidence")
     screenshot = next(item for item in evidence if item.get("type") == "screenshot")
+    screenshot_metadata = screenshot.get("metadata") or {}
+    for field in ("step_index", "page_url", "action_type", "action_label", "run_type"):
+        if field not in screenshot_metadata:
+            raise RuntimeError(f"Safe Explorer screenshot evidence missed {field}: {screenshot_metadata}")
+    if screenshot_metadata.get("run_type") != "safe_explorer":
+        raise RuntimeError(f"Safe Explorer screenshot evidence had unexpected run type: {screenshot_metadata}")
     headers, body = fetch_binary(f"/api/v1/evidence/{screenshot['id']}")
     if "image/png" not in headers.get("content-type", "") or not body.startswith(b"\x89PNG"):
         raise RuntimeError("Safe Explorer screenshot evidence was not downloadable PNG data")
@@ -995,6 +1001,7 @@ def run_safe_explorer(project, profile=None):
     print(f"Safe Explorer HTML report: {API_URL}/api/v1/safe-explorer-runs/{run_id}/report.html")
     print(f"Safe Explorer trace: {API_URL}/api/v1/safe-explorer-runs/{run_id}/trace")
     print(f"Web Safe Explorer report: {WEB_URL}/#/safe-explorer-runs/{run_id}")
+    print(f"Web Safe Explorer Run Viewer: {WEB_URL}/#/run-viewer/safe-explorer/{run_id}")
     return report
 
 
@@ -1064,6 +1071,12 @@ def run_ai_browser_control(project, provider, profile=None, unsafe=False):
         if "screenshot" not in evidence_types or "ai_browser_observation" not in evidence_types:
             raise RuntimeError(f"{label} missed expected evidence types: {evidence_types}")
         screenshot = next(item for item in report.get("evidence", []) if item.get("type") == "screenshot")
+        screenshot_metadata = screenshot.get("metadata") or {}
+        for field in ("step_index", "page_url", "action_type", "action_label", "run_type"):
+            if field not in screenshot_metadata:
+                raise RuntimeError(f"{label} screenshot evidence missed {field}: {screenshot_metadata}")
+        if screenshot_metadata.get("run_type") != "ai_browser_control":
+            raise RuntimeError(f"{label} screenshot evidence had unexpected run type: {screenshot_metadata}")
         headers, body = fetch_binary(f"/api/v1/evidence/{screenshot['id']}")
         if "image/png" not in headers.get("content-type", "") or not body.startswith(b"\x89PNG"):
             raise RuntimeError(f"{label} screenshot evidence was not downloadable PNG data")
@@ -1084,6 +1097,7 @@ def run_ai_browser_control(project, provider, profile=None, unsafe=False):
     print(f"{label} HTML report: {API_URL}/api/v1/ai-browser-control-runs/{run_id}/report.html")
     print(f"{label} trace: {API_URL}/api/v1/ai-browser-control-runs/{run_id}/trace")
     print(f"Web {label} report: {WEB_URL}/#/ai-browser-control-runs/{run_id}")
+    print(f"Web {label} Run Viewer: {WEB_URL}/#/run-viewer/ai-browser-control/{run_id}")
     return report
 
 
@@ -1288,8 +1302,20 @@ def assert_quality_ui_bundle():
         "Start quality checks",
         "Quality Report",
         "Include passive quality checks",
-        "Create project with guided setup",
-        "Run demo workflow",
+        "Start here",
+        "Run Demo Lab Showcase",
+        "Create Real Project",
+        "Open Reports",
+        "Project Cockpit",
+        "Run Full Safe QA",
+        "Watch Browser Run",
+        "Run Viewer",
+        "Latest screenshot",
+        "AI suggestion",
+        "Policy decision",
+        "Demo Lab Showcase Summary",
+        "Use Fake LLM",
+        "Use Real LLM Provider",
         "Project Readiness",
         "Guided Project Setup",
         "Reports",
@@ -1320,13 +1346,13 @@ def assert_quality_ui_bundle():
         "Safe Form Testing Report",
         "Tested Forms",
         "Skipped Forms",
-        "Try Qualora Demo Lab",
         "Load Demo Lab defaults",
-        "Qualora v0.23.0-alpha",
+        "Qualora v",
+        "0.24.0-alpha",
     ):
         if expected not in bundle_text:
-            raise RuntimeError(f"web UI bundle did not include expected v0.23 UI text: {expected}")
-    print("web UI bundle includes Demo Lab showcase copy, guided onboarding, report intelligence, baselines, CI runs, issue export, quality gates, API authentication, authenticated API smoke, Quality Checks, Safe Explorer, AI Browser Control, and Safe Form Testing screens")
+            raise RuntimeError(f"web UI bundle did not include expected v0.24 UI text: {expected}")
+    print("web UI bundle includes the simplified dashboard, Project Cockpit, Run Viewer, Demo Lab LLM choices, reports, and existing advanced tools")
 
 
 def wait_for_discovery_report(run_id, label):

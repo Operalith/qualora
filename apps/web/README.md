@@ -1,13 +1,15 @@
 # Qualora Web
 
-Minimal React/Vite web UI for Qualora v0.23.0-alpha.
+Minimal React/Vite web UI for Qualora v0.24.0-alpha.
 
 The UI supports:
 
 - Listing projects.
 - First-run local admin setup.
 - Local admin login, session refresh, and logout.
-- Dashboard quick-start actions, health/status indicators, recent projects, and recent Safe QA runs.
+- Simplified dashboard actions and compact project, Safe QA, browser, finding, AI-provider, and Demo Lab status.
+- Project Cockpit with primary QA actions and collapsible Advanced Tools.
+- Near-live/replay Run Viewer for AI Browser Control and Safe Explorer step timelines, screenshots, policy decisions, and execution results.
 - Guided project setup through `#/setup-project`.
 - Creating projects.
 - Viewing project details and project runs.
@@ -40,6 +42,7 @@ The UI supports:
 - Opening the self-contained HTML report served by the control plane.
 - Previewing and downloading screenshot evidence through the control-plane evidence endpoint.
 - Configuring optional OpenAI-compatible AI providers.
+- Choosing deterministic Fake LLM or an existing configured real provider from the Demo Lab wizard.
 - Testing AI provider connectivity.
 - Running and viewing AI analysis for completed runs.
 - Generating, listing, viewing, deleting, and exporting AI-assisted test plans.

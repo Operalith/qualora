@@ -18,7 +18,7 @@ QUALORA_API_URL=http://localhost:18080 QUALORA_API_BASE_URL=http://localhost:180
 
 The web UI is exposed at `http://localhost:3000` by default. Override it with `QUALORA_WEB_PORT`.
 
-On a fresh database, open the web UI and complete first-run local admin setup before accessing projects and reports. After login, use `#/setup-project` for guided project setup or the dashboard `Run demo workflow` action for the local demo path. Project pages can start browser smoke, authenticated smoke, discovery, Interactive Safe Explorer, Safe Form Testing, passive quality, Safe QA, native CI runs, and API smoke workflows when the required project settings are present. Safe QA report pages can set baselines, compare against baselines, evaluate quality gates, and dry-run sanitized issue export. The smoke script can also create the local admin automatically and exercise the guided demo flow for demo stacks.
+On a fresh database, open the web UI and complete first-run local admin setup. The simplified dashboard exposes `Run Demo Lab Showcase`, `Create Real Project`, and `Open Reports`. Each project opens in a Project Cockpit with primary Safe QA/browser/discovery/quality actions; specialized configuration remains available under Advanced Tools.
 
 The MVP Compose stack includes:
 
@@ -45,23 +45,27 @@ The separate `demo-lab` profile includes:
 
 Run `scripts/run-demo-lab.sh` for the one-command showcase. Default host ports are `18085` for Demo Lab web and `18086` for Demo Lab API because the earlier smoke fixtures already occupy `18081` through `18084`. Override them with `DEMO_LAB_WEB_PORT` and `DEMO_LAB_API_PORT`.
 
+Run Viewer polls existing AI Browser Control or Safe Explorer report endpoints every 2.5 seconds while a run is active and becomes replay mode when the run completes. Screenshots are served only through authenticated, database-backed evidence records.
+
+Optional real-provider demos use `make demo-lab-real-llm`. They require the `QUALORA_REAL_LLM_*` variables documented in `docs/real-llm-demo.md`, may incur provider cost, and are not part of deterministic smoke or CI.
+
 The control plane receives the same MinIO/S3 configuration as the browser worker so authenticated `GET /api/v1/evidence/{evidence_id}` requests can stream screenshot evidence without exposing MinIO credentials to the web UI.
 
 Set `QUALORA_ENCRYPTION_KEY` before storing real credential profiles, API auth profiles, issue export tokens, or AI provider credentials. The default Compose value is intentionally insecure and only suitable for local demos.
 
-Authenticated API smoke in `v0.23.0-alpha` is handled by `qualora-api` for imported OpenAPI specs. It injects configured API auth only into safe read-only requests, validates hosts through the project allowlist, records sanitized auth mode and contract metadata, and never stores auth headers, tokens, API keys, request bodies, or response bodies. The smoke profile's `demo-api` service exposes bearer-token protected endpoints with the deterministic token `demo-api-token` for local verification only.
+Authenticated API smoke in `v0.24.0-alpha` is handled by `qualora-api` for imported OpenAPI specs. It injects configured API auth only into safe read-only requests, validates hosts through the project allowlist, records sanitized auth mode and contract metadata, and never stores auth headers, tokens, API keys, request bodies, or response bodies. The smoke profile's `demo-api` service exposes bearer-token protected endpoints with the deterministic token `demo-api-token` for local verification only.
 
-Report intelligence in `v0.23.0-alpha` is computed inside `qualora-api` when reports are read. It adds executive summaries, severity counts, grouped findings, top findings, affected pages, noise summaries, and deduplication metadata to JSON/HTML reports without calling an AI provider.
+Report intelligence in `v0.24.0-alpha` is computed inside `qualora-api` when reports are read. It adds executive summaries, severity counts, grouped findings, top findings, affected pages, noise summaries, and deduplication metadata to JSON/HTML reports without calling an AI provider.
 
-Baselines, quality gates, and native CI runs in `v0.23.0-alpha` are also handled by `qualora-api`. Baselines persist grouped finding fingerprints and summary metadata in PostgreSQL; comparisons and gates are computed synchronously without starting workers or requiring AI. `scripts/qualora-ci-gate.sh` evaluates an existing report, while `scripts/qualora-ci-run.sh` starts or reuses a Safe QA workflow and returns a deterministic exit code. Both scripts can log in with `QUALORA_EMAIL` and `QUALORA_PASSWORD`.
+Baselines, quality gates, and native CI runs in `v0.24.0-alpha` are also handled by `qualora-api`. Baselines persist grouped finding fingerprints and summary metadata in PostgreSQL; comparisons and gates are computed synchronously without starting workers or requiring AI. `scripts/qualora-ci-gate.sh` evaluates an existing report, while `scripts/qualora-ci-run.sh` starts or reuses a Safe QA workflow and returns a deterministic exit code. Both scripts can log in with `QUALORA_EMAIL` and `QUALORA_PASSWORD`.
 
-Issue export in `v0.23.0-alpha` is optional. GitHub/GitLab tokens are encrypted with `QUALORA_ENCRYPTION_KEY`, responses expose only `token_configured`, and `POST /api/v1/reports/{report_type}/{report_id}/export-issues` defaults to dry-run previews from grouped sanitized findings.
+Issue export in `v0.24.0-alpha` is optional. GitHub/GitLab tokens are encrypted with `QUALORA_ENCRYPTION_KEY`, responses expose only `token_configured`, and `POST /api/v1/reports/{report_type}/{report_id}/export-issues` defaults to dry-run previews from grouped sanitized findings.
 
-Interactive Safe Explorer remains policy-gated in `v0.23.0-alpha`: it executes only safe classified same-origin navigation actions by default, records skipped unsafe/unsupported actions with reasons, and does not use AI to control the browser. It does not submit POST forms, click arbitrary buttons, run payloads, fuzz inputs, perform active scans, or perform destructive actions.
+Interactive Safe Explorer remains policy-gated in `v0.24.0-alpha`: it executes only safe classified same-origin navigation actions by default, records skipped unsafe/unsupported actions with reasons, and does not use AI to control the browser. It does not submit POST forms, click arbitrary buttons, run payloads, fuzz inputs, perform active scans, or perform destructive actions.
 
-Safe Form Testing in `v0.23.0-alpha` uses `qualora-worker-browser` to classify forms and execute only same-origin safe GET forms with bounded deterministic values. The demo web service exposes deterministic search/filter forms plus POST, dangerous, and external forms so smoke can verify both execution and skip reasons. Safe Form Testing does not store raw form values, cookies, browser storage, auth headers, request bodies, response bodies, credentials, or full HTML.
+Safe Form Testing in `v0.24.0-alpha` uses `qualora-worker-browser` to classify forms and execute only same-origin safe GET forms with bounded deterministic values. The demo web service exposes deterministic search/filter forms plus POST, dangerous, and external forms so smoke can verify both execution and skip reasons. Safe Form Testing does not store raw form values, cookies, browser storage, auth headers, request bodies, response bodies, credentials, or full HTML.
 
-AI Browser Control in `v0.23.0-alpha` uses `qualora-worker-browser` plus a configured OpenAI-compatible provider. The default smoke path uses `fake-llm` to propose one typed action at a time, while Qualora validates every suggestion before Playwright executes it. The fake provider also has unsafe navigation and unsafe form suggestion fixtures that should be blocked by policy, plus a safe form fixture that may execute only the demo same-origin GET search form. AI Browser Control does not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, response bodies, or raw form values to AI.
+AI Browser Control in `v0.24.0-alpha` uses `qualora-worker-browser` plus a configured OpenAI-compatible provider. The default smoke path uses `fake-llm` to propose one typed action at a time, while Qualora validates every suggestion before Playwright executes it. The fake provider also has unsafe navigation and unsafe form suggestion fixtures that should be blocked by policy, plus a safe form fixture that may execute only the demo same-origin GET search form. AI Browser Control does not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, response bodies, or raw form values to AI.
 
 Auth-related local defaults:
 

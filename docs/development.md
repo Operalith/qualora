@@ -1,6 +1,6 @@
 # Development
 
-This document covers local development for Qualora v0.23.0-alpha.
+This document covers local development for Qualora v0.24.0-alpha.
 
 ## Requirements
 
@@ -19,6 +19,9 @@ make compose-up
 make compose-down
 make logs
 make smoke
+make showcase-smoke
+make demo-lab
+make demo-lab-real-llm
 ```
 
 Command behavior:
@@ -31,6 +34,8 @@ Command behavior:
 - `make logs`: tails API, web, browser worker, and API worker logs.
 - `make smoke`: starts the local demo web, demo API, and fake LLM profile services; performs first-run local admin setup/login/logout checks; creates an AI provider, browser project, API project, credential profiles, API auth profiles, and role-aware authorization checks; imports the demo OpenAPI spec; exercises guided project setup; starts browser, login check, authenticated browser smoke, application discovery, Interactive Safe Explorer, Safe Form Testing, passive quality, authorization, Safe QA, unauthenticated API smoke, and authenticated API smoke plus contract validation runs; polls to completion; runs AI analysis; generates run-based and discovery-aware AI test plans; previews and executes safe browser test plans; creates a Safe QA baseline; compares a second Safe QA report; evaluates a quality gate and CI compact response; runs the native CI run endpoint; runs `scripts/qualora-ci-gate.sh` and `scripts/qualora-ci-run.sh`; configures fake issue export metadata; dry-runs grouped finding issue export; exercises policy-approved and policy-blocked AI Browser Control form suggestions; prints JSON/HTML report, discovery map, Safe Explorer trace, Safe Form Testing report, API spec, credential profile, API auth profile, quality, authorization, test-plan, execution, Safe QA Run, CI run, project setup, and report index URLs; validates HTML report export; validates protected report/evidence access; validates API result rows; validates skipped unsafe API operations; validates skipped discovery links; validates Safe Explorer executed/skipped action reasons; validates Safe Form Testing tested/skipped form reasons; validates quality finding counts; validates credential and API token redaction; validates test-plan export; validates issue preview redaction; and validates screenshot evidence download.
 - `make showcase-smoke`: starts the `demo-lab` targets and fake LLM, then runs the same mature end-to-end assertions against the comprehensive Demo Lab fixtures.
+- `make demo-lab`: runs the deterministic Fake LLM showcase and prints project and report links.
+- `make demo-lab-real-llm`: validates the required real-provider environment, starts Demo Lab, and runs discovery, AI Browser Control, test planning, and Safe QA with that provider. It is opt-in and is never part of smoke or CI.
 - `scripts/run-demo-lab.sh`: starts the entire core plus `demo-lab` profile, runs showcase smoke, and prints target plus run-specific report links.
 
 ## Start The Stack
@@ -51,6 +56,10 @@ The web UI is served on:
 ```text
 http://localhost:3000
 ```
+
+The dashboard's `Run Demo Lab Showcase` action creates a deterministic local setup with Fake LLM. Open the resulting Project Cockpit to start common QA workflows. AI Browser Control and Safe Explorer rows link to the Run Viewer, which polls existing report endpoints while active and replays the same step/evidence data after completion.
+
+For a real OpenAI-compatible provider, see [real-llm-demo.md](real-llm-demo.md). Real requests may incur provider cost. Never add real-provider execution to deterministic tests.
 
 ## Run Tests
 
@@ -277,7 +286,7 @@ Relevant files:
 
 ## AI Browser Control Development
 
-`v0.23.0-alpha` keeps policy-gated AI Browser Control in the browser worker and adds a policy-approved safe GET form action. The control plane creates `ai_browser_control_runs`, queues a Redis browser job, and serves run detail, trace, JSON report, and self-contained HTML report endpoints. The browser worker captures sanitized observations, asks the selected OpenAI-compatible provider for one strict JSON action, validates it through deterministic policy, and executes only approved safe Playwright actions.
+`v0.24.0-alpha` keeps policy-gated AI Browser Control in the browser worker and adds a policy-approved safe GET form action. The control plane creates `ai_browser_control_runs`, queues a Redis browser job, and serves run detail, trace, JSON report, and self-contained HTML report endpoints. The browser worker captures sanitized observations, asks the selected OpenAI-compatible provider for one strict JSON action, validates it through deterministic policy, and executes only approved safe Playwright actions.
 
 Important files:
 
@@ -297,7 +306,7 @@ AI Browser Control must not send credentials, cookies, browser storage, auth hea
 
 ## Safe Form Testing Development
 
-`v0.23.0-alpha` adds standalone Safe Form Testing through the browser worker. The control plane creates `form_test_runs`, queues a Redis browser job, persists `form_test_results`, and serves run detail plus JSON/HTML report endpoints.
+`v0.24.0-alpha` adds standalone Safe Form Testing through the browser worker. The control plane creates `form_test_runs`, queues a Redis browser job, persists `form_test_results`, and serves run detail plus JSON/HTML report endpoints.
 
 Important files:
 
@@ -319,7 +328,7 @@ Do not add POST/PUT/PATCH/DELETE submission, arbitrary form filling, fuzzing, pa
 
 ## Report Intelligence Development
 
-`v0.23.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
+`v0.24.0-alpha` computes report intelligence when JSON or HTML reports are read. The helper lives in `apps/control-plane/report_intelligence.go` and is intentionally storage-neutral: it maps existing findings and quality result rows into a normalized internal model, computes deterministic fingerprints, groups repeated findings, normalizes severity, classifies noisy/repeated signals, and builds executive summaries.
 
 When adding new finding sources, provide stable categories, titles, recommendations, evidence IDs, and safe URL metadata where practical. Do not add secrets, cookies, local/session storage, auth headers, request bodies, response bodies, full HTML, or screenshot bytes to report intelligence inputs.
 

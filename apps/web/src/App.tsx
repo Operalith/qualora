@@ -168,6 +168,7 @@ import type {
   TestPlanScenario,
   TestRun
 } from "./types";
+import { RunViewer, type RunViewerType } from "./RunViewer";
 
 type Route =
   | { name: "dashboard" }
@@ -186,6 +187,7 @@ type Route =
   | { name: "quality-check-run"; id: string }
   | { name: "safe-explorer-run"; id: string }
   | { name: "ai-browser-control-run"; id: string }
+  | { name: "run-viewer"; runType: RunViewerType; id: string }
   | { name: "form-test-run"; id: string }
   | { name: "qa-run"; id: string }
   | { name: "run"; id: string };
@@ -206,7 +208,7 @@ export default function App() {
     user: AuthUser | null;
     version: string;
     error: string;
-  }>({ loading: true, setupRequired: false, user: null, version: "0.23.0-alpha", error: "" });
+  }>({ loading: true, setupRequired: false, user: null, version: "0.24.0-alpha", error: "" });
 
   const loadAuthState = useCallback(async () => {
     setAuth((current) => ({ ...current, loading: true, error: "" }));
@@ -313,14 +315,10 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
     await refresh();
     setRoute({ name: "run", id: run.id });
   };
-  const startDemoWorkflow = async () => {
-    const response = await runProjectSetup(demoProjectSetupPayload());
+  const startDemoLabShowcase = async () => {
+    const response = await runProjectSetup(demoLabProjectSetupPayload());
     await refresh();
-    if (response.started.safe_qa_run_id) {
-      setRoute({ name: "qa-run", id: response.started.safe_qa_run_id });
-    } else {
-      setRoute({ name: "project", id: response.project.id });
-    }
+    setRoute({ name: "project", id: response.project.id });
   };
 
   return (
@@ -389,9 +387,8 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
             version={version}
             projects={projects}
             runs={runs}
-            projectByID={projectByID}
             onStartRun={startFullRun}
-            onRunDemoWorkflow={startDemoWorkflow}
+            onRunDemoLabShowcase={startDemoLabShowcase}
           />
         )}
         {route.name === "setup-project" && (
@@ -432,6 +429,7 @@ function AuthenticatedApp({ user, version, onLogout }: { user: AuthUser; version
         {route.name === "quality-check-run" && <QualityCheckRunPage runID={route.id} />}
         {route.name === "safe-explorer-run" && <SafeExplorerRunPage runID={route.id} />}
         {route.name === "ai-browser-control-run" && <AIBrowserControlRunPage runID={route.id} />}
+        {route.name === "run-viewer" && <RunViewer runType={route.runType} runID={route.id} />}
         {route.name === "form-test-run" && <FormTestRunPage runID={route.id} />}
         {route.name === "qa-run" && <QARunPage runID={route.id} />}
         {route.name === "run" && <RunReportPage runID={route.id} cachedRun={runs.data.find((run) => run.id === route.id)} projectByID={projectByID} />}
@@ -560,19 +558,18 @@ function Dashboard({
   version,
   projects,
   runs,
-  projectByID,
   onStartRun,
-  onRunDemoWorkflow
+  onRunDemoLabShowcase
 }: {
   version: string;
   projects: LoadState<Project[]>;
   runs: LoadState<TestRun[]>;
-  projectByID: Map<string, Project>;
   onStartRun: (projectID: string) => Promise<void>;
-  onRunDemoWorkflow: () => Promise<void>;
+  onRunDemoLabShowcase: () => Promise<void>;
 }) {
   const [providers, setProviders] = useState<LoadState<AIProvider[]>>({ data: [], loading: true, error: "" });
   const [qaRuns, setQARuns] = useState<LoadState<QARun[]>>({ data: [], loading: true, error: "" });
+  const [demoLabStatus, setDemoLabStatus] = useState("Checking");
   const [demoBusy, setDemoBusy] = useState(false);
 
   useEffect(() => {
@@ -604,12 +601,34 @@ function Dashboard({
     };
   }, [projects.data, projects.loading]);
 
-  const latestRun = runs.data[0];
-  const totalFindings = runs.data.reduce((total, run) => total + (run.status === "failed" ? 1 : 0), 0);
+  useEffect(() => {
+    let canceled = false;
+    const demoURL = `${window.location.protocol}//${window.location.hostname}:18085/health`;
+    fetch(demoURL)
+      .then((response) => {
+        if (!canceled) {
+          setDemoLabStatus(response.ok ? "Reachable" : "Unavailable");
+        }
+      })
+      .catch(() => {
+        if (!canceled) {
+          setDemoLabStatus("Start demo-lab profile");
+        }
+      });
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  const latestQARun = qaRuns.data[0];
+  const latestBrowserRun = runs.data.find((run) =>
+    ["browser_smoke", "authenticated_browser_smoke", "login_check"].includes(run.run_type)
+  );
+  const latestFindings = Number(latestQARun?.summary?.total_findings || latestQARun?.summary?.findings || 0);
   async function runDemo() {
     setDemoBusy(true);
     try {
-      await onRunDemoWorkflow();
+      await onRunDemoLabShowcase();
     } finally {
       setDemoBusy(false);
     }
@@ -620,42 +639,37 @@ function Dashboard({
       <section>
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Guided first run</p>
-            <h2>Qualora version badge: {formatVersionBadge(version)}</h2>
-            <p>Configure a real project, optional AI, optional login, optional OpenAPI, and start the first safe workflow.</p>
+            <p className="eyebrow">Start here</p>
+            <h2>See Qualora test a real browser workflow</h2>
+            <p>Run the local showcase, create a real project, or jump directly to reports.</p>
           </div>
-          <span className="pill">Qualora v0.23.0-alpha</span>
+          <span className="pill">{formatVersionBadge(version)}</span>
         </div>
-        <div className="quick-grid">
-          <a className="quick-card" href="#/setup-project">
-            <strong>Create project with guided setup</strong>
-            <span>Use the wizard for target URLs, AI, credentials, OpenAPI, and first checks.</span>
-          </a>
-          <button type="button" className="quick-card button-reset" disabled={demoBusy} onClick={() => void runDemo()}>
-            <strong>{demoBusy ? "Starting demo workflow" : "Run demo workflow"}</strong>
-            <span>Use demo-web, demo-api, and fake-llm for deterministic local verification.</span>
+        <div className="start-actions">
+          <button type="button" className="start-action primary" disabled={demoBusy} onClick={() => void runDemo()}>
+            <strong>{demoBusy ? "Starting Demo Lab..." : "Run Demo Lab Showcase"}</strong>
+            <span>Start the local browser, API, quality, and Safe QA walkthrough.</span>
           </button>
-          <a className="quick-card" href="#/setup-project">
-            <strong>Try Qualora Demo Lab</strong>
-            <span>Load the dedicated showcase target defaults for browser, API, auth, quality, and safe form workflows.</span>
+          <a className="start-action" href="#/setup-project">
+            <strong>Create Real Project</strong>
+            <span>Configure your own allowed frontend and API targets.</span>
+          </a>
+          <a className="start-action" href="#/reports">
+            <strong>Open Reports</strong>
+            <span>Review the latest findings, evidence, and Safe QA results.</span>
           </a>
         </div>
       </section>
 
       <section>
-        <div className="section-heading">
-          <div>
-            <h2>Status</h2>
-            <p>Local self-hosted health and setup snapshot.</p>
-          </div>
-        </div>
-        <div className="detail-grid compact">
-          <Field label="API status" value="Reachable" />
-          <Field label="Web status" value="Reachable" />
-          <Field label="AI configured" value={providers.loading ? "Checking" : providers.data.length > 0 ? "Yes" : "No"} />
+        <h2>Workspace status</h2>
+        <div className="dashboard-status-grid">
           <Field label="Projects" value={String(projects.data.length)} />
-          <Field label="Latest run" value={latestRun ? `${formatRunType(latestRun.run_type)} ${latestRun.status}` : "No runs yet"} />
-          <Field label="Recent failed runs" value={String(totalFindings)} />
+          <Field label="Latest Safe QA run" value={latestQARun ? latestQARun.status : "No Safe QA runs"} />
+          <Field label="Latest browser run" value={latestBrowserRun ? `${formatRunType(latestBrowserRun.run_type)} · ${latestBrowserRun.status}` : "No browser runs"} />
+          <Field label="Latest findings" value={latestQARun ? String(latestFindings) : "No report"} />
+          <Field label="AI provider status" value={providers.loading ? "Checking" : providers.data.length > 0 ? `${providers.data.length} configured` : "Optional / not configured"} />
+          <Field label="Demo Lab status" value={demoLabStatus} />
         </div>
         {!projects.loading && projects.data.length === 0 && <EmptyState title="Start by creating your first project." body="The guided setup is the fastest way to get a useful first report." />}
       </section>
@@ -673,31 +687,20 @@ function Dashboard({
         {projects.loading ? <SkeletonRows /> : <ProjectTable projects={projects.data.slice(0, 6)} onStartRun={onStartRun} />}
       </section>
 
-      <section>
-        <div className="section-heading">
-          <div>
-            <h2>Recent Safe QA Runs</h2>
-            <p>Latest guided and discovery-aware QA workflows.</p>
+      {latestQARun && (
+        <section>
+          <div className="section-heading">
+            <div>
+              <h2>Latest result</h2>
+              <p>Open the newest Safe QA report or continue in its Project Cockpit.</p>
+            </div>
+            <div className="button-row">
+              <a className="button secondary-link" href={`#/projects/${latestQARun.project_id}`}>Project Cockpit</a>
+              <a className="button" href={`#/qa-runs/${latestQARun.id}`}>Open Safe QA report</a>
+            </div>
           </div>
-          <a className="button secondary-link" href="#/reports">
-            Reports
-          </a>
-        </div>
-        {qaRuns.loading ? <SkeletonRows /> : <QARunDashboardTable runs={qaRuns.data.slice(0, 8)} projectByID={projectByID} />}
-      </section>
-
-      <section>
-        <div className="section-heading">
-          <div>
-            <h2>Recent Runs</h2>
-            <p>Browser, API, login, authenticated, and full run reports.</p>
-          </div>
-          <a className="button secondary-link" href="#/runs">
-            Browser Testing
-          </a>
-        </div>
-        {runs.loading ? <SkeletonRows /> : <RunTable runs={runs.data.slice(0, 8)} projectByID={projectByID} />}
-      </section>
+        </section>
+      )}
     </div>
   );
 }
@@ -773,6 +776,7 @@ function ProjectSetupWizard({ onCompleted }: { onCompleted: (response: ProjectSe
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<ProjectSetupResponse | undefined>();
+  const [demoLabLoaded, setDemoLabLoaded] = useState(false);
 
   useEffect(() => {
     let canceled = false;
@@ -808,6 +812,7 @@ function ProjectSetupWizard({ onCompleted }: { onCompleted: (response: ProjectSe
   }, [aiMode, apiSpecMode, credentialMode]);
 
   function loadDemoDefaults() {
+    setDemoLabLoaded(false);
     setProjectForm({
       name: "Qualora Demo Workflow",
       frontend_url: "http://demo-web:8080",
@@ -843,6 +848,7 @@ function ProjectSetupWizard({ onCompleted }: { onCompleted: (response: ProjectSe
   }
 
   function loadDemoLabDefaults() {
+    setDemoLabLoaded(true);
     setProjectForm({
       name: "Qualora Demo Lab",
       frontend_url: "http://demo-lab-web:8080",
@@ -920,6 +926,12 @@ function ProjectSetupWizard({ onCompleted }: { onCompleted: (response: ProjectSe
             </button>
           </div>
         </div>
+        {demoLabLoaded && (
+          <Notice
+            tone="info"
+            message="Demo Lab is a local target app with pages, forms, roles, API endpoints, quality issues, and regression fixtures."
+          />
+        )}
         <div className="wizard-steps">
           {["Basics", "AI", "Login", "OpenAPI", "Workflow", "Results"].map((label, index) => (
             <button key={label} type="button" className={step === index + 1 ? "" : "secondary"} onClick={() => setStep(index + 1)}>
@@ -1057,6 +1069,33 @@ function ProjectSetupWizard({ onCompleted }: { onCompleted: (response: ProjectSe
       {step === 5 && (
         <section>
           <h2>Select first workflow</h2>
+          {demoLabLoaded && (
+            <div className="demo-provider-choice">
+              <strong>Demo Lab AI mode</strong>
+              <label className="check-row">
+                <input type="radio" checked={aiMode === "demo"} onChange={() => setAIMode("demo")} />
+                Use Fake LLM
+              </label>
+              <label className="check-row">
+                <input
+                  type="radio"
+                  checked={aiMode === "existing"}
+                  disabled={providers.length === 0}
+                  onChange={() => {
+                    setAIMode("existing");
+                    setSelectedProviderID(selectedProviderID || providers.find((provider) => provider.is_default)?.id || providers[0]?.id || "");
+                  }}
+                />
+                Use Real LLM Provider
+              </label>
+              {aiMode === "existing" && (
+                <select value={selectedProviderID} onChange={(event) => setSelectedProviderID(event.target.value)} aria-label="Demo Lab real LLM provider">
+                  {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name} ({provider.model})</option>)}
+                </select>
+              )}
+              {providers.length === 0 && <span className="muted">Configure and test an AI provider before selecting real LLM mode.</span>}
+            </div>
+          )}
           <div className="checkbox-grid wizard-checks">
             <label className="check-row"><input type="checkbox" checked={workflow.browser_smoke} onChange={(event) => setWorkflow({ ...workflow, browser_smoke: event.target.checked })} /> Browser smoke</label>
             <label className="check-row"><input type="checkbox" checked={workflow.discovery} onChange={(event) => setWorkflow({ ...workflow, discovery: event.target.checked })} /> Discovery</label>
@@ -1090,8 +1129,16 @@ function ProjectSetupWizard({ onCompleted }: { onCompleted: (response: ProjectSe
 }
 
 function SetupResultPanel({ response }: { response: ProjectSetupResponse }) {
+  const isDemoLab = response.project.name.toLowerCase().includes("demo lab");
   return (
     <div className="metadata-stack">
+      {isDemoLab && (
+        <div>
+          <p className="eyebrow">Demo Lab Showcase Summary</p>
+          <h2>Your first observable QA workflow is running.</h2>
+          <p>Open the Project Cockpit to watch browser activity, then continue to the consolidated reports.</p>
+        </div>
+      )}
       <div className="detail-grid compact">
         <Field label="Project" value={response.project.name} />
         <Field label="Project ID" value={shortID(response.project.id)} />
@@ -1117,13 +1164,21 @@ function SetupResultPanel({ response }: { response: ProjectSetupResponse }) {
         <Notice tone="info" message={`Skipped: ${response.skipped.map((item) => `${humanizeIdentifier(item.action)} (${item.reason})`).join("; ")}`} />
       )}
       <div className="button-row">
-        <a className="button" href={`#/projects/${response.project.id}`}>Project details</a>
+        <a className="button" href={`#/projects/${response.project.id}`}>Project Cockpit</a>
         {response.started.safe_qa_run_id && <a className="button secondary-link" href={`#/qa-runs/${response.started.safe_qa_run_id}`}>Safe QA report</a>}
-        {response.started.discovery_run_id && <a className="button secondary-link" href={`#/discovery-runs/${response.started.discovery_run_id}`}>Discovery report</a>}
+        {response.started.discovery_run_id && <a className="button secondary-link" href={`#/discovery-runs/${response.started.discovery_run_id}`}>Discovery map</a>}
         {response.started.quality_check_run_id && <a className="button secondary-link" href={`#/quality-check-runs/${response.started.quality_check_run_id}`}>Quality report</a>}
         {response.started.browser_smoke_run_id && <a className="button secondary-link" href={`#/runs/${response.started.browser_smoke_run_id}`}>Browser report</a>}
-        {response.started.api_smoke_run_id && <a className="button secondary-link" href={`#/runs/${response.started.api_smoke_run_id}`}>API report</a>}
+        {response.started.api_smoke_run_id && <a className="button secondary-link" href={`#/runs/${response.started.api_smoke_run_id}`}>API contract report</a>}
       </div>
+      {isDemoLab && (
+        <div className="detail-grid compact">
+          <Field label="Browser Run Viewer" value="Open Project Cockpit to start or replay an observable run" />
+          <Field label="Form report" value="Available after Safe Form Testing" />
+          <Field label="CI gate result" value="Available after setting a baseline and running CI" />
+          <Field label="Issue export dry-run" value="Available from Advanced Tools" />
+        </div>
+      )}
     </div>
   );
 }
@@ -1364,6 +1419,17 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
     };
   }, [projectByID, projects.data, projects.loading, runs.data, runs.loading]);
 
+  const latestSafeQA = items.data.find((item) => item.type === "Safe QA");
+  const latestAIBrowser = items.data.find((item) => item.type === "AI Browser Control");
+  const latestAttention = items.data.find((item) =>
+    ["failed", "error", "warning"].includes(item.status) ||
+    Number(item.severity_counts?.critical || 0) + Number(item.severity_counts?.high || 0) > 0
+  );
+  const reportsByProject = projects.data.map((project) => ({
+    project,
+    count: items.data.filter((item) => item.project_id === project.id).length
+  })).filter((entry) => entry.count > 0);
+
   return (
     <section>
       <div className="section-heading">
@@ -1374,8 +1440,44 @@ function ReportsPage({ projects, runs, projectByID }: { projects: LoadState<Proj
         <a className="button secondary-link" href="#/setup-project">Guided Setup</a>
       </div>
       {items.error && <Notice tone="danger" message={items.error} />}
-      {items.loading ? <SkeletonRows /> : <ReportIndexTable items={items.data} />}
+      {items.loading ? (
+        <SkeletonRows />
+      ) : (
+        <div className="metadata-stack">
+          <div className="report-highlights">
+            <ReportHighlight title="Latest Safe QA" item={latestSafeQA} />
+            <ReportHighlight title="Latest AI Browser Control" item={latestAIBrowser} runViewer />
+            <ReportHighlight title="Latest warning / failure" item={latestAttention} />
+          </div>
+          <div>
+            <h3>Reports by project</h3>
+            <div className="project-report-groups">
+              {reportsByProject.map(({ project, count }) => (
+                <a key={project.id} href={`#/projects/${project.id}`}>
+                  <strong>{project.name}</strong>
+                  <span>{count} reports</span>
+                </a>
+              ))}
+            </div>
+          </div>
+          <ReportIndexTable items={items.data} />
+        </div>
+      )}
     </section>
+  );
+}
+
+function ReportHighlight({ title, item, runViewer = false }: { title: string; item?: ReportIndexItem; runViewer?: boolean }) {
+  if (!item) {
+    return <div className="report-highlight"><span>{title}</span><strong>Not available</strong></div>;
+  }
+  const href = runViewer ? `#/run-viewer/ai-browser-control/${item.id}` : item.web_href;
+  return (
+    <a className="report-highlight" href={href}>
+      <span>{title}</span>
+      <strong>{item.project_name}</strong>
+      <small>{item.type} · {item.status}</small>
+    </a>
   );
 }
 
@@ -1583,7 +1685,7 @@ function AIProvidersPage() {
         <div className="section-heading">
           <div>
             <h2>AI Providers</h2>
-            <p>Optional OpenAI-compatible providers for human-friendly report analysis.</p>
+            <p>Optional OpenAI-compatible providers for analysis, planning, Safe QA, and policy-gated browser suggestions.</p>
           </div>
           {form.id && (
             <button type="button" className="secondary" onClick={() => setForm(providerFormDefaults("openai"))}>
@@ -1593,7 +1695,7 @@ function AIProvidersPage() {
         </div>
         <Notice
           tone="info"
-          message="AI provider credentials are protected by local admin authentication and encrypted at rest, but this alpha is still intended for trusted self-hosted environments."
+          message="For deterministic local smoke tests, use Fake LLM. For real demos, configure your OpenAI-compatible provider. Credentials are encrypted at rest and never returned by the API."
         />
         {providers.error && <Notice tone="danger" message={providers.error} />}
         {error && <Notice tone="danger" message={error} />}
@@ -1778,7 +1880,11 @@ function AIProviderTable({
               <tr key={provider.id}>
                 <td>
                   <strong>{provider.name}</strong>
-                  {provider.is_default && <span className="pill">default</span>}
+                  <div className="provider-statuses">
+                    <span className="pill">configured</span>
+                    {result?.success && <span className="pill">tested</span>}
+                    {provider.is_default && <span className="pill">default</span>}
+                  </div>
                 </td>
                 <td>{provider.preset || "custom"}</td>
                 <td>
@@ -2184,40 +2290,185 @@ function ProjectPage({
     }
   }
 
+  const defaultProvider = providers.find((provider) => provider.is_default) || providers[0];
+  const latestQARun = qaRuns.data[0];
+  const latestDiscoveryRun = discoveryRuns.data[0];
+  const latestQualityRun = qualityRuns.data[0];
+  const latestAIBrowserRun = aiBrowserRuns.data[0];
+  const latestSafeExplorerRun = safeExplorerRuns.data[0];
+  const latestBrowserRun = runs.data.find((run) =>
+    ["browser_smoke", "authenticated_browser_smoke", "login_check"].includes(run.run_type)
+  );
+  const latestBrowserViewerHref = latestAIBrowserRun
+    ? `#/run-viewer/ai-browser-control/${latestAIBrowserRun.id}`
+    : latestSafeExplorerRun
+      ? `#/run-viewer/safe-explorer/${latestSafeExplorerRun.id}`
+      : latestBrowserRun
+        ? `#/runs/${latestBrowserRun.id}`
+        : "";
+  const qaFindingCount = Number(latestQARun?.summary?.total_findings || latestQARun?.summary?.findings || 0);
+  const nextRecommendedAction = !latestDiscoveryRun
+    ? "Run Discovery to build the application map."
+    : !latestQARun
+      ? "Run Full Safe QA to generate the first consolidated report."
+      : latestBrowserViewerHref
+        ? "Replay the latest browser activity and review its policy decisions."
+        : "Start a browser run to collect visual evidence.";
+
   return (
     <div className="grid">
-      <section>
+      <section id="project-cockpit">
         <div className="section-heading">
           <div>
+            <p className="eyebrow">Project Cockpit</p>
             <h2>{project.name}</h2>
             <p>{targetSummary(project)}</p>
           </div>
-          <div className="button-row">
-            {project.frontend_url && (
-              <button type="button" disabled={starting !== ""} onClick={() => void startProjectRun("browser")}>
-                {starting === "browser" ? "Starting" : "Run browser smoke test"}
-              </button>
-            )}
-            {project.frontend_url && credentialProfiles.data.length > 0 && (
-              <button type="button" className="secondary" disabled={starting !== ""} onClick={() => void startAuthenticatedRun()}>
-                {starting === "authenticated" ? "Starting" : "Run authenticated browser smoke test"}
-              </button>
-            )}
-            <button type="button" className="secondary" disabled={starting !== ""} onClick={() => void startProjectRun("full")}>
-              {starting === "full" ? "Starting" : "Start full run"}
-            </button>
-          </div>
+          <StatusBadge status={latestQARun?.status || latestBrowserRun?.status || "ready"} />
         </div>
-        <div className="detail-grid">
-          <Field label="Frontend URL" value={project.frontend_url || "Not configured"} />
-          <Field label="API Base URL" value={project.api_base_url || "Not configured"} />
-          <Field label="OpenAPI URL" value={project.openapi_url || "Not configured"} />
-          <Field label="Allowed Hosts" value={project.allowed_hosts.join(", ")} />
-          <Field label="Private Targets" value={project.allow_private_targets ? "Allowed" : "Blocked by default"} />
-          <Field label="Created" value={formatDate(project.created_at)} />
+        <div className="cockpit-actions">
+          <button
+            type="button"
+            disabled={starting !== "" || !defaultProvider}
+            onClick={() => void startSafeQARun({
+              mode: "safe",
+              start_url: project.frontend_url || undefined,
+              provider_id: defaultProvider?.id,
+              use_latest_discovery: true,
+              max_pages: 10,
+              max_depth: 2,
+              max_scenarios: 8,
+              execute: false,
+              include_quality_checks: true
+            })}
+          >
+            {starting === "qa-run" ? "Starting..." : "Run Full Safe QA"}
+          </button>
+          {latestBrowserViewerHref ? (
+            <a className="button secondary-link" href={latestBrowserViewerHref}>Watch Browser Run</a>
+          ) : (
+            <button type="button" className="secondary" disabled={starting !== "" || !project.frontend_url} onClick={() => void startProjectRun("browser")}>
+              {starting === "browser" ? "Starting..." : "Watch Browser Run"}
+            </button>
+          )}
+          <button
+            type="button"
+            className="secondary"
+            disabled={starting !== "" || !project.frontend_url || !defaultProvider}
+            onClick={() => void startProjectAIBrowserControl({
+              provider_id: defaultProvider?.id || "",
+              goal: "Explore the main public pages safely, collect visual evidence, and stop.",
+              start_url: project.frontend_url,
+              max_steps: 8,
+              max_depth: 2,
+              same_origin_only: true
+            })}
+          >
+            {starting === "ai-browser-control" ? "Starting..." : "Run AI Browser Control"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={starting !== "" || !project.frontend_url}
+            onClick={() => void startProjectDiscovery({ start_url: project.frontend_url, max_pages: 10, max_depth: 2, same_origin_only: true })}
+          >
+            {starting === "discovery" ? "Starting..." : "Run Discovery"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={starting !== "" || !project.frontend_url}
+            onClick={() => void startProjectQualityCheck({
+              target_url: project.frontend_url,
+              use_latest_discovery: true,
+              max_pages: 10,
+              include_security: true,
+              include_accessibility: true,
+              include_performance: true
+            })}
+          >
+            {starting === "quality" ? "Starting..." : "Run Quality Checks"}
+          </button>
+        </div>
+        {!defaultProvider && <Notice tone="info" message="Configure an AI provider to enable Full Safe QA and AI Browser Control. Deterministic browser, discovery, quality, and API checks remain available." />}
+      </section>
+
+      <section id="latest-results">
+        <div className="section-heading">
+          <div>
+            <h2>Latest Results</h2>
+            <p>The most useful project signals in one place.</p>
+          </div>
+          <a className="button secondary-link" href="#/reports">Open Reports</a>
+        </div>
+        <div className="dashboard-status-grid">
+          <Field label="Safe QA" value={latestQARun ? latestQARun.status : "Not run"} />
+          <Field label="Discovery" value={latestDiscoveryRun ? `${latestDiscoveryRun.total_pages} pages · ${latestDiscoveryRun.status}` : "Not run"} />
+          <Field label="Quality" value={latestQualityRun ? `${latestQualityRun.total_findings} findings · ${latestQualityRun.status}` : "Not run"} />
+          <Field label="Latest critical/high findings" value={latestQualityRun ? `${latestQualityRun.high_findings} high` : String(qaFindingCount)} />
+          <Field label="Browser evidence" value={latestBrowserViewerHref ? "Replay available" : "No observable run yet"} />
+          <Field label="Next recommended action" value={nextRecommendedAction} />
         </div>
       </section>
 
+      <section id="browser-activity">
+        <div className="section-heading">
+          <div>
+            <h2>Browser Activity</h2>
+            <p>Watch an active run near-live or replay its recorded steps and screenshots.</p>
+          </div>
+          {latestBrowserViewerHref && <a className="button" href={latestBrowserViewerHref}>Watch Browser Run</a>}
+        </div>
+        {latestAIBrowserRun ? (
+          <div className="detail-grid compact">
+            <Field label="Latest observable run" value="AI Browser Control" />
+            <Field label="Status" value={latestAIBrowserRun.status} />
+            <Field label="Steps" value={String(latestAIBrowserRun.total_steps)} />
+            <Field label="Policy blocks" value={String(latestAIBrowserRun.total_policy_blocks)} />
+          </div>
+        ) : latestSafeExplorerRun ? (
+          <div className="detail-grid compact">
+            <Field label="Latest observable run" value="Safe Explorer" />
+            <Field label="Status" value={latestSafeExplorerRun.status} />
+            <Field label="Steps" value={String(latestSafeExplorerRun.total_steps)} />
+            <Field label="Skipped actions" value={String(latestSafeExplorerRun.total_actions_skipped)} />
+          </div>
+        ) : (
+          <EmptyState title="No replay available" body="Run AI Browser Control or Safe Explorer to collect a step timeline and screenshots." />
+        )}
+      </section>
+
+      <section id="findings-reports-setup">
+        <div className="cockpit-summary-columns">
+          <div>
+            <h2>Findings</h2>
+            <p>{latestQARun ? `${qaFindingCount} findings in the latest Safe QA summary.` : "No Safe QA findings yet."}</p>
+            {latestQARun && <a href={`#/qa-runs/${latestQARun.id}`}>Review latest findings</a>}
+          </div>
+          <div>
+            <h2>Reports</h2>
+            <p>Open consolidated reports or raw browser run evidence.</p>
+            <div className="button-row compact">
+              {latestQARun && <a href={`#/qa-runs/${latestQARun.id}`}>Safe QA</a>}
+              {latestAIBrowserRun && <a href={`#/ai-browser-control-runs/${latestAIBrowserRun.id}`}>AI Browser</a>}
+              {latestDiscoveryRun && <a href={`#/discovery-runs/${latestDiscoveryRun.id}`}>Discovery</a>}
+              {latestQualityRun && <a href={`#/quality-check-runs/${latestQualityRun.id}`}>Quality</a>}
+            </div>
+          </div>
+          <div>
+            <h2>Setup</h2>
+            <p>{project.allowed_hosts.length} allowed hosts · {credentialProfiles.data.length} credential profiles · {apiSpecs.data.length} API specs.</p>
+            <a href="#/setup-project">Open guided setup</a>
+          </div>
+        </div>
+      </section>
+
+      <details className="advanced-tools">
+        <summary>
+          <strong>Advanced Tools</strong>
+          <span>Credentials, API authentication, baselines, raw runs, authorization, forms, Safe Explorer, CI, and issue export.</span>
+        </summary>
+        <div className="grid advanced-tools-content">
       <section>
         <div className="section-heading">
           <div>
@@ -2633,6 +2884,8 @@ function ProjectPage({
           )}
         </div>
       </section>
+        </div>
+      </details>
     </div>
   );
 }
@@ -3206,7 +3459,10 @@ function SafeExplorerRunTable({ runs }: { runs: SafeExplorerRun[] }) {
               <td>{run.total_findings}</td>
               <td>{formatDate(run.created_at)}</td>
               <td>
-                <a href={`#/safe-explorer-runs/${run.id}`}>Open</a>
+                <div className="button-row compact">
+                  <a href={`#/run-viewer/safe-explorer/${run.id}`}>Run Viewer</a>
+                  <a href={`#/safe-explorer-runs/${run.id}`}>Report</a>
+                </div>
               </td>
             </tr>
           ))}
@@ -3534,7 +3790,10 @@ function AIBrowserControlRunTable({ runs }: { runs: AIBrowserControlRun[] }) {
               <td>{run.total_findings}</td>
               <td>{formatDate(run.created_at)}</td>
               <td>
-                <a href={`#/ai-browser-control-runs/${run.id}`}>Open</a>
+                <div className="button-row compact">
+                  <a href={`#/run-viewer/ai-browser-control/${run.id}`}>Run Viewer</a>
+                  <a href={`#/ai-browser-control-runs/${run.id}`}>Report</a>
+                </div>
               </td>
             </tr>
           ))}
@@ -6997,6 +7256,9 @@ function SafeExplorerRunPage({ runID }: { runID: string }) {
             <a className="button secondary-link" href={`#/projects/${report.project.id}`}>
               Project
             </a>
+            <a className="button secondary-link" href={`#/run-viewer/safe-explorer/${report.run.id}`}>
+              Open Run Viewer
+            </a>
             <a className="button secondary-link" href={`${API_BASE_URL}/api/v1/safe-explorer-runs/${report.run.id}/report`} target="_blank" rel="noreferrer">
               JSON Report
             </a>
@@ -7123,6 +7385,9 @@ function AIBrowserControlRunPage({ runID }: { runID: string }) {
           <div className="button-row">
             <a className="button secondary-link" href={`#/projects/${report.project.id}`}>
               Project
+            </a>
+            <a className="button secondary-link" href={`#/run-viewer/ai-browser-control/${report.run.id}`}>
+              Open Run Viewer
             </a>
             <a className="button secondary-link" href={`${API_BASE_URL}/api/v1/ai-browser-control-runs/${report.run.id}/report`} target="_blank" rel="noreferrer">
               JSON Report
@@ -8850,6 +9115,9 @@ function parseHash(hash: string): Route {
   if (parts[0] === "ai-browser-control-runs" && parts[1]) {
     return { name: "ai-browser-control-run", id: parts[1] };
   }
+  if (parts[0] === "run-viewer" && (parts[1] === "ai-browser-control" || parts[1] === "safe-explorer") && parts[2]) {
+    return { name: "run-viewer", runType: parts[1], id: parts[2] };
+  }
   if (parts[0] === "form-test-runs" && parts[1]) {
     return { name: "form-test-run", id: parts[1] };
   }
@@ -8893,6 +9161,8 @@ function hashForRoute(route: Route): string {
       return `/safe-explorer-runs/${route.id}`;
     case "ai-browser-control-run":
       return `/ai-browser-control-runs/${route.id}`;
+    case "run-viewer":
+      return `/run-viewer/${route.runType}/${route.id}`;
     case "form-test-run":
       return `/form-test-runs/${route.id}`;
     case "qa-run":
@@ -8936,6 +9206,8 @@ function titleForRoute(route: Route): string {
       return "Safe Explorer Report";
     case "ai-browser-control-run":
       return "AI Browser Control Report";
+    case "run-viewer":
+      return "Run Viewer";
     case "form-test-run":
       return "Safe Form Testing Report";
     case "qa-run":
@@ -9021,6 +9293,56 @@ function demoProjectSetupPayload(): ProjectSetupInput {
       }
     },
     api_spec: { mode: "demo" },
+    workflow: {
+      browser_smoke: true,
+      discovery: true,
+      quality_checks: true,
+      safe_qa_run: true,
+      execute_safe_qa: false,
+      api_smoke: true,
+      authenticated_smoke: true
+    }
+  };
+}
+
+function demoLabProjectSetupPayload(): ProjectSetupInput {
+  return {
+    project: {
+      name: "Qualora Demo Lab",
+      frontend_url: "http://demo-lab-web:8080",
+      api_base_url: "http://demo-lab-api:8080",
+      openapi_url: "",
+      allowed_hosts: ["demo-lab-web", "demo-lab-api"],
+      security_mode: "passive",
+      destructive_actions: false,
+      allow_private_targets: true
+    },
+    ai: { mode: "demo" },
+    credential: {
+      mode: "create",
+      profile: {
+        ...wizardCredentialDefaults(),
+        name: "Demo Lab Admin",
+        username: "admin@example.com",
+        password: "admin-password",
+        login_url: "http://demo-lab-web:8080/login",
+        username_selector: 'input[name="email"]',
+        password_selector: 'input[name="password"]',
+        submit_selector: 'button[type="submit"]',
+        success_url_contains: "/dashboard",
+        success_text_contains: "Welcome to Demo Lab",
+        failure_text_contains: "Invalid credentials"
+      }
+    },
+    api_spec: {
+      mode: "import",
+      spec: {
+        name: "Qualora Demo Lab API",
+        source_type: "url",
+        source_url: "http://demo-lab-api:8080/openapi.yaml",
+        raw_spec: ""
+      }
+    },
     workflow: {
       browser_smoke: true,
       discovery: true,

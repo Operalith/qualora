@@ -10,8 +10,11 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 
 ## Current Priorities
 
-- Keep the `v0.23.0-alpha` Docker Compose MVP working.
+- Keep the `v0.24.0-alpha` Docker Compose MVP working.
 - Keep the dedicated `demo-lab` profile and `make showcase-smoke` deterministic, local-only, and free of real secrets or state-changing fixtures.
+- Keep the simplified dashboard and Project Cockpit focused on the primary local QA workflow while preserving specialized features under Advanced Tools.
+- Keep the Run Viewer near-live/replay path backed by existing sanitized report and evidence APIs; screenshot evidence must remain local to Qualora and outside AI inputs.
+- Keep real OpenAI-compatible Demo Lab execution optional. Deterministic smoke and CI must continue to use Fake LLM.
 - Backend/control plane first, with browser worker support.
 - API worker support for safe API/OpenAPI checks.
 - Imported OpenAPI specs, operation discovery, safe API smoke runs, and API result reports.
@@ -68,6 +71,8 @@ Default positioning: **Open-source AI-powered engineering tools for modern softw
 - Keep the web UI focused on alpha workflows; do not add complex design systems, multi-user management, teams, billing, or SaaS assumptions without an explicit request.
 - Do not introduce Temporal, OWASP ZAP, arbitrary login automation, or active security scanning in the MVP without an explicit request.
 - Do not introduce autonomous AI browser control or native non-OpenAI-compatible provider SDKs without an explicit request.
+- Do not turn the Run Viewer into a channel for browser session material, full HTML, request/response bodies, or secrets.
+- Real-provider helper scripts must validate required configuration without printing API keys or optional secret headers.
 - Do not execute AI-generated test plan steps automatically or as free-form model instructions.
 - Do not let Safe QA Runs bypass review, safe execution mapping, or explicit user approval for execution.
 - Do not use AI for login automation or authenticated browser control.

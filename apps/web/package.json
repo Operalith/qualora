@@ -1,6 +1,6 @@
 {
   "name": "@operalith/qualora-web",
-  "version": "0.23.0-alpha",
+  "version": "0.24.0-alpha",
   "private": true,
   "type": "module",
   "scripts": {

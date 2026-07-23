@@ -70,7 +70,7 @@ func FetchOpenAPISource(ctx context.Context, project Project, sourceURL string) 
 	if err != nil {
 		return "", parsed.String(), fmt.Errorf("build OpenAPI request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Qualora OpenAPI Import v0.23.0-alpha")
+	req.Header.Set("User-Agent", "Qualora OpenAPI Import v0.24.0-alpha")
 	req.Header.Set("Accept", "application/json, application/yaml, text/yaml, application/x-yaml, text/plain, */*")
 
 	resp, err := client.Do(req)
@@ -390,7 +390,7 @@ func requestSafeAPIOperationWithAuth(ctx context.Context, method string, targetU
 	if err != nil {
 		return nil, "", nil, false, err
 	}
-	req.Header.Set("User-Agent", "Qualora API Smoke v0.23.0-alpha")
+	req.Header.Set("User-Agent", "Qualora API Smoke v0.24.0-alpha")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	if material != nil {
 		material.apply(req)

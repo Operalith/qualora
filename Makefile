@@ -1,4 +1,4 @@
-.PHONY: dev test lint compose-up compose-down logs smoke showcase-smoke demo-lab
+.PHONY: dev test lint compose-up compose-down logs smoke showcase-smoke demo-lab demo-lab-real-llm
 
 dev: compose-up
 
@@ -7,6 +7,7 @@ test:
 	cd apps/web && npm ci && npm run build
 	cd workers/browser && npm ci && npm test
 	cd workers/api && npm ci && npm test
+	scripts/test-real-llm-script.sh
 
 lint:
 	cd apps/control-plane && go test ./...
@@ -45,3 +46,6 @@ showcase-smoke:
 
 demo-lab:
 	scripts/run-demo-lab.sh
+
+demo-lab-real-llm:
+	scripts/run-demo-lab-real-llm.sh

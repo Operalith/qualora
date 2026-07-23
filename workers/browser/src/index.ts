@@ -867,7 +867,13 @@ async function runSafeExplorer(run: SafeExplorerRunContext): Promise<SafeExplore
       visited.add(normalizedVisitURL);
 
       const snapshot = await captureSafeExplorerPage(page, visit.url, signals);
-      const screenshotEvidenceID = snapshot.screenshot ? await insertSafeExplorerScreenshotEvidence(run, snapshot) : "";
+      const screenshotEvidenceID = snapshot.screenshot
+        ? await insertSafeExplorerScreenshotEvidence(run, snapshot, {
+            stepIndex: nextStepIndex,
+            actionType: "observe_page",
+            actionLabel: snapshot.title || snapshot.normalizedURL
+          })
+        : "";
       const observationEvidenceID = await insertEvidence({ safeExplorerRunID: run.id }, "browser_observations", "inline://safe-explorer-browser-observations", {
         target_url: snapshot.targetURL,
         final_url: snapshot.finalURL,
@@ -1094,7 +1100,7 @@ async function runAIBrowserControl(run: AIBrowserControlRunContext): Promise<AIB
       visited.add(normalizedCurrent);
 
       const snapshot = await captureSafeExplorerPage(page, currentURL, signals);
-      const screenshotEvidenceID = snapshot.screenshot ? await insertAIBrowserScreenshotEvidence(run, snapshot) : "";
+      let screenshotEvidenceID = "";
       const observation = await buildAIBrowserObservation(page, run, snapshot, previousSteps);
       const observationEvidenceID = await insertEvidence({ aiBrowserControlRunID: run.id }, "ai_browser_observation", "inline://ai-browser-control-observation", {
         step_index: stepIndex,
@@ -1110,8 +1116,6 @@ async function runAIBrowserControl(run: AIBrowserControlRunContext): Promise<AIB
         browser_storage_recorded: false,
         full_html_recorded: false
       });
-      const evidenceIDs = [screenshotEvidenceID, observationEvidenceID].filter(Boolean);
-
       let suggestion: AIBrowserSuggestion | null = null;
       let decision: AIBrowserPolicyDecision;
       try {
@@ -1181,6 +1185,27 @@ async function runAIBrowserControl(run: AIBrowserControlRunContext): Promise<AIB
           blockedInARow += 1;
         }
       }
+
+      const evidenceScreenshot = executionStatus === "executed" ? await captureScreenshot(page) : snapshot.screenshot;
+      if (evidenceScreenshot) {
+        screenshotEvidenceID = await insertAIBrowserScreenshotEvidence(
+          run,
+          {
+            ...snapshot,
+            screenshot: evidenceScreenshot,
+            finalURL: sanitizeURL(finalURL || snapshot.finalURL),
+            normalizedURL: normalizeSafeExplorerURL(finalURL || snapshot.finalURL || snapshot.targetURL),
+            title: sanitizeText(await page.title().catch(() => snapshot.title))
+          },
+          {
+            stepIndex,
+            actionType: decision.action?.type || "observe_page",
+            actionLabel: decision.label || suggestion?.rationale || snapshot.title,
+            capturePhase: executionStatus === "executed" ? "after_action" : "before_action"
+          }
+        );
+      }
+      const evidenceIDs = [screenshotEvidenceID, observationEvidenceID].filter(Boolean);
 
       await insertAIBrowserControlStep(run, {
         stepIndex,
@@ -1472,7 +1497,7 @@ async function runFormTests(run: FormTestRunContext): Promise<FormTestRunTotals>
         const evidenceIDs = [pageEvidenceID, formEvidenceID];
         let screenshotEvidenceID = "";
         if (execution.screenshot) {
-          screenshotEvidenceID = await insertFormTestScreenshotEvidence(run, classified, execution);
+          screenshotEvidenceID = await insertFormTestScreenshotEvidence(run, classified, execution, totals.totalFormsTested);
           evidenceIDs.push(screenshotEvidenceID);
         }
         const submissionEvidenceID = await insertEvidence({ formTestRunID: run.id }, "form_submission", "inline://form-test-form-submission", {
@@ -1660,7 +1685,9 @@ async function runDiscovery(run: DiscoveryRunContext): Promise<DiscoveryRunTotal
       visited.add(normalized);
 
       const snapshot = await captureDiscoveryPage(page, run, visit.url, signals);
-      const screenshotEvidenceID = snapshot.screenshot ? await insertDiscoveryScreenshotEvidence(run, snapshot) : "";
+      const screenshotEvidenceID = snapshot.screenshot
+        ? await insertDiscoveryScreenshotEvidence(run, snapshot, totals.totalPages)
+        : "";
       const pageID = await insertDiscoveredPage(run, visit.depth, snapshot, screenshotEvidenceID);
       const observationEvidenceID = await insertEvidence({ discoveryRunID: run.id }, "browser_observations", "inline://discovery-browser-observations", {
         page_id: pageID,
@@ -2760,7 +2787,11 @@ function isLikelyHTML(contentType: string): boolean {
   return contentType.toLowerCase().includes("text/html");
 }
 
-async function insertDiscoveryScreenshotEvidence(run: DiscoveryRunContext, snapshot: DiscoveryPageSnapshot): Promise<string> {
+async function insertDiscoveryScreenshotEvidence(
+  run: DiscoveryRunContext,
+  snapshot: DiscoveryPageSnapshot,
+  stepIndex: number
+): Promise<string> {
   if (!snapshot.screenshot) {
     return "";
   }
@@ -2775,8 +2806,13 @@ async function insertDiscoveryScreenshotEvidence(run: DiscoveryRunContext, snaps
     target_url: snapshot.targetURL,
     final_url: snapshot.finalURL,
     normalized_url: snapshot.normalizedURL,
+    page_url: snapshot.finalURL || snapshot.targetURL,
     page_title: snapshot.title,
-    status_code: snapshot.statusCode
+    status_code: snapshot.statusCode,
+    step_index: stepIndex,
+    action_type: "observe_page",
+    action_label: snapshot.title || snapshot.path,
+    run_type: "discovery"
   });
 }
 
@@ -2864,7 +2900,11 @@ async function insertDiscoveredForm(runID: string, pageID: string, form: Discove
   }
 }
 
-async function insertSafeExplorerScreenshotEvidence(run: SafeExplorerRunContext, snapshot: SafeExplorerPageSnapshot): Promise<string> {
+async function insertSafeExplorerScreenshotEvidence(
+  run: SafeExplorerRunContext,
+  snapshot: SafeExplorerPageSnapshot,
+  context: { stepIndex: number; actionType: string; actionLabel: string }
+): Promise<string> {
   if (!snapshot.screenshot) {
     return "";
   }
@@ -2879,12 +2919,21 @@ async function insertSafeExplorerScreenshotEvidence(run: SafeExplorerRunContext,
     target_url: snapshot.targetURL,
     final_url: snapshot.finalURL,
     normalized_url: snapshot.normalizedURL,
+    page_url: snapshot.finalURL || snapshot.targetURL,
     page_title: snapshot.title,
-    status_code: snapshot.statusCode
+    status_code: snapshot.statusCode,
+    step_index: context.stepIndex,
+    action_type: context.actionType,
+    action_label: sanitizeText(context.actionLabel),
+    run_type: "safe_explorer"
   });
 }
 
-async function insertAIBrowserScreenshotEvidence(run: AIBrowserControlRunContext, snapshot: SafeExplorerPageSnapshot): Promise<string> {
+async function insertAIBrowserScreenshotEvidence(
+  run: AIBrowserControlRunContext,
+  snapshot: SafeExplorerPageSnapshot,
+  context: { stepIndex: number; actionType: string; actionLabel: string; capturePhase: "before_action" | "after_action" }
+): Promise<string> {
   if (!snapshot.screenshot) {
     return "";
   }
@@ -2899,8 +2948,14 @@ async function insertAIBrowserScreenshotEvidence(run: AIBrowserControlRunContext
     target_url: snapshot.targetURL,
     final_url: snapshot.finalURL,
     normalized_url: snapshot.normalizedURL,
+    page_url: snapshot.finalURL || snapshot.targetURL,
     page_title: snapshot.title,
     status_code: snapshot.statusCode,
+    step_index: context.stepIndex,
+    action_type: sanitizeText(context.actionType),
+    action_label: sanitizeText(context.actionLabel),
+    run_type: "ai_browser_control",
+    capture_phase: context.capturePhase,
     ai_direct_browser_control: false,
     credentials_sent_to_ai: false
   });
@@ -2909,7 +2964,8 @@ async function insertAIBrowserScreenshotEvidence(run: AIBrowserControlRunContext
 async function insertFormTestScreenshotEvidence(
   run: FormTestRunContext,
   form: ClassifiedFormCandidate,
-  execution: FormTestExecutionSnapshot
+  execution: FormTestExecutionSnapshot,
+  stepIndex: number
 ): Promise<string> {
   if (!execution.screenshot) {
     return "";
@@ -2922,12 +2978,16 @@ async function insertFormTestScreenshotEvidence(
     size_bytes: object.sizeBytes,
     created_at: object.createdAt,
     storage: object.storage,
-    page_url: form.pageURL,
     form_action: form.normalizedActionURL,
     submitted_url: execution.submittedURL,
     final_url: execution.finalURL,
+    page_url: execution.finalURL || execution.submittedURL || form.pageURL,
     page_title: execution.title,
     status_code: execution.statusCode,
+    step_index: stepIndex,
+    action_type: "submit_safe_get_form",
+    action_label: form.classification,
+    run_type: "form_testing",
     raw_values_stored: false,
     request_or_response_bodies_stored: false
   });

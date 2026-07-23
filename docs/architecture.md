@@ -1,8 +1,18 @@
 # Architecture
 
-Qualora v0.23.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, native CI run orchestration, optional sanitized GitHub/GitLab issue export, safe deterministic application discovery, Interactive Safe Explorer, policy-gated AI Browser Control, Safe Form Testing, passive front-end quality checks, project-scoped credential profiles, project-scoped API auth profiles, deterministic selector-based login checks, authenticated browser smoke runs, authenticated read-only API smoke runs, lightweight OpenAPI contract validation, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
+Qualora v0.24.0-alpha is a small Docker Compose MVP for browser and safe API QA smoke runs with local first-run admin authentication, a minimal web UI, guided project onboarding, deterministic report intelligence, Safe QA report baselines, regression comparison, CI-friendly quality gates, native CI run orchestration, optional sanitized GitHub/GitLab issue export, safe deterministic application discovery, Interactive Safe Explorer, policy-gated AI Browser Control, Safe Form Testing, passive front-end quality checks, project-scoped credential profiles, project-scoped API auth profiles, deterministic selector-based login checks, authenticated browser smoke runs, authenticated read-only API smoke runs, lightweight OpenAPI contract validation, explicit role-aware authorization checks, OpenAPI import and operation discovery, control-plane evidence download for stored artifacts, optional AI analysis of completed reports, discovery-aware AI test plan suggestions, Safe QA Runs, and approved safe execution of supported test plan steps.
 
 The `demo-lab` Compose profile is release validation infrastructure rather than a new testing engine. It provides a deterministic target application and API that exercise the existing control-plane, browser-worker, API, report, baseline, gate, and UI paths end to end.
+
+## Public Alpha Experience
+
+The authenticated dashboard presents three starting actions and a compact health summary. Project detail is organized as a Project Cockpit: common Safe QA, browser, discovery, and quality actions stay visible, while specialized configuration and individual engines remain available under a collapsed Advanced Tools section. This changes navigation only; existing APIs and testing engines remain intact.
+
+The v0.24 Run Viewer is a reusable web component for AI Browser Control and Safe Explorer runs. It reads the existing run report and evidence endpoints, refreshes every 2.5 seconds while a run is active, and becomes a replay timeline after completion. No new streaming service or progress table is introduced. Other browser workflows continue to link to their existing report pages.
+
+Run Viewer screenshots are fetched only through Qualora's authenticated evidence endpoint. Screenshot bytes, full HTML, browser storage, credentials, cookies, authorization headers, tokens, request bodies, and response bodies are not included in AI observations.
+
+Demo Lab keeps Fake LLM as the deterministic smoke and CI provider. The optional real-provider script configures an OpenAI-compatible provider from environment variables, reuses the same sanitized AI boundaries, and may incur provider charges.
 
 ## Runtime Components
 
@@ -334,7 +344,7 @@ Qualora stores one local admin user and session records in PostgreSQL for this a
 
 Public endpoints are limited to health, setup status, first-run admin setup, login, logout, and session introspection. All project, credential, AI, evidence, report, API spec, authorization, and test plan endpoints are protected after setup.
 
-This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.23.0-alpha`.
+This is intentionally not full identity management: there is no user management UI, password reset flow, SSO/OIDC/SAML, multi-role RBAC, teams, or multi-tenancy in `v0.24.0-alpha`.
 
 ### PostgreSQL
 
@@ -476,6 +486,8 @@ The workflow is orchestration, not free-form autonomy. It does not give an LLM b
 - Local authentication is intentionally minimal: one admin role, no user management UI, no password reset, no SSO/OIDC/SAML, no enterprise RBAC, no teams, and no multi-tenancy.
 - Web UI is alpha and suitable only for trusted self-hosted/local environments.
 - AI provider management is alpha and should be used only in trusted local/self-hosted environments.
+- Run Viewer is near-live polling and replay, not video streaming. It currently supports AI Browser Control and Safe Explorer.
+- Real LLM Demo Lab mode is optional, supports OpenAI-compatible chat completions only, and is excluded from deterministic smoke and CI.
 - AI-assisted test planning is alpha and should be treated as human-reviewable suggestions.
 - Safe test plan execution is alpha and limited to approved non-destructive browser DSL steps.
 - API smoke execution is alpha and read-only by default.

@@ -4,7 +4,7 @@
 
 Qualora is an open-source, self-hosted autonomous QA platform that runs browser-based and API smoke tests, collects evidence, and generates structured reports for web applications and APIs.
 
-`v0.23.0-alpha` adds Qualora Demo Lab: a dedicated local showcase target with public and authenticated web pages, role-aware routes, safe and unsafe forms, passive quality fixtures, an OpenAPI API, authenticated API contracts, and deterministic regression mode. The full showcase validates nearly every existing Qualora workflow without external services or real secrets.
+`v0.24.0-alpha` simplifies the public-alpha experience with a focused dashboard, Project Cockpit, and near-live/replay Run Viewer for observable browser testing. Deterministic smoke continues to use Fake LLM, while an optional script supports real OpenAI-compatible providers for Demo Lab walkthroughs.
 
 ## Current Alpha Capabilities
 
@@ -17,8 +17,10 @@ Qualora is an open-source, self-hosted autonomous QA platform that runs browser-
 - Create projects through a guided setup wizard that can optionally configure AI, credentials, OpenAPI import, and selected first checks.
 - Run a local demo workflow against `demo-web`, `demo-api`, and `fake-llm`.
 - Run the comprehensive Demo Lab showcase against `demo-lab-web`, `demo-lab-api`, and `fake-llm`.
-- View dashboard quick-start cards, recent Safe QA runs, recent projects, status indicators, and a project readiness checklist.
-- View a reports landing page for recent browser, API, discovery, Safe Explorer, AI Browser Control, Safe Form Testing, quality, and Safe QA reports with recent severity and grouped-finding counts.
+- Start with a simplified dashboard for Demo Lab, real project setup, reports, and workspace status.
+- Use a Project Cockpit that keeps primary Safe QA/browser/discovery/quality actions visible and moves specialized configuration into Advanced Tools.
+- Watch active AI Browser Control and Safe Explorer runs through a near-live Run Viewer, then replay step timelines, screenshots, AI suggestions, policy decisions, execution results, and blocked reasons.
+- View a project-grouped reports landing page that highlights the latest Safe QA, AI Browser Control, and failed/warning reports.
 - Start runs that can include browser and API jobs.
 - Start a browser-only smoke run for a project with `frontend_url`.
 - Store project-scoped credential profiles encrypted at rest for deterministic test-account login.
@@ -166,7 +168,7 @@ Open the web UI:
 http://localhost:3000
 ```
 
-On a fresh database, the web UI opens a first-run setup screen for the local admin account before showing project data. After login, use `#/setup-project` for guided setup or `Run demo workflow` on the dashboard for the deterministic local demo. The smoke script performs the same setup automatically for demo environments.
+On a fresh database, the web UI opens first-run local admin setup. After login, use `Run Demo Lab Showcase`, `Create Real Project`, or `Open Reports`. Projects open in the simplified Project Cockpit.
 
 Run the smoke tests:
 
@@ -181,6 +183,18 @@ scripts/run-demo-lab.sh
 ```
 
 The script starts Qualora plus the `demo-lab` profile, performs first-run setup or login, creates deterministic local profiles and projects, exercises browser/API/auth/discovery/quality/form/AI/Safe QA/baseline/CI/issue-preview workflows, checks secret redaction, and prints report links. Use `make showcase-smoke` when the main Qualora stack is already running.
+
+For an optional real OpenAI-compatible provider walkthrough:
+
+```bash
+export QUALORA_REAL_LLM_NAME="Demo Provider"
+export QUALORA_REAL_LLM_BASE_URL="https://api.example.com/v1"
+export QUALORA_REAL_LLM_API_KEY="..."
+export QUALORA_REAL_LLM_MODEL="model-name"
+make demo-lab-real-llm
+```
+
+Real provider calls may incur cost. This mode is never used by deterministic smoke or CI. See [docs/real-llm-demo.md](docs/real-llm-demo.md).
 
 The smoke target includes:
 
@@ -855,7 +869,7 @@ curl -s -X POST "http://localhost:8080/api/v1/qa-runs/${QA_RUN_ID}/execute" \
 
 AI is optional. Configure a provider only when you want model-generated report analysis or test-plan suggestions.
 
-Supported provider type in `v0.23.0-alpha`:
+Supported provider type in `v0.24.0-alpha`:
 
 - `openai-compatible`
 
@@ -879,7 +893,7 @@ AI prompt safety defaults:
 
 AI Browser Control is alpha and conservative. The AI provider never drives Playwright directly. Qualora captures a sanitized observation, asks the provider for one typed JSON action, validates that action against allowed hosts, same-origin policy, depth limits, observed safe candidates, sensitive-query checks, and destructive-label/path checks, then executes only approved safe actions.
 
-Supported action types in `v0.23.0-alpha`:
+Supported action types in `v0.24.0-alpha`:
 
 - `goto`
 - `click_link`
@@ -894,7 +908,7 @@ Supported action types in `v0.23.0-alpha`:
 
 AI Browser Control can execute `submit_safe_get_form` only for observed, same-origin, GET, safe-classified forms with non-sensitive bounded values after policy approval. It does not submit POST/mutating forms, arbitrary forms, unsafe buttons, payloads, fuzz inputs, active security scans, external crawls by default, or destructive actions. It does not send credentials, cookies, browser storage, auth headers, screenshots, full HTML, request bodies, or response bodies to AI.
 
-AI-assisted test plans are reviewable suggestions. In `v0.23.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, Safe Form Testing, guided onboarding, report intelligence, baseline comparison, quality gates, CI runs, and issue export previews are deterministic paths. AI Browser Control is AI-suggested but still policy-gated and never gives the model direct Playwright control.
+AI-assisted test plans are reviewable suggestions. In `v0.24.0-alpha`, AI planning can include a sanitized discovery map and can ask the model for safe executable DSL candidates, but a user may explicitly preview and execute only the supported safe browser DSL subset: `goto`, `assert_title_contains`, `assert_url_contains`, `assert_text_visible`, `assert_element_visible`, `assert_link_exists`, `check_link_status`, `capture_screenshot`, `collect_browser_signals`, `wait_for_load_state`, `assert_no_console_errors`, and `assert_no_failed_requests`. Unsupported, ambiguous, authenticated, destructive, mutating, upload, admin, exploit, and out-of-scope steps are skipped with reasons. Credential-profile login checks, role-aware authorization checks, application discovery, Interactive Safe Explorer, Safe Form Testing, guided onboarding, report intelligence, baseline comparison, quality gates, CI runs, and issue export previews are deterministic paths. AI Browser Control is AI-suggested but still policy-gated and never gives the model direct Playwright control.
 
 ## Safe Form Testing
 
@@ -906,7 +920,7 @@ Forms are skipped when they are POST/PUT/PATCH/DELETE, external, login/password,
 
 ## Report Intelligence
 
-Every primary JSON and HTML report includes deterministic report intelligence in `v0.23.0-alpha`:
+Every primary JSON and HTML report includes deterministic report intelligence in `v0.24.0-alpha`:
 
 - `executive_summary` with pass/warning/fail/unknown status, what was tested, what was not tested, recommended next actions, and safety limitations.
 - `severity_counts` normalized to `critical`, `high`, `medium`, `low`, and `info`.
@@ -931,7 +945,7 @@ Quality gates are designed for CI and release checks. Defaults fail on new criti
 
 ## CI Mode And Issue Export
 
-`v0.23.0-alpha` includes a native CI run endpoint at `POST /api/v1/projects/{project_id}/ci-runs`. It can start a Safe QA run, wait for completion, compare with a selected/default Safe QA baseline, evaluate a quality gate, persist a `ci_runs` record, and return `exit_code` `0` for passed/warning or `1` for failed/error. CI gate evaluation and issue export do not require AI.
+`v0.24.0-alpha` includes a native CI run endpoint at `POST /api/v1/projects/{project_id}/ci-runs`. It can start a Safe QA run, wait for completion, compare with a selected/default Safe QA baseline, evaluate a quality gate, persist a `ci_runs` record, and return `exit_code` `0` for passed/warning or `1` for failed/error. CI gate evaluation and issue export do not require AI.
 
 `scripts/qualora-ci-gate.sh` evaluates an existing report. `scripts/qualora-ci-run.sh` starts the workflow and evaluates the gate. Both scripts log in with `QUALORA_EMAIL` and `QUALORA_PASSWORD`, avoid printing secrets, and exit with the Qualora CI exit code.
 

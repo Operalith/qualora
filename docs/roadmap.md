@@ -314,7 +314,20 @@ Current alpha scope:
 - Dashboard and guided setup Demo Lab copy/defaults.
 - Demo Lab operator documentation, release notes, and secret-redaction validation.
 
-## Phase 24: Run And Worker Hardening
+## v0.24.0-alpha
+
+Current alpha scope:
+
+- Simplified dashboard with one-click Demo Lab, real project setup, reports, and compact workspace status.
+- Project Cockpit with primary Safe QA, browser, AI control, discovery, and quality actions plus collapsible Advanced Tools.
+- Near-live polling and replay Run Viewer for AI Browser Control and Safe Explorer.
+- Step timelines with screenshot evidence, action metadata, sanitized AI suggestions, policy decisions, execution results, and blocked/skipped reasons.
+- Post-action AI Browser Control screenshots and consistent browser evidence metadata.
+- Project-grouped reports with latest Safe QA, AI Browser Control, and warning/failure highlights.
+- Optional real OpenAI-compatible Demo Lab script with safe environment validation and no API-key output.
+- Fake LLM remains the deterministic smoke, showcase, and CI provider.
+
+## Phase 25: Run And Worker Hardening
 
 - Worker result API so workers do not write directly to PostgreSQL.
 - Run retries and clearer failure states.
@@ -328,14 +341,14 @@ Current alpha scope:
 - Move AI-assisted test planning to an async analyzer worker.
 - Safe QA Run integration for Safe Explorer summaries if it can remain explicit and non-autonomous.
 
-## Phase 24: Deeper API Checks
+## Phase 26: Deeper API Checks
 
 - More complete OpenAPI validation beyond the lightweight v0.20 checks.
 - Richer response schema coverage for safe methods without storing response bodies.
 - Configurable endpoint limits and path filters.
 - Authenticated API testing beyond simple configured profile injection, if it can remain explicit and read-only.
 
-## Phase 25: Quality Check Deepening
+## Phase 27: Quality Check Deepening
 
 - Optional axe-core integration or richer accessibility summaries.
 - Lighthouse/Core Web Vitals-style performance collection if it can stay safe and lightweight.

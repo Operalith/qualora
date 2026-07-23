@@ -1,6 +1,6 @@
 # Release Process
 
-Qualora v0.23.0-alpha is the twenty-third public alpha release. It adds the dedicated Qualora Demo Lab showcase target and comprehensive end-to-end validation while keeping the existing product engines and safety policies intact.
+Qualora v0.24.0-alpha is the twenty-fourth public alpha release. It simplifies the authenticated experience with a focused dashboard and Project Cockpit, adds a near-live/replay Run Viewer for AI Browser Control and Safe Explorer, and provides an optional real OpenAI-compatible Demo Lab workflow.
 
 ## Pre-Release Checklist
 
@@ -13,6 +13,8 @@ docker compose config
 docker compose up -d --build
 make smoke
 make showcase-smoke
+bash -n scripts/run-demo-lab-real-llm.sh
+scripts/test-real-llm-script.sh
 curl -fsS http://localhost:3000/healthz
 curl -fsS http://localhost:8080/healthz
 git diff --check
@@ -25,8 +27,12 @@ Confirm:
 - The web UI is reachable at `http://localhost:3000`.
 - A fresh database requires first-run admin setup before project data is visible.
 - Setup, login, logout, `/auth/me`, CSRF, and protected route checks pass.
-- The dashboard shows the `v0.23.0-alpha` badge, quick-start actions, status indicators, recent projects, and recent Safe QA runs.
-- The dashboard and guided setup expose Demo Lab showcase copy and Demo Lab target defaults.
+- The dashboard shows the `v0.24.0-alpha` badge, `Run Demo Lab Showcase`, `Create Real Project`, `Open Reports`, and compact status indicators.
+- Project details render the Project Cockpit with primary QA actions and preserve specialized features under Advanced Tools.
+- AI Browser Control and Safe Explorer runs open in the near-live/replay Run Viewer.
+- Run Viewer timelines include action metadata, latest screenshot links, AI suggestions and policy decisions where applicable, execution results, and blocked/skipped reasons.
+- The dashboard and guided setup expose Demo Lab showcase copy, Demo Lab target defaults, and Fake LLM versus configured real-provider choices.
+- Missing real-provider environment variables fail before services start, name only the missing variables, and never print the supplied API key.
 - `demo-lab-web`, `demo-lab-api`, and `fake-llm` become healthy under the `demo-lab` profile.
 - `make showcase-smoke` validates the full browser, API, auth, discovery, quality, form, AI, authorization, Safe QA, baseline, CI gate, and issue-export-preview workflow against Demo Lab.
 - Demo Lab reports, CI output, issue previews, and logs do not expose fake passwords, bearer tokens, cookies, browser storage, auth headers, or session material.
@@ -83,10 +89,10 @@ Confirm:
 ```bash
 git status --short
 git add .
-git commit -m "feat: add demo lab showcase target for v0.23.0-alpha"
-git tag -a v0.23.0-alpha -m "v0.23.0-alpha"
+git commit -m "feat: improve demo UX and browser run visibility for v0.24.0-alpha"
+git tag -a v0.24.0-alpha -m "v0.24.0-alpha"
 git push origin main
-git push origin v0.23.0-alpha
+git push origin v0.24.0-alpha
 ```
 
 ## GitHub Release
@@ -94,7 +100,7 @@ git push origin v0.23.0-alpha
 Suggested title:
 
 ```text
-Qualora v0.23.0-alpha
+Qualora v0.24.0-alpha
 ```
 
-Use [release-notes/v0.23.0-alpha.md](release-notes/v0.23.0-alpha.md) as the release body.
+Use [release-notes/v0.24.0-alpha.md](release-notes/v0.24.0-alpha.md) as the release body.
